@@ -6,7 +6,6 @@ from pathlib import Path
 from types import ModuleType
 from typing import Type
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.append(str(PROJECT_ROOT))

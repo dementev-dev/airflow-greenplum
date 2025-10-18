@@ -14,7 +14,9 @@ def _airflow_available() -> bool:
     return hasattr(af, "DAG")
 
 
-pytestmark = pytest.mark.skipif(not _airflow_available(), reason="Airflow is not installed for DAG smoke tests")
+pytestmark = pytest.mark.skipif(
+    not _airflow_available(), reason="Airflow is not installed for DAG smoke tests"
+)
 
 
 def _load_dag(module_name: str):

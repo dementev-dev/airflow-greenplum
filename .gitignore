@@ -2,7 +2,6 @@
 
 # Do not commit secrets
 .env
-.env.*
 __pycache__/
 */__pycache__/
 *.pyc

@@ -2,19 +2,13 @@ SHELL := /bin/bash
 UV := uv
 PYTHON_VERSION := 3.11
 
-.PHONY: up down start stop airflow-init logs gp-psql ddl-gp dev-setup dev-sync dev-lock test lint fmt clean-venv
+.PHONY: up down airflow-init logs gp-psql ddl-gp dev-setup dev-sync dev-lock test lint fmt clean-venv
 
 up:
 	docker compose -f docker-compose.yml up -d
 
 down:
 	docker compose -f docker-compose.yml down -v
-
-start:
-	docker compose -f docker-compose.yml start
-
-stop:
-	docker compose -f docker-compose.yml stop
 
 airflow-init:
 	docker compose -f docker-compose.yml run --rm airflow-init

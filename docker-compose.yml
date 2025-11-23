@@ -19,7 +19,7 @@ services:
       retries: 20
 
   greenplum:
-    image: woblerr/greenplum:6.27.1
+    image: woblerr/greenplum:6.27.1  # based on https://github.com/woblerr/docker-greenplum
     # container_name: gp_single
     # hostname: gpdbsne
     environment:

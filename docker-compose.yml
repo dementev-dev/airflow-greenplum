@@ -18,6 +18,26 @@ services:
       timeout: 5s
       retries: 20
 
+  # Postgres с демо-БД bookings (источник для будущего DWH)
+  bookings-db:
+    image: postgres:16
+    env_file: .env
+    environment:
+      POSTGRES_USER: ${BOOKINGS_DB_USER}
+      POSTGRES_PASSWORD: ${BOOKINGS_DB_PASSWORD}
+      POSTGRES_DB: ${BOOKINGS_DB_NAME}
+    ports:
+      - "${BOOKINGS_DB_PORT:-5434}:5432"
+    volumes:
+      - bookings_data:/var/lib/postgresql/data
+      # В этот каталог будет монтироваться генератор demodb
+      - ./bookings:/bookings:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${BOOKINGS_DB_USER} -d ${BOOKINGS_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   greenplum:
     image: woblerr/greenplum:6.27.1  # based on https://github.com/woblerr/docker-greenplum
     # container_name: gp_single
@@ -117,5 +137,6 @@ services:
 
 volumes:
   pgmeta:
+  bookings_data:
   greenplum_data:
   airflow_data:

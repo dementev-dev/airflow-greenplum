@@ -4,6 +4,8 @@ PYTHON_VERSION := 3.11
 DEMODB_REPO := https://github.com/postgrespro/demodb.git
 DEMODB_COMMIT := d68de192850237719f09b47688d5f3fc94653ca6
 BOOKINGS_JOBS ?= 1
+BOOKINGS_START_DATE ?= 2017-01-01
+BOOKINGS_INIT_DAYS ?= 30
 
 .PHONY: up down airflow-init logs gp-psql ddl-gp \
 	bookings-clone-demodb bookings-init bookings-psql bookings-generate-day \
@@ -42,23 +44,21 @@ bookings-init: bookings-clone-demodb
 		CONNSTR="dbname=demo user=$$POSTGRES_USER password=$$POSTGRES_PASSWORD"; \
 		PGPASSWORD="$$POSTGRES_PASSWORD" psql -v ON_ERROR_STOP=1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -c "ALTER DATABASE demo SET gen.connstr='\''$$CONNSTR'\'';" \
 	'
+	docker compose -f docker-compose.yml exec bookings-db bash -lc '\
+		PGPASSWORD="$$POSTGRES_PASSWORD" psql -v ON_ERROR_STOP=1 -U "$$POSTGRES_USER" -d demo -c "\
+			ALTER DATABASE demo SET bookings.start_date = '\''$(BOOKINGS_START_DATE)'\''; \
+			ALTER DATABASE demo SET bookings.init_days = '\''$(BOOKINGS_INIT_DAYS)'\''; \
+			ALTER DATABASE demo SET bookings.jobs = '\''$(BOOKINGS_JOBS)'\'';" \
+	'
 	# Генерируем первый день данных, чтобы база не оставалась пустой
-	docker compose -f docker-compose.yml exec -T bookings-db bash -lc 'PGPASSWORD="$$POSTGRES_PASSWORD" psql -v ON_ERROR_STOP=1 -U "$$POSTGRES_USER" -d demo -v start_date="$${BOOKINGS_START_DATE:-2017-01-01}" -v jobs="$(BOOKINGS_JOBS)" <<'"'"'SQL'"'"'
-	SET bookings.start_date = :'start_date';
-	\i /bookings/generate_next_day.sql
-	RESET bookings.start_date;
-	SQL'
+	docker compose -f docker-compose.yml exec bookings-db bash -lc 'printf "SET bookings.start_date = '\''$(BOOKINGS_START_DATE)'\'';\\nSET bookings.init_days = '\''$(BOOKINGS_INIT_DAYS)'\'';\\nSET bookings.jobs = '\''$(BOOKINGS_JOBS)'\'';\\n\\\\i /bookings/generate_next_day.sql\\n" | PGPASSWORD="$$POSTGRES_PASSWORD" psql -v ON_ERROR_STOP=1 -U "$$POSTGRES_USER" -d demo'
 
 bookings-psql:
 	docker compose -f docker-compose.yml exec bookings-db bash -lc 'PGPASSWORD="$$POSTGRES_PASSWORD" psql -U "$$POSTGRES_USER" -d demo'
 
 bookings-generate-day:
 	docker compose -f docker-compose.yml up -d bookings-db
-	docker compose -f docker-compose.yml exec -T bookings-db bash -lc 'PGPASSWORD="$$POSTGRES_PASSWORD" psql -v ON_ERROR_STOP=1 -U "$$POSTGRES_USER" -d demo -v start_date="$${BOOKINGS_START_DATE:-2017-01-01}" -v jobs="$(BOOKINGS_JOBS)" <<'"'"'SQL'"'"'
-	SET bookings.start_date = :'start_date';
-	\i /bookings/generate_next_day.sql
-	RESET bookings.start_date;
-	SQL'
+	docker compose -f docker-compose.yml exec bookings-db bash -lc 'printf "SET bookings.start_date = '\''$(BOOKINGS_START_DATE)'\'';\\nSET bookings.init_days = '\''$(BOOKINGS_INIT_DAYS)'\'';\\nSET bookings.jobs = '\''$(BOOKINGS_JOBS)'\'';\\n\\\\i /bookings/generate_next_day.sql\\n" | PGPASSWORD="$$POSTGRES_PASSWORD" psql -v ON_ERROR_STOP=1 -U "$$POSTGRES_USER" -d demo'
 
 dev-setup:
 	$(UV) python install $(PYTHON_VERSION)

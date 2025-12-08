@@ -1,11 +1,12 @@
--- Если база пуста, берём стартовую дату из параметра :start_date (формат YYYY-MM-DD).
--- psql не умеет подставлять :start_date внутрь DO $$...$$, поэтому прокидываем дату через GUC.
-SET bookings.start_date = :'start_date';
+-- Если база пуста, берём стартовую дату из GUC bookings.start_date (по умолчанию: 2017-01-01).
 DO $$
 DECLARE
     v_max_book_date timestamptz;
     v_start_date    timestamptz;
     v_end_date      timestamptz;
+    v_jobs          integer := COALESCE(current_setting('bookings.jobs', true), '1')::integer;
+    v_init_days     integer := COALESCE(current_setting('bookings.init_days', true), '1')::integer;
+    v_start_cfg     text    := COALESCE(current_setting('bookings.start_date', true), '2017-01-01');
 BEGIN
     -- Проверяем, что демобаза установлена
     IF to_regclass('bookings.bookings') IS NULL THEN
@@ -16,20 +17,20 @@ BEGIN
     SELECT max(book_date) INTO v_max_book_date FROM bookings.bookings;
 
     IF v_max_book_date IS NULL THEN
-        -- База пустая: берём стартовую дату из переданного параметра
-        v_start_date := date_trunc('day', current_setting('bookings.start_date')::timestamptz);
+        -- База пустая: берём стартовую дату из конфигурации (или дефолтную)
+        v_start_date := date_trunc('day', v_start_cfg::timestamptz);
     ELSE
         -- Продолжаем с дня, следующего за максимальной датой
         v_start_date := date_trunc('day', v_max_book_date) + interval '1 day';
     END IF;
 
-    v_end_date := v_start_date + interval '1 day';
-
     -- Первая генерация вызывает generate(), последующие — continue()
     IF v_max_book_date IS NULL THEN
-        CALL generate(v_start_date, v_end_date, :'jobs');
+        v_end_date := v_start_date + (v_init_days || ' days')::interval;
+        CALL generate(v_start_date, v_end_date, v_jobs);
     ELSE
-        CALL continue(v_end_date, :'jobs');
+        v_end_date := v_start_date + interval '1 day';
+        CALL continue(v_end_date, v_jobs);
     END IF;
 
     -- Ждём завершения фоновых джобов генератора, чтобы данные успели записаться
@@ -37,6 +38,4 @@ BEGIN
         PERFORM pg_sleep(1);
     END LOOP;
     PERFORM dblink_disconnect(unnest(dblink_get_connections()));
-
 END $$;
-RESET bookings.start_date;

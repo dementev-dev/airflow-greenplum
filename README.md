@@ -183,6 +183,9 @@ make bookings-psql      # Подключиться к демобазе bookings 
 
 # Проверка данных
 make logs               # Следить за логами Airflow
+
+# Контроль генерации bookings
+docker compose -f docker-compose.yml exec bookings-db bash -lc 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d demo -c "SELECT busy();"'
 ```
 
 ---
@@ -203,8 +206,8 @@ make logs               # Следить за логами Airflow
 - `BOOKINGS_DB_NAME` — база данных, из которой запускается установка генератора (по умолчанию: bookings)
 - `BOOKINGS_DB_PORT` — внешний порт для подключения к контейнеру bookings-db (по умолчанию: 5434)
 - `BOOKINGS_START_DATE` — начальная дата модельного времени (по умолчанию: 2017-01-01)
-- `BOOKINGS_INIT_DAYS` — сколько дней сгенерировать при первой инициализации (по умолчанию: 30)
-- `BOOKINGS_JOBS` — число параллельных джобов генератора bookings (по умолчанию: 1)
+- `BOOKINGS_INIT_DAYS` — сколько дней сгенерировать при первой инициализации (по умолчанию: 1, чтобы увидеть данные без долгого ожидания)
+- `BOOKINGS_JOBS` — число параллельных джобов генератора bookings (по умолчанию: 1; при 1 генерация идёт синхронно без dblink)
 
 ### CSV pipeline
 - `CSV_DIR` — путь к каталогу с CSV внутри контейнеров Airflow (по умолчанию: `/opt/airflow/data`)

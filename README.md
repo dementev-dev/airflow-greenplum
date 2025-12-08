@@ -177,8 +177,8 @@ make down               # Остановить и удалить данные
 make airflow-init       # Инициализировать Airflow
 make ddl-gp             # Применить DDL к Greenplum
 make gp-psql            # Подключиться к Greenplum через psql
-make bookings-init      # Установить демобазу bookings в Postgres
-make bookings-generate-day  # Добавить ещё один день данных в bookings
+make bookings-init      # Установить демобазу bookings в Postgres (по умолчанию генерирует 1 день)
+make bookings-generate-day  # Добавить ещё один день данных в bookings (можно вызвать несколько раз)
 make bookings-psql      # Подключиться к демобазе bookings (БД demo)
 
 # Проверка данных
@@ -186,6 +186,7 @@ make logs               # Следить за логами Airflow
 
 # Контроль генерации bookings
 docker compose -f docker-compose.yml exec bookings-db bash -lc 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d demo -c "SELECT busy();"'
+# busy() = t — генерация ещё идёт; f — завершена. При необходимости можно вызвать CALL abort(); и запустить генерацию заново.
 ```
 
 ---
@@ -206,7 +207,7 @@ docker compose -f docker-compose.yml exec bookings-db bash -lc 'PGPASSWORD="$POS
 - `BOOKINGS_DB_NAME` — база данных, из которой запускается установка генератора (по умолчанию: bookings)
 - `BOOKINGS_DB_PORT` — внешний порт для подключения к контейнеру bookings-db (по умолчанию: 5434)
 - `BOOKINGS_START_DATE` — начальная дата модельного времени (по умолчанию: 2017-01-01)
-- `BOOKINGS_INIT_DAYS` — сколько дней сгенерировать при первой инициализации (по умолчанию: 1, чтобы увидеть данные без долгого ожидания)
+- `BOOKINGS_INIT_DAYS` — сколько дней сгенерировать при первой инициализации (по умолчанию: 1, чтобы увидеть данные без долгого ожидания; можно менять при вызове `BOOKINGS_INIT_DAYS=... make bookings-init`)
 - `BOOKINGS_JOBS` — число параллельных джобов генератора bookings (по умолчанию: 1; при 1 генерация идёт синхронно без dblink)
 
 ### CSV pipeline

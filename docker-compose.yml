@@ -56,8 +56,9 @@ services:
       - "${GP_PORT}:5432"
     volumes:
       - ./sql:/sql:ro
-      - ./pxf/postgresql-42.7.3.jar:/data/pxf/lib/postgresql-jdbc.jar:ro
-      - ./pxf/servers/bookings-db/jdbc-site.xml:/data/pxf/servers/bookings-db/jdbc-site.xml:ro
+      - ./pxf/postgresql-42.7.3.jar:/pxf-local/postgresql-42.7.3.jar:ro
+      - ./pxf/servers/bookings-db:/pxf-local/servers/bookings-db:ro
+      - ./pxf/init/10_pxf_bookings.sh:/docker-entrypoint-initdb.d/10_pxf_bookings.sh:ro
       - greenplum_data:/data
       - airflow_data:/opt/airflow/data
     # Простая проверка доступности: psql откликается

@@ -13,9 +13,10 @@ DISTRIBUTED BY (order_id);
 
 -- Внешняя таблица для чтения данных из демо-БД bookings через PXF (JDBC).
 -- Источник: таблица bookings.bookings в базе demo (Postgres, сервис bookings-db).
-CREATE EXTERNAL TABLE IF NOT EXISTS public.ext_bookings_bookings (
+DROP EXTERNAL TABLE IF EXISTS public.ext_bookings_bookings;
+CREATE EXTERNAL TABLE public.ext_bookings_bookings (
     book_ref     CHAR(6),
-    book_date    TIMESTAMP WITH TIME ZONE,
+    book_date    TIMESTAMP,
     total_amount NUMERIC(10,2)
 )
 LOCATION ('pxf://bookings.bookings?PROFILE=JDBC&SERVER=bookings-db')

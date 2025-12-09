@@ -50,10 +50,9 @@ services:
       GREENPLUM_PASSWORD: ${GP_PASSWORD:-gpadmin}
       GREENPLUM_DATABASE_NAME: ${GP_DB:-gpadmin}
       GREENPLUM_PXF_ENABLE: "true"
-      # GP_PORT: ${GP_PORT:-5432}
-    # Порты: внешний 5432
+    # Порты: внешний 5435 (на хосте)
     ports:
-      - "${GP_PORT}:5432"
+      - "5435:5432"
     volumes:
       - ./sql:/sql:ro
       - ./pxf/postgresql-42.7.3.jar:/pxf-local/postgresql-42.7.3.jar:ro

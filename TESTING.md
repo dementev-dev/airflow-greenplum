@@ -18,7 +18,7 @@
 
 ## 3. Подготовка Docker-стенда
 - `cp .env.example .env` (если файла ещё нет) и проверьте переменные:
-  - `GP_PORT` не конфликтует с локальным PostgreSQL.
+  - `GP_PORT` — внутренний порт Greenplum в Docker-сети (по умолчанию 5432, менять не нужно); внешний порт для подключения с хоста фиксирован на `5435`, поэтому локальный PostgreSQL на 5432 не помешает.
   - `GP_USE_AIRFLOW_CONN=true` при желании использовать Airflow Connection; `false` — fallback на ENV.
 - `make up` — поднимаем все сервисы. Важно дождаться статуса `healthy` у `pgmeta` и `greenplum` (`docker compose ps`).
 - `make airflow-init` — миграции мета-БД и создание пользователя Airflow; занимает ~1–2 минуты.

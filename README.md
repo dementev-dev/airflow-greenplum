@@ -63,7 +63,7 @@ docker compose up -d
 **Проверка вручную:**
 ```bash
 # Подключитесь к Greenplum и проверьте данные
-docker compose exec greenplum bash -c "su - gpadmin -c 'psql -p 5432 -d gpadmin'"
+docker compose exec greenplum bash -c "su - gpadmin -c 'psql -p 5432 -d gp_dwh'"
 
 # Внутри psql выполните:
 \dt                    # Показать таблицы
@@ -117,7 +117,7 @@ make gp-psql                    # Подключение к Greenplum
    - **Conn Id:** `greenplum_conn`
    - **Conn Type:** `Postgres`
    - **Host:** `greenplum`
-   - **Schema:** `gpadmin`
+   - **Schema:** `gp_dwh`
    - **Login:** `gpadmin`
    - **Password:** `gpadmin`
    - **Port:** `5432`
@@ -198,7 +198,7 @@ docker compose -f docker-compose.yml exec bookings-db bash -lc 'PGPASSWORD="$POS
 ### Greenplum
 - `GP_USER` — пользователь (по умолчанию: gpadmin)
 - `GP_PASSWORD` — пароль (по умолчанию: gpadmin)
-- `GP_DB` — база данных (по умолчанию: gpadmin)
+- `GP_DB` — база данных (по умолчанию: gp_dwh)
 - `GP_PORT` — порт Greenplum внутри Docker-сети (по умолчанию: 5432, менять обычно не нужно; внешний порт на хосте для подключения клиентов — 5435).
 
 ### Демо-БД bookings (Postgres)
@@ -263,14 +263,14 @@ docker compose -f docker-compose.yml exec bookings-db bash -lc 'PGPASSWORD="$POS
 3. На вкладке **Main** заполните поля (по умолчанию):
    - `Host`: `localhost`
    - `Port`: `5435` (внешний порт Greenplum на хосте)
-   - `Database`: значение `GP_DB` (по умолчанию `gpadmin`)
+   - `Database`: значение `GP_DB` (по умолчанию `gp_dwh`)
    - `Username`: значение `GP_USER` (по умолчанию `gpadmin`)
    - `Password`: значение `GP_PASSWORD` (по умолчанию `gpadmin`)
 4. Нажмите **Test Connection** → **OK**, затем **Finish**.
 
 После подключения:
 
-- Основные таблицы лаба — в схеме `public` базы `gpadmin` (например, `public.orders`).
+- Основные таблицы лаба — в схеме `public` базы `gp_dwh` (например, `public.orders`).
 - После настройки PXF и выполнения `make ddl-gp` станет доступна внешняя таблица `public.ext_bookings_bookings` — чтение из демо-БД bookings через PXF.
 
 ### bookings-db (демо-БД источника)

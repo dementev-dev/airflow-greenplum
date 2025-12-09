@@ -48,7 +48,7 @@ services:
       TZ: ${TZ:-Europe/Moscow}
       GREENPLUM_USER: ${GP_USER:-gpadmin}
       GREENPLUM_PASSWORD: ${GP_PASSWORD:-gpadmin}
-      GREENPLUM_DATABASE_NAME: ${GP_DB:-gpadmin}
+      GREENPLUM_DATABASE_NAME: ${GP_DB:-gp_dwh}
       GREENPLUM_PXF_ENABLE: "true"
     # Порты: внешний 5435 (на хосте)
     ports:
@@ -62,7 +62,7 @@ services:
       - airflow_data:/opt/airflow/data
     # Простая проверка доступности: psql откликается
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U ${GP_USER:-gpadmin} -d ${GP_DB:-gpadmin} || echo 1"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U ${GP_USER:-gpadmin} -d ${GP_DB:-gp_dwh} || echo 1"]
       interval: 10s
       timeout: 5s
       retries: 30

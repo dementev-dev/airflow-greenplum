@@ -42,6 +42,8 @@
   - `SELECT COUNT(*) FROM public.orders;` — оценка объёма.
   - `SELECT * FROM public.orders LIMIT 5;` — визуальная проверка.
   - `SELECT order_id FROM public.orders GROUP BY 1 HAVING COUNT(*) > 1;` — поиск дублей.
+  - (после настройки PXF) `SELECT COUNT(*) FROM public.ext_bookings_bookings;` — проверка чтения из демо-БД bookings через PXF.
+  - (после настройки PXF) `SELECT * FROM public.ext_bookings_bookings LIMIT 5;` — визуальное сравнение с таблицей `bookings.bookings` в исходной БД.
 - Завершить `\q`.
 
 ## 6. Негативные сценарии и fallback

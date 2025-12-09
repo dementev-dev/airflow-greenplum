@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  JDBC-конфиг для PXF-сервера bookings-db.
+  Для учебного стенда используем те же дефолтные креды, что и в .env.example:
+  BOOKINGS_DB_USER=bookings, BOOKINGS_DB_PASSWORD=bookings.
+  При изменении этих параметров в .env не забывайте обновить их здесь.
+-->
+<configuration>
+
+  <property>
+    <name>jdbc.driver</name>
+    <value>org.postgresql.Driver</value>
+  </property>
+
+  <property>
+    <name>jdbc.url</name>
+    <value>jdbc:postgresql://bookings-db:5432/demo</value>
+  </property>
+
+  <property>
+    <name>jdbc.user</name>
+    <value>bookings</value>
+  </property>
+
+  <property>
+    <name>jdbc.password</name>
+    <value>bookings</value>
+  </property>
+
+</configuration>
+

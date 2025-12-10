@@ -25,12 +25,14 @@
 
 ## 4. Smoke тесты DAG в Airflow UI
 1. Открыть http://localhost:8080 (admin/admin).
-2. DAG `csv_to_greenplum`:
+2. (опционально) Зайти в Admin → Connections и убедиться, что DAG’и видят подключения:
+   - `greenplum_conn` и `bookings_db` задаются через переменные `AIRFLOW_CONN_...` в docker-compose и могут не отображаться в списке, но `airflow connections get greenplum_conn` / `bookings_db` внутри контейнера должны отрабатывать без ошибок.
+3. DAG `csv_to_greenplum`:
    - Включить переключатель.
    - Нажать «Trigger DAG».
    - Контроль: все таски Success, в `data/` появился CSV, в логах `load_csv_to_greenplum` видно `INSERT`.
    - В Greenplum (см. п.5) убедиться в наличии строк `(SELECT COUNT(*) ...)`.
-3. DAG `csv_to_greenplum_dq`:
+4. DAG `csv_to_greenplum_dq`:
    - Запустить вручную после первого DAG.
    - Проверить, что все 5 задач Success и логи содержат `Проверка пройдена`.
 

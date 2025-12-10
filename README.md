@@ -114,7 +114,16 @@ make gp-psql                    # Подключение к Greenplum
 
 ### Настройка подключения к Greenplum в Airflow
 
-По умолчанию DAG использует переменные окружения, но вы можете создать Airflow Connection:
+По умолчанию готовые DAG используют Airflow Connections. В docker-compose они
+заводятся автоматически через переменные окружения:
+
+- `AIRFLOW_CONN_GREENPLUM_CONN` — подключение к Greenplum с `conn_id=greenplum_conn`;
+- `AIRFLOW_CONN_BOOKINGS_DB` — подключение к демо-БД bookings с `conn_id=bookings_db`.
+
+Такие подключения подхватываются из окружения и могут не отображаться в UI,
+но для DAG это нормально — `PostgresOperator` найдёт их по `conn_id`.
+
+При желании вы можете создать или отредактировать подключение вручную в UI:
 
 1. Airflow UI → **Admin → Connections → Add a new record**
 2. Заполните поля:
@@ -364,7 +373,7 @@ load_bookings_to_stg = PostgresOperator(
 | Greenplum не стартует/падает при старте | Выполните `make down`, затем `make up` (очищает тома и поднимает заново, включая авто‑инициализацию Airflow) |
 | DAG `bookings_to_gp_stage` падает на внешней таблице/подключении к bookings | Убедитесь, что запущен контейнер `bookings-db` (`docker compose ps`, при необходимости `docker compose start bookings-db`), и выполнены `make bookings-init` и `make ddl-gp` или DAG `bookings_stg_ddl` |
 | DAG `bookings_to_gp_stage` ругается на отсутствующие таблицы stg | Запустите DAG `bookings_stg_ddl` (или выполните `make ddl-gp`), затем повторите запуск |
-| DAG не видит Greenplum/DEMObase по Airflow Connections | Проверьте, что в Airflow созданы подключения `greenplum_conn` и `bookings_db` с параметрами из раздела «Настройка подключения к Greenplum в Airflow» и блока про bookings |
+| DAG не видит Greenplum/DEMObase по Airflow Connections | Убедитесь, что контейнеры `greenplum` и `bookings-db` запущены (`docker compose ps`). Подключения `greenplum_conn` и `bookings_db` задаются через переменные окружения `AIRFLOW_CONN_...` и могут не отображаться в UI, но `PostgresOperator` всё равно найдёт их по `conn_id`. При необходимости вы можете создать/отредактировать их вручную в разделе Connections. |
 
 ---
 

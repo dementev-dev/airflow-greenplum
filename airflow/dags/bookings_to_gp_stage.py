@@ -12,10 +12,10 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.providers.postgres.operators.postgres import PostgresOperator
 
+from airflow import DAG
 
 default_args = {
     "owner": "airflow",

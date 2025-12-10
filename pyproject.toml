@@ -14,3 +14,7 @@ dev = [
     "psycopg2-binary==2.9.9",
     "pytest==7.4.4",
 ]
+
+[tool.isort]
+profile = "black"
+src_paths = ["airflow", "tests"]

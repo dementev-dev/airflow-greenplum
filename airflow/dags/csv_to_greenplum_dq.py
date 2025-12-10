@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta
 
-from airflow import DAG
 from airflow.operators.python import PythonOperator
 from helpers.greenplum import (
     assert_orders_have_rows,
@@ -12,6 +11,8 @@ from helpers.greenplum import (
     assert_orders_table_exists,
     get_gp_conn,
 )
+
+from airflow import DAG
 
 
 def _run_check(check_callable):

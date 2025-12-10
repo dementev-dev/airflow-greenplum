@@ -1,7 +1,7 @@
 -- Загрузка инкремента из stg.bookings_ext в stg.bookings.
 -- Окно инкремента определяется по src_created_at_ts:
--- берем строки, где book_date больше максимального src_created_at_ts
--- среди "старых" батчей и не позже конца учебного дня.
+-- берём строки, где book_date больше максимального src_created_at_ts
+-- среди "старых" батчей; верхняя граница по дате не используется.
 
 INSERT INTO stg.bookings (
     book_ref,
@@ -27,6 +27,4 @@ WHERE book_date > COALESCE(
             OR batch_id IS NULL
     ),
     TIMESTAMP '1900-01-01 00:00:00'
-)
-  AND book_date <= ({{ params.load_date }}::date + INTERVAL '1 day');
-
+);

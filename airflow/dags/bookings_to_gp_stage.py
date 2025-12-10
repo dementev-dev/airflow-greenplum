@@ -8,6 +8,15 @@ from __future__ import annotations
 - Airflow Connections для подключения к БД;
 - PostgresOperator, который берёт SQL-скрипты с диска;
 чтобы студент увидел «канонический» способ работы с SQL в DAG.
+
+Каждый запуск DAG работает как «шаг по времени вперёд»:
+- генератор в демо-БД bookings добавляет следующий учебный день после max(book_date);
+- загрузка в Greenplum берёт все строки, появившиеся после предыдущих батчей;
+- `batch_id` (через `ds_nodash`) помечает строки конкретного запуска.
+
+Логическая дата запуска DAG (`ds`) используется только как удобная метка
+запуска (для `batch_id`, логов и DQ), но не управляет тем, за какие дни
+генерируются и переливаются данные.
 """
 
 from datetime import datetime, timedelta
@@ -50,12 +59,11 @@ with DAG(
     tags=["demo", "bookings", "greenplum", "stg"],
     description="Учебный DAG: загрузка из bookings-db в stg.bookings (Greenplum)",
 ) as dag:
-    # 1. Генерируем один учебный день в демо-БД bookings (идемпотентно)
+    # 1. Генерируем один (или несколько стартовых) учебный день в демо-БД bookings
     generate_bookings_day = PostgresOperator(
         task_id="generate_bookings_day",
         postgres_conn_id=BOOKINGS_CONN_ID,
         sql="/sql/src/bookings_generate_day_if_missing.sql",
-        params={"load_date": "{{ ds }}"},
     )
 
     # 2. Загружаем инкремент из stg.bookings_ext в stg.bookings
@@ -64,7 +72,6 @@ with DAG(
         postgres_conn_id=GREENPLUM_CONN_ID,
         sql="/sql/stg/bookings_load.sql",
         params={
-            "load_date": "{{ ds }}",
             "batch_id": "{{ ds_nodash }}",
         },
     )
@@ -75,7 +82,6 @@ with DAG(
         postgres_conn_id=GREENPLUM_CONN_ID,
         sql="/sql/stg/bookings_dq.sql",
         params={
-            "load_date": "{{ ds }}",
             "batch_id": "{{ ds_nodash }}",
         },
     )

@@ -84,11 +84,11 @@ DDL будет добавлен в `sql/ddl_gp.sql` в блоке DDL для Gre
 - Этот DAG не загружает данные, только подготавливает структуру.
 - Вся DDL‑логика (CREATE/ALTER/DROP) сосредоточена здесь; рабочие DAG’и занимаются только DML (INSERT/SELECT).
 
-### 4.2. DAG для ежедневной загрузки
+### 4.2. DAG для пошаговой загрузки
 
 - `dag_id`: `bookings_to_gp_stage`.
 - Основные параметры:
-  - `load_date` (по умолчанию `{{ ds }}`) — учебный день, за который генерим и грузим данные;
+  - `batch_id` (по умолчанию `{{ ds_nodash }}`) — метка батча, которая попадает в `stg.bookings.batch_id`;
   - подключения:
     - `bookings_db_conn_id` — Airflow connection к `bookings-db` (в коде DAG — `BOOKINGS_CONN_ID = "bookings_db"`);
     - `greenplum_conn_id` — Airflow connection к Greenplum (`GREENPLUM_CONN_ID = "greenplum_conn"`).
@@ -97,22 +97,22 @@ DDL будет добавлен в `sql/ddl_gp.sql` в блоке DDL для Gre
 
 1. `generate_bookings_day`
    - PostgresOperator к `bookings-db`;
-   - выполняет скрипт `/sql/bookings/generate_day_if_missing.sql`;
-   - скрипт сам идемпотентно проверяет, есть ли данные за `load_date` в `bookings.bookings`:
-     - если день уже есть — выдаёт NOTICE и ничего не делает;
-     - если нет — вызывает генератор демобазы (логика как в `bookings/generate_next_day.sql`).
+   - выполняет скрипт `/sql/src/bookings_generate_day_if_missing.sql`;
+   - скрипт смотрит на `max(book_date)` и:
+     - если база пуста — берёт стартовую дату из конфигурации (`bookings.start_date`) и генерирует `bookings.init_days` суток;
+     - если данные уже есть — добавляет один следующий учебный день после `max(book_date)` (логика как в `bookings/generate_next_day.sql`).
 2. `load_bookings_to_stg`
    - PostgresOperator к Greenplum;
    - выполняет скрипт `/sql/stg/bookings_load.sql`;
    - внутри SQL считается `max(src_created_at_ts)` по «старым» батчам и по нему строится окно инкремента:
      - первая загрузка (full) — берём все строки из `stg.bookings_ext`;
-     - последующие загрузки — берём только записи, где `book_date` больше предыдущего максимума и не позже конца учебного дня;
+     - последующие загрузки — берём только записи, где `book_date` больше предыдущего максимума (верхняя граница по дате не задаётся явно);
    - при вставке заполняются тех.колонки `src_created_at_ts`, `load_dttm`, `batch_id`.
 3. `check_row_counts`
    - PostgresOperator к Greenplum;
    - выполняет скрипт `/sql/stg/bookings_dq.sql`;
    - скрипт заново считает окно инкремента по тем же правилам, что и загрузка, и сравнивает:
-     - количество строк в `stg.bookings_ext` за окно,
+     - количество строк в `stg.bookings_ext` с `book_date` позже «старого» максимума,
      - количество строк в `stg.bookings` для текущего `batch_id`;
    - при расхождении выполняет `RAISE EXCEPTION` с понятным текстом ошибки.
 4. `finish_summary`

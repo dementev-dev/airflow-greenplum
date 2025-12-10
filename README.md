@@ -199,6 +199,11 @@ docker compose -f docker-compose.yml exec bookings-db bash -lc 'PGPASSWORD="$POS
 ```
 
 ### Генерация следующего дня в bookings
+
+- При `make bookings-init` автоматически генерируется `BOOKINGS_INIT_DAYS` суток, начиная с даты `BOOKINGS_START_DATE` (по умолчанию один день с `2017-01-01`).
+- Дальше каждый вызов `make bookings-generate-day` или генерации через DAG добавляет ровно **один** следующий день после `max(book_date)` в `bookings.bookings` — генератор сам смотрит последнюю дату.
+- Рекомендуемый учебный сценарий для DAG `bookings_to_gp_stage`: запускать DAG по одному дню вперёд, выбирая в форме Trigger логическую дату `Execution Date (ds)`, совпадающую с тем днём, который вы хотите загрузить (например, `2017-01-01`, затем `2017-01-02` и т.д.).
+
 - Быстрее всего: `make bookings-generate-day` — читает GUC и сам вызывает `continue`.
 - Вручную из psql/DBeaver:
   ```sql
@@ -269,10 +274,10 @@ docker compose -f docker-compose.yml exec bookings-db bash -lc 'PGPASSWORD="$POS
 
 - подключение к БД через Airflow Connections (`bookings_db`, `greenplum_conn`);
 - бизнес-логика инкрементальной загрузки и DQ вынесена в SQL-файлы в каталоге `sql/`:
-  - `sql/src/bookings_generate_day_if_missing.sql` — генерация учебного дня в демо-БД bookings (идемпотентно);
+  - `sql/src/bookings_generate_day_if_missing.sql` — генерация следующего учебного дня в демо-БД bookings (или нескольких стартовых дней, если база пуста);
   - `sql/stg/bookings_ddl.sql` — DDL для схемы `stg` и таблиц `stg.bookings_ext` / `stg.bookings`;
-  - `sql/stg/bookings_load.sql` — загрузка инкремента из `stg.bookings_ext` в `stg.bookings`;
-  - `sql/stg/bookings_dq.sql` — проверка количества строк между источником и stg.
+  - `sql/stg/bookings_load.sql` — загрузка инкремента из `stg.bookings_ext` в `stg.bookings` на основе «хвоста» после предыдущих батчей;
+  - `sql/stg/bookings_dq.sql` — проверка количества строк между источником и stg за то же окно.
 
 Фрагмент DAG:
 
@@ -281,7 +286,7 @@ load_bookings_to_stg = PostgresOperator(
     task_id="load_bookings_to_stg",
     postgres_conn_id="greenplum_conn",
     sql="/sql/stg/bookings_load.sql",
-    params={"load_date": "{{ ds }}", "batch_id": "{{ ds_nodash }}"},
+    params={"batch_id": "{{ ds_nodash }}"},
 )
 ```
 
@@ -353,9 +358,13 @@ load_bookings_to_stg = PostgresOperator(
 |----------|---------|
 | Airflow UI не открывается | Дождитесь сообщения `Listening at: http://0.0.0.0:8080` в логах (`make logs`) |
 | Ошибка подключения к Greenplum | Убедитесь, что контейнер `greenplum` стал статусом `healthy` (проверьте `docker compose ps`) |
+| Не открывается порт 8080/5433/5434/5435 | Проверьте, что эти порты не заняты локальными сервисами; при необходимости остановите их или измените порты в `.env`/`docker-compose.yml` |
 | Нет файла в `./data` после запуска DAG | Проверьте логи задачи `generate_csv`, убедитесь, что `CSV_DIR` смонтирован в docker-compose |
 | Команда `make` не найдена | Используйте полные команды `docker compose` или установите make |
 | Greenplum не стартует/падает при старте | Выполните `make down`, затем `make up && make airflow-init` (очищает тома и поднимает заново) |
+| DAG `bookings_to_gp_stage` падает на внешней таблице/подключении к bookings | Убедитесь, что запущен контейнер `bookings-db` (`docker compose ps`, при необходимости `docker compose start bookings-db`), и выполнены `make bookings-init` и `make ddl-gp` или DAG `bookings_stg_ddl` |
+| DAG `bookings_to_gp_stage` ругается на отсутствующие таблицы stg | Запустите DAG `bookings_stg_ddl` (или выполните `make ddl-gp`), затем повторите запуск |
+| DAG не видит Greenplum/DEMObase по Airflow Connections | Проверьте, что в Airflow созданы подключения `greenplum_conn` и `bookings_db` с параметрами из раздела «Настройка подключения к Greenplum в Airflow» и блока про bookings |
 
 ---
 

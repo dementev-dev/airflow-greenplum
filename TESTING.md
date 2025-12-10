@@ -12,8 +12,8 @@
 ## 2. Локальные автоматические проверки (без Docker)
 - `make test` — короткие unit-тесты (`tests/test_greenplum_helpers.py`, `tests/test_dags_smoke.py`).
   - Smoke-тесты DAG автоматически `skip`, если Airflow не установлен в venv, поэтому прогонится за миллисекунды.
-- `make lint` — black/isort в режиме проверки. Сейчас упадёт из‑за форматирования DAG-файлов.
-- `make fmt` — автоисправление форматирования; после этого `make lint` должен пройти.
+- `make lint` — black/isort в режиме проверки (после `make fmt` должен проходить без ошибок).
+- `make fmt` — автоисправление форматирования; полезно запускать перед пушем.
 - (опционально) `uv run pytest -q -k dags_smoke` — только DAG smoke.
 
 ## 3. Подготовка Docker-стенда
@@ -51,6 +51,7 @@
 - **Проблемы с подключением**: временно изменить `GP_HOST` или `GP_PORT` на несуществующий, перезапустить `make up`, убедиться, что DAG падает с понятной ошибкой (`psycopg2.OperationalError`).
 - **Fallback без Airflow Connection**: установить `GP_USE_AIRFLOW_CONN=false`, перезапустить стек (`make down && make up && make airflow-init`), удостовериться, что загрузка и DQ работают через ENV.
 - **Дубликаты**: дважды вызвать `csv_to_greenplum` — ожидаем, что количество строк в `public.orders` не увеличится на размер CSV, а DAG `csv_to_greenplum_dq` не найдёт дублей.
+- **PXF и демобаза bookings** (после настройки PXF и выполнения `make ddl-gp`): временно остановить `bookings-db` (`docker compose stop bookings-db`) и попробовать выполнить `SELECT COUNT(*) FROM public.ext_bookings_bookings;` в `make gp-psql` — ожидается ошибка подключения. Затем запустить `bookings-db` (`docker compose start bookings-db`) и убедиться, что запрос снова работает.
 
 ## 7. Быстрый reset (если «что-то сломалось»)
 - Перезапустить стенд с очисткой данных:
@@ -69,5 +70,5 @@
 
 ## Текущий статус (пример успешного прогона)
 - `uv run pytest -q` — 11 passed, 2 smoke-теста DAG пропущены (Airflow не установлен в venv).
-- `make lint` — падает, потому что `airflow/dags/*.py` не отформатированы black/isort. После `make fmt` проблема уйдёт.
+- `make lint` — проходит (DAG‑файлы отформатированы black/isort).
 - Docker-стенд не запускался в рамках этой сессии; ожидается, что инструкции выше обеспечат полноценную проверку.

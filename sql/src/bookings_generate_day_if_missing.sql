@@ -1,10 +1,11 @@
 -- Генерация учебного дня в демо-БД bookings.
--- Если данные за указанный день уже существуют, генерация не выполняется.
+-- Этот скрипт всегда добавляет следующий учебный день после максимальной даты
+-- в таблице bookings.bookings (или несколько дней от стартовой даты, если база пуста).
+-- Логическая дата запуска DAG ({{ ds }}) здесь не используется для выбора дня —
+-- она служит только меткой батча и попадает в логи/стейдж.
 
 DO $$
 DECLARE
-    v_has_day      boolean;
-    v_load_date    date := {{ params.load_date }}::date;
     v_max_book_date timestamptz;
     v_start_date    timestamptz;
     v_end_date      timestamptz;
@@ -15,19 +16,6 @@ BEGIN
     -- Проверяем, что демобаза установлена
     IF to_regclass('bookings.bookings') IS NULL THEN
         RAISE EXCEPTION 'Таблица bookings.bookings не найдена. Сначала выполните make bookings-init.';
-    END IF;
-
-    -- Проверяем, есть ли уже данные за нужный день
-    SELECT EXISTS (
-        SELECT 1
-        FROM bookings.bookings
-        WHERE book_date::date = v_load_date
-    )
-    INTO v_has_day;
-
-    IF v_has_day THEN
-        RAISE NOTICE 'Данные за % уже есть в bookings.bookings — генерация не требуется.', v_load_date;
-        RETURN;
     END IF;
 
     -- Ищем последнюю сгенерированную дату
@@ -50,10 +38,13 @@ BEGIN
         CALL continue(v_end_date, v_jobs);
     END IF;
 
+    RAISE NOTICE 'Сгенерированы данные в bookings.bookings за интервал [% - %).',
+        date_trunc('day', v_start_date),
+        date_trunc('day', v_end_date);
+
     -- Ждём завершения фоновых джобов генератора, чтобы данные успели записаться
     WHILE busy() LOOP
         PERFORM pg_sleep(1);
     END LOOP;
     PERFORM dblink_disconnect(unnest(dblink_get_connections()));
 END $$;
-

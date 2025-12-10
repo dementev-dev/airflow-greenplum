@@ -189,6 +189,17 @@ docker compose -f docker-compose.yml exec bookings-db bash -lc 'PGPASSWORD="$POS
 # busy() = t — генерация ещё идёт; f — завершена. При необходимости можно вызвать CALL abort(); и запустить генерацию заново.
 ```
 
+### Генерация следующего дня в bookings
+- Быстрее всего: `make bookings-generate-day` — читает GUC и сам вызывает `continue`.
+- Вручную из psql/DBeaver:
+  ```sql
+  CALL continue(
+    (SELECT date_trunc('day', max(book_date)) + interval '1 day' FROM bookings.bookings)
+  );
+  -- или с параллельностью: CALL continue((SELECT ...), 4);
+  ```
+- Не вызывайте `CALL generate(...)` поверх существующих данных: она делает TRUNCATE и создаёт демобазу заново.
+
 ---
 
 ## ⚙️ Настройка через переменные окружения

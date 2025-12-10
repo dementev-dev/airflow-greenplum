@@ -7,15 +7,20 @@ BOOKINGS_JOBS ?= 1
 BOOKINGS_START_DATE ?= 2017-01-01
 BOOKINGS_INIT_DAYS ?= 1
 
-.PHONY: up down airflow-init logs gp-psql ddl-gp \
+.PHONY: up stop down clean airflow-init logs gp-psql ddl-gp \
 	bookings-clone-demodb bookings-init bookings-psql bookings-generate-day \
 	dev-setup dev-sync dev-lock test lint fmt clean-venv
 
 up:
 	docker compose -f docker-compose.yml up -d
 
+stop:
+	docker compose -f docker-compose.yml stop
+
 down:
 	docker compose -f docker-compose.yml down -v
+
+clean: down
 
 airflow-init:
 	docker compose -f docker-compose.yml run --rm airflow-init

@@ -51,6 +51,7 @@ with DAG(
     start_date=datetime(2024, 1, 1),
     schedule=None,
     catchup=False,
+    template_searchpath="/sql",
     default_args=default_args,
     tags=["demo", "bookings", "greenplum", "stg"],
     description="Учебный DAG: загрузка из bookings-db в stg.bookings (Greenplum)",
@@ -59,14 +60,14 @@ with DAG(
     generate_bookings_day = PostgresOperator(
         task_id="generate_bookings_day",
         postgres_conn_id=BOOKINGS_CONN_ID,
-        sql="/sql/src/bookings_generate_day_if_missing.sql",
+        sql="src/bookings_generate_day_if_missing.sql",
     )
 
     # 2. Загружаем инкремент из stg.bookings_ext в stg.bookings
     load_bookings_to_stg = PostgresOperator(
         task_id="load_bookings_to_stg",
         postgres_conn_id=GREENPLUM_CONN_ID,
-        sql="/sql/stg/bookings_load.sql",
+        sql="stg/bookings_load.sql",
         params={
             "batch_id": "{{ ds_nodash }}",
         },
@@ -76,7 +77,7 @@ with DAG(
     check_row_counts = PostgresOperator(
         task_id="check_row_counts",
         postgres_conn_id=GREENPLUM_CONN_ID,
-        sql="/sql/stg/bookings_dq.sql",
+        sql="stg/bookings_dq.sql",
         params={
             "batch_id": "{{ ds_nodash }}",
         },

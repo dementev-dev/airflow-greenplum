@@ -20,6 +20,7 @@ with DAG(
     start_date=datetime(2024, 1, 1),
     schedule=None,
     catchup=False,
+    template_searchpath="/sql",
     default_args=default_args,
     tags=["demo", "greenplum", "ddl", "orders"],
     description="Создаёт/обновляет базовую таблицу orders в схеме public",
@@ -27,5 +28,5 @@ with DAG(
     apply_orders_ddl = PostgresOperator(
         task_id="apply_orders_ddl",
         postgres_conn_id=GREENPLUM_CONN_ID,
-        sql="/sql/base/orders_ddl.sql",
+        sql="base/orders_ddl.sql",
     )

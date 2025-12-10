@@ -285,7 +285,7 @@ docker compose -f docker-compose.yml exec bookings-db bash -lc 'PGPASSWORD="$POS
 load_bookings_to_stg = PostgresOperator(
     task_id="load_bookings_to_stg",
     postgres_conn_id="greenplum_conn",
-    sql="/sql/stg/bookings_load.sql",
+    sql="stg/bookings_load.sql",
     params={"batch_id": "{{ ds_nodash }}"},
 )
 ```

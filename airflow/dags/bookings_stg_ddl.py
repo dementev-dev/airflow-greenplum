@@ -20,6 +20,7 @@ with DAG(
     start_date=datetime(2024, 1, 1),
     schedule=None,
     catchup=False,
+    template_searchpath="/sql",
     default_args=default_args,
     tags=["demo", "greenplum", "ddl", "bookings", "stg"],
     description="Создаёт/обновляет stg.bookings_ext и stg.bookings для учебного DAG",
@@ -27,5 +28,5 @@ with DAG(
     apply_stg_bookings_ddl = PostgresOperator(
         task_id="apply_stg_bookings_ddl",
         postgres_conn_id=GREENPLUM_CONN_ID,
-        sql="/sql/stg/bookings_ddl.sql",
+        sql="stg/bookings_ddl.sql",
     )

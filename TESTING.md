@@ -20,8 +20,7 @@
 - `cp .env.example .env` (если файла ещё нет) и проверьте переменные:
   - `GP_PORT` — внутренний порт Greenplum в Docker-сети (по умолчанию 5432, менять не нужно); внешний порт для подключения с хоста фиксирован на `5435`, поэтому локальный PostgreSQL на 5432 не помешает.
   - `GP_USE_AIRFLOW_CONN=true` при желании использовать Airflow Connection; `false` — fallback на ENV.
-- `make up` — поднимаем все сервисы. Важно дождаться статуса `healthy` у `pgmeta` и `greenplum` (`docker compose ps`).
-- `make airflow-init` — миграции мета-БД и создание пользователя Airflow; занимает ~1–2 минуты.
+- `make up` — поднимаем все сервисы. Важно дождаться статуса `healthy` у `pgmeta` и `greenplum` (`docker compose ps`); инициализация Airflow (`airflow-init`) произойдёт автоматически при первом старте.
 - `make logs` — следим, пока webserver и scheduler не перейдут в рабочее состояние (`Listening at: http://0.0.0.0:8080`).
 
 ## 4. Smoke тесты DAG в Airflow UI
@@ -49,14 +48,14 @@
 ## 6. Негативные сценарии и fallback
 - **Пустая таблица**: запустить `csv_to_greenplum_dq` до `csv_to_greenplum`. Ожидается ошибка на таске `check_orders_has_rows`.
 - **Проблемы с подключением**: временно изменить `GP_HOST` или `GP_PORT` на несуществующий, перезапустить `make up`, убедиться, что DAG падает с понятной ошибкой (`psycopg2.OperationalError`).
-- **Fallback без Airflow Connection**: установить `GP_USE_AIRFLOW_CONN=false`, перезапустить стек (`make down && make up && make airflow-init`), удостовериться, что загрузка и DQ работают через ENV.
+- **Fallback без Airflow Connection**: установить `GP_USE_AIRFLOW_CONN=false`, перезапустить стек (`make down && make up`), удостовериться, что загрузка и DQ работают через ENV.
 - **Дубликаты**: дважды вызвать `csv_to_greenplum` — ожидаем, что количество строк в `public.orders` не увеличится на размер CSV, а DAG `csv_to_greenplum_dq` не найдёт дублей.
 - **PXF и демобаза bookings** (после настройки PXF и выполнения `make ddl-gp`): временно остановить `bookings-db` (`docker compose stop bookings-db`) и попробовать выполнить `SELECT COUNT(*) FROM public.ext_bookings_bookings;` в `make gp-psql` — ожидается ошибка подключения. Затем запустить `bookings-db` (`docker compose start bookings-db`) и убедиться, что запрос снова работает.
 
 ## 7. Быстрый reset (если «что-то сломалось»)
 - Перезапустить стенд с очисткой данных:
   - `make down` — остановит контейнеры и удалит тома.
-  - `make up && make airflow-init` — заново поднимет всё и проинициализирует Airflow.
+  - `make up` — заново поднимет всё и проинициализирует Airflow (через сервис airflow-init).
 - Иногда Greenplum не стартует после «грязных» остановок (из‑за старых внутренних файлов). Лечение: всегда делайте `make down` перед повторным `make up`.
 
 ## 8. Снятие метрик и мониторинг

@@ -159,8 +159,6 @@ FORMAT 'CUSTOM' (formatter='pxfwritable_import');
 1. Поднять стенд:
    - `make up`
    - дождаться healthcheck‑ов `pgmeta` и `greenplum`.
-2. Инициализировать Airflow (если ещё не делали):
-   - `make airflow-init`.
 3. Подготовить демо‑БД bookings:
    - `make bookings-init`.
 4. Применить DDL в Greenplum (создать таблицы, включая внешнюю `public.ext_bookings_bookings`):
@@ -220,7 +218,7 @@ FORMAT 'CUSTOM' (formatter='pxfwritable_import');
   - При следующем `make up` Greenplum и PXF будут инициализироваться с нуля, но:
     - JAR и `jdbc-site.xml` возьмутся из репозитория и снова смонтируются в `/data/pxf/...`;
     - `make ddl-gp` снова создаст внешнюю таблицу `public.ext_bookings_bookings`.
-  - То есть после полного ресета студенту достаточно повторить цепочку `make up` → `make airflow-init` → `make bookings-init` → `make ddl-gp`.
+  - То есть после полного ресета студенту достаточно повторить цепочку `make up` → `make bookings-init` → `make ddl-gp`.
 - **Где искать логи при проблемах с PXF**:
   - Логи PXF: в контейнере `greenplum` под пользователем `gpadmin` в каталоге `${PXF_BASE}/logs` (по умолчанию `/data/pxf/logs`).
   - Логи Greenplum: в `${GREENPLUM_DATA_DIRECTORY}/master/.../pg_log` (например, `/data/master/gpseg-1/pg_log` для GP6).

@@ -20,7 +20,7 @@
 
 - Установите Docker Desktop и Git.
 - Скопируйте настройки: `cp .env.example .env`.
-- Поднимите стенд: `docker compose up -d` и инициализируйте Airflow: `docker compose run --rm airflow-init`.
+- Поднимите стенд: `make up` (или `docker compose up -d` — сервис `airflow-init` запустится автоматически при первом старте).
 - Откройте UI: http://localhost:8080 (admin/admin).
 - Включите и запустите DAG `csv_to_greenplum`. Дождитесь Success.
 - Проверьте данные: `make gp-psql` → `SELECT COUNT(*) FROM public.orders;`.
@@ -107,7 +107,7 @@ make up
 
 С `make` команды становятся короче:
 ```bash
-make up && make airflow-init    # Запуск стека
+make up                         # Запуск стека (включая airflow-init при первом старте)
 make logs                       # Просмотр логов
 make gp-psql                    # Подключение к Greenplum
 ```
@@ -181,9 +181,9 @@ uv run black --check airflow tests
 ### Полезные команды
 ```bash
 # Основные команды
-make up                 # Запустить весь стенд
+make up                 # Запустить весь стенд (Airflow инициализируется автоматически при первом старте)
 make down               # Остановить и удалить данные
-make airflow-init       # Инициализировать Airflow
+make airflow-init       # Ручной запуск инициализации Airflow (обычно не нужен)
 make ddl-gp             # Применить DDL к Greenplum вручную
 make gp-psql            # Подключиться к Greenplum через psql
 make bookings-init      # Установить демобазу bookings в Postgres (по умолчанию генерирует 1 день)
@@ -361,7 +361,7 @@ load_bookings_to_stg = PostgresOperator(
 | Не открывается порт 8080/5433/5434/5435 | Проверьте, что эти порты не заняты локальными сервисами; при необходимости остановите их или измените порты в `.env`/`docker-compose.yml` |
 | Нет файла в `./data` после запуска DAG | Проверьте логи задачи `generate_csv`, убедитесь, что `CSV_DIR` смонтирован в docker-compose |
 | Команда `make` не найдена | Используйте полные команды `docker compose` или установите make |
-| Greenplum не стартует/падает при старте | Выполните `make down`, затем `make up && make airflow-init` (очищает тома и поднимает заново) |
+| Greenplum не стартует/падает при старте | Выполните `make down`, затем `make up` (очищает тома и поднимает заново, включая авто‑инициализацию Airflow) |
 | DAG `bookings_to_gp_stage` падает на внешней таблице/подключении к bookings | Убедитесь, что запущен контейнер `bookings-db` (`docker compose ps`, при необходимости `docker compose start bookings-db`), и выполнены `make bookings-init` и `make ddl-gp` или DAG `bookings_stg_ddl` |
 | DAG `bookings_to_gp_stage` ругается на отсутствующие таблицы stg | Запустите DAG `bookings_stg_ddl` (или выполните `make ddl-gp`), затем повторите запуск |
 | DAG не видит Greenplum/DEMObase по Airflow Connections | Проверьте, что в Airflow созданы подключения `greenplum_conn` и `bookings_db` с параметрами из раздела «Настройка подключения к Greenplum в Airflow» и блока про bookings |

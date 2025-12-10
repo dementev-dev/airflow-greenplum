@@ -76,6 +76,8 @@ services:
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${PG_USER}:${PG_PASSWORD}@pgmeta:5432/${PG_DB}
       AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
+      AIRFLOW_CONN_GREENPLUM_CONN: postgresql+psycopg2://${GP_USER}:${GP_PASSWORD}@greenplum:${GP_PORT:-5432}/${GP_DB}
+      AIRFLOW_CONN_BOOKINGS_DB: postgresql+psycopg2://${BOOKINGS_DB_USER}:${BOOKINGS_DB_PASSWORD}@bookings-db:5432/demo
     command: >
       bash -lc "pip install --no-cache-dir -r /opt/airflow/requirements.txt &&
       airflow webserver"
@@ -101,6 +103,8 @@ services:
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${PG_USER}:${PG_PASSWORD}@pgmeta:5432/${PG_DB}
       AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
+      AIRFLOW_CONN_GREENPLUM_CONN: postgresql+psycopg2://${GP_USER}:${GP_PASSWORD}@greenplum:${GP_PORT:-5432}/${GP_DB}
+      AIRFLOW_CONN_BOOKINGS_DB: postgresql+psycopg2://${BOOKINGS_DB_USER}:${BOOKINGS_DB_PASSWORD}@bookings-db:5432/demo
     command: >
       bash -lc "pip install --no-cache-dir -r /opt/airflow/requirements.txt &&
       airflow scheduler"
@@ -124,6 +128,8 @@ services:
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${PG_USER}:${PG_PASSWORD}@pgmeta:5432/${PG_DB}
       AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
+      AIRFLOW_CONN_GREENPLUM_CONN: postgresql+psycopg2://${GP_USER}:${GP_PASSWORD}@greenplum:${GP_PORT:-5432}/${GP_DB}
+      AIRFLOW_CONN_BOOKINGS_DB: postgresql+psycopg2://${BOOKINGS_DB_USER}:${BOOKINGS_DB_PASSWORD}@bookings-db:5432/demo
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/requirements.txt:/opt/airflow/requirements.txt

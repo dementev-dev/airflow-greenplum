@@ -69,9 +69,6 @@ with DAG(
         task_id="load_bookings_to_stg",
         postgres_conn_id=GREENPLUM_CONN_ID,
         sql="stg/bookings_load.sql",
-        params={
-            "batch_id": "{{ ds_nodash }}",
-        },
     )
 
     # 3. Проверяем количество строк между источником и stg.bookings
@@ -79,9 +76,6 @@ with DAG(
         task_id="check_row_counts",
         postgres_conn_id=GREENPLUM_CONN_ID,
         sql="stg/bookings_dq.sql",
-        params={
-            "batch_id": "{{ ds_nodash }}",
-        },
     )
 
     # 4. Финальный лог/сводка

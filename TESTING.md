@@ -36,6 +36,12 @@
    - Запустить вручную после первого DAG.
    - Проверить, что все 5 задач Success и логи содержат `Проверка пройдена`.
 
+- DAG `bookings_to_gp_stage` (полная проверка цепочки bookings → Greenplum STG):
+  - предварительно выполнить один раз: `make bookings-init` (инициализация демо‑БД bookings) и `make ddl-gp` (создаёт `stg.bookings_ext` и `stg.bookings` в Greenplum);
+  - включить DAG `bookings_to_gp_stage` и запустить `Trigger DAG`;
+  - убедиться, что все задачи (`generate_bookings_day`, `load_bookings_to_stg`, `check_row_counts`, `finish_summary`) завершились со статусом Success;
+  - при желании проверить данные: в `bookings-db` появился новый день, а в Greenplum в `stg.bookings` — строки с актуальным `batch_id` (см. пример запросов в разделе 5).
+
 - (опционально, для менторов/разработчиков) Smoke-тест DAG через Airflow CLI без UI:
   - `docker compose -f docker-compose.yml exec gp_airflow_web airflow dags test bookings_to_gp_stage 2024-01-01` — прогоняет `bookings_to_gp_stage` целиком в «off-line» режиме;
   - `docker compose -f docker-compose.yml exec gp_airflow_web airflow dags trigger bookings_to_gp_stage` — создаёт реальный запуск DAG (логи и статус можно смотреть либо через UI, либо командой `airflow tasks list`/`airflow tasks logs` внутри контейнера).

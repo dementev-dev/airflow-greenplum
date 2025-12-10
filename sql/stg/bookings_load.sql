@@ -17,13 +17,13 @@ SELECT
     total_amount::text,
     book_date::timestamp,
     now(),
-    {{ params.batch_id | tojson }}::text
+    '{{ ds_nodash }}'::text
 FROM stg.bookings_ext
 WHERE book_date > COALESCE(
     (
         SELECT max(src_created_at_ts)
         FROM stg.bookings
-        WHERE batch_id <> {{ params.batch_id | tojson }}::text
+        WHERE batch_id <> '{{ ds_nodash }}'::text
             OR batch_id IS NULL
     ),
     TIMESTAMP '1900-01-01 00:00:00'

@@ -48,8 +48,8 @@ def test_csv_to_greenplum_dag_structure():
     assert t4 in t3.get_direct_relatives("downstream")
 
 
-def test_data_quality_greenplum_dag_structure():
-    dag = _load_dag("airflow.dags.data_quality_greenplum")
+def test_csv_to_greenplum_dq_dag_structure():
+    dag = _load_dag("airflow.dags.csv_to_greenplum_dq")
 
     expected_tasks = {
         "check_orders_table_exists",

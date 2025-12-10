@@ -3,7 +3,7 @@
 Эта репа — учебный стенд для студентов (менти), которые только начинают с Airflow/Greenplum и Python. Пожалуйста, держите решения простыми, стабильными и хорошо объяснёнными.
 
 ## Структура проекта
-- `airflow/dags/` — DAG-файлы (например, `csv_to_greenplum.py`, `data_quality_greenplum.py`).
+- `airflow/dags/` — DAG-файлы (например, `csv_to_greenplum.py`, `csv_to_greenplum_dq.py`).
 - `airflow/requirements.txt` — зависимости, которые ставятся внутри контейнеров Airflow.
 - `sql/` — DDL и вспомогательные SQL (например, `sql/ddl_gp.sql`).
 - `docker-compose.yml` — Greenplum, Airflow, Postgres (мета-БД).

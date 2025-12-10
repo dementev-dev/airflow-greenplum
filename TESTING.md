@@ -31,7 +31,7 @@
    - Нажать «Trigger DAG».
    - Контроль: все таски Success, в `data/` появился CSV, в логах `load_csv_to_greenplum` видно `INSERT`.
    - В Greenplum (см. п.5) убедиться в наличии строк `(SELECT COUNT(*) ...)`.
-3. DAG `greenplum_data_quality`:
+3. DAG `csv_to_greenplum_dq`:
    - Запустить вручную после первого DAG.
    - Проверить, что все 5 задач Success и логи содержат `Проверка пройдена`.
 
@@ -47,10 +47,10 @@
 - Завершить `\q`.
 
 ## 6. Негативные сценарии и fallback
-- **Пустая таблица**: запустить `greenplum_data_quality` до `csv_to_greenplum`. Ожидается ошибка на таске `check_orders_has_rows`.
+- **Пустая таблица**: запустить `csv_to_greenplum_dq` до `csv_to_greenplum`. Ожидается ошибка на таске `check_orders_has_rows`.
 - **Проблемы с подключением**: временно изменить `GP_HOST` или `GP_PORT` на несуществующий, перезапустить `make up`, убедиться, что DAG падает с понятной ошибкой (`psycopg2.OperationalError`).
 - **Fallback без Airflow Connection**: установить `GP_USE_AIRFLOW_CONN=false`, перезапустить стек (`make down && make up && make airflow-init`), удостовериться, что загрузка и DQ работают через ENV.
-- **Дубликаты**: дважды вызвать `csv_to_greenplum` — ожидаем, что количество строк в `public.orders` не увеличится на размер CSV, а DAG `greenplum_data_quality` не найдёт дублей.
+- **Дубликаты**: дважды вызвать `csv_to_greenplum` — ожидаем, что количество строк в `public.orders` не увеличится на размер CSV, а DAG `csv_to_greenplum_dq` не найдёт дублей.
 
 ## 7. Быстрый reset (если «что-то сломалось»)
 - Перезапустить стенд с очисткой данных:

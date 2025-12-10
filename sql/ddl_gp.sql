@@ -1,28 +1,15 @@
 -- Главный входной DDL-скрипт для Greenplum в учебном стенде.
 -- Выполняется из контейнера командой `make ddl-gp` и создаёт/обновляет
--- все объекты, которые нужны базовым DAG (csv_to_greenplum, bookings_to_gp_stage).
+-- все объекты, которые нужны базовым DAG (csv_to_greenplum, bookings_to_gp_stage);
+-- подключает файловые DDL через \i, чтобы сохранять единый входной скрипт.
 --
--- Идея такая:
---   - здесь описаны только верхнеуровневые объекты (orders, внешняя таблица bookings);
---   - более подробный DDL для отдельных слоёв (stg, src и т.п.) лежит в соседних файлах
---     в каталоге sql/ и подключается через psql-команду \i;
---   - чтобы не ломать задания, новые объекты лучше добавлять в отдельные файлы и
---     подключать их отсюда, а существующие определения не удалять.
+-- Чтобы не ломать задания, новые объекты лучше добавлять в отдельные файлы
+-- и подключать их отсюда, а существующие определения не удалять.
 --
 -- Подробнее про STG/bookings: см. docs/internal/bookings_stg_readme.md.
 
 -- Таблица для CSV‑пайплайна (csv_to_greenplum).
--- Колонночная таблица (append-optimized) и распределение по ключу.
--- Внимание: append-optimized таблицы не поддерживают UNIQUE/PRIMARY KEY,
--- поэтому контроль дублей выполняем в DAG при загрузке.
-CREATE TABLE IF NOT EXISTS public.orders (
-    order_id    BIGINT,
-    order_ts    TIMESTAMP NOT NULL,
-    customer_id BIGINT NOT NULL,
-    amount      NUMERIC(12,2) NOT NULL
-)
-WITH (appendonly=true, orientation=row, compresstype=zlib, compresslevel=1)
-DISTRIBUTED BY (order_id);
+\i base/orders_ddl.sql
 
 -- Внешняя таблица для чтения данных из демо-БД bookings через PXF (JDBC).
 -- Источник: таблица bookings.bookings в базе demo (Postgres, сервис bookings-db).

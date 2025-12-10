@@ -76,7 +76,7 @@ DDL будет добавлен в `sql/ddl_gp.sql` в блоке DDL для Gre
 
 ### 4.1. DAG для DDL
 
-- `dag_id`: `bookings_stg_ddl` (рабочее имя).
+- `dag_id`: `bookings_stg_ddl` (реализован в `airflow/dags/bookings_stg_ddl.py`).
 - Назначение: один раз (или при изменении схемы) создать необходимые объекты в Greenplum:
   - схему `stg` (если её ещё нет);
   - внешнюю таблицу `stg.bookings_ext` (PXF → `bookings-db`);

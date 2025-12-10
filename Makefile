@@ -32,7 +32,7 @@ gp-psql:
 	docker compose -f docker-compose.yml exec greenplum bash -c "su - gpadmin -c '/usr/local/greenplum-db/bin/psql -p 5432 -d gp_dwh'"
 
 ddl-gp:
-	docker compose -f docker-compose.yml exec greenplum bash -c "su - gpadmin -c '/usr/local/greenplum-db/bin/psql -d gp_dwh -f /sql/ddl_gp.sql'"
+	docker compose -f docker-compose.yml exec greenplum bash -c "su - gpadmin -c 'cd /sql && /usr/local/greenplum-db/bin/psql -d gp_dwh -f ddl_gp.sql'"
 
 bookings-clone-demodb:
 	mkdir -p bookings

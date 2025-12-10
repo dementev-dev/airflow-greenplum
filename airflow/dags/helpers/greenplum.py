@@ -50,14 +50,17 @@ def get_gp_conn():
 
     # Прямое подключение по переменным окружения
     conn_params = {
-        "dbname": os.getenv("GP_DB", "gpadmin"),
+        "dbname": os.getenv("GP_DB", "gp_dwh"),
         "user": os.getenv("GP_USER", "gpadmin"),
         "password": os.getenv("GP_PASSWORD", ""),
         "host": os.getenv("GP_HOST", "greenplum"),
         "port": int(os.getenv("GP_PORT", "5432")),
     }
     logging.info(
-        "🔗 Подключение к Greenplum: %s:%s", conn_params["host"], conn_params["port"]
+        "🔗 Подключение к Greenplum: %s:%s/%s",
+        conn_params["host"],
+        conn_params["port"],
+        conn_params["dbname"],
     )
     return psycopg2.connect(**conn_params)
 

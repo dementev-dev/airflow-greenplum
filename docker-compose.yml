@@ -5,6 +5,7 @@ services:
     # container_name: gp_pgmeta
     env_file: .env
     environment:
+      TZ: ${TZ:-Europe/Moscow}
       POSTGRES_USER: ${PG_USER}
       POSTGRES_PASSWORD: ${PG_PASSWORD}
       POSTGRES_DB: ${PG_DB}
@@ -18,25 +19,50 @@ services:
       timeout: 5s
       retries: 20
 
+  # Postgres с демо-БД bookings (источник для будущего DWH)
+  bookings-db:
+    image: postgres:16
+    env_file: .env
+    environment:
+      TZ: ${TZ:-Europe/Moscow}
+      POSTGRES_USER: ${BOOKINGS_DB_USER}
+      POSTGRES_PASSWORD: ${BOOKINGS_DB_PASSWORD}
+      POSTGRES_DB: ${BOOKINGS_DB_NAME}
+    ports:
+      - "${BOOKINGS_DB_PORT:-5434}:5432"
+    volumes:
+      - bookings_data:/var/lib/postgresql/data
+      # В этот каталог будет монтироваться генератор demodb
+      - ./bookings:/bookings:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${BOOKINGS_DB_USER} -d ${BOOKINGS_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   greenplum:
     image: woblerr/greenplum:6.27.1  # based on https://github.com/woblerr/docker-greenplum
     # container_name: gp_single
     # hostname: gpdbsne
     environment:
+      TZ: ${TZ:-Europe/Moscow}
       GREENPLUM_USER: ${GP_USER:-gpadmin}
       GREENPLUM_PASSWORD: ${GP_PASSWORD:-gpadmin}
-      GREENPLUM_DATABASE_NAME: ${GP_DB:-gpadmin}
-      # GP_PORT: ${GP_PORT:-5432}
-    # Порты: внешний 5432
+      GREENPLUM_DATABASE_NAME: ${GP_DB:-gp_dwh}
+      GREENPLUM_PXF_ENABLE: "true"
+    # Порты: внешний 5435 (на хосте)
     ports:
-      - "${GP_PORT}:5432"
+      - "5435:5432"
     volumes:
       - ./sql:/sql:ro
+      - ./pxf/postgresql-42.7.3.jar:/pxf-local/postgresql-42.7.3.jar:ro
+      - ./pxf/servers/bookings-db:/pxf-local/servers/bookings-db:ro
+      - ./pxf/init/10_pxf_bookings.sh:/docker-entrypoint-initdb.d/10_pxf_bookings.sh:ro
       - greenplum_data:/data
       - airflow_data:/opt/airflow/data
     # Простая проверка доступности: psql откликается
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U ${GP_USER:-gpadmin} -d ${GP_DB:-gpadmin} || echo 1"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U ${GP_USER:-gpadmin} -d ${GP_DB:-gp_dwh} || echo 1"]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -46,9 +72,12 @@ services:
     container_name: gp_airflow_web
     env_file: .env
     environment:
+      TZ: ${TZ:-Europe/Moscow}
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${PG_USER}:${PG_PASSWORD}@pgmeta:5432/${PG_DB}
       AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
+      AIRFLOW_CONN_GREENPLUM_CONN: postgresql://${GP_USER}:${GP_PASSWORD}@greenplum:${GP_PORT:-5432}/${GP_DB}
+      AIRFLOW_CONN_BOOKINGS_DB: postgresql://${BOOKINGS_DB_USER}:${BOOKINGS_DB_PASSWORD}@bookings-db:5432/demo
     command: >
       bash -lc "pip install --no-cache-dir -r /opt/airflow/requirements.txt &&
       airflow webserver"
@@ -57,6 +86,7 @@ services:
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/requirements.txt:/opt/airflow/requirements.txt
+      - ./sql:/sql:ro
       - airflow_data:/opt/airflow/data
     depends_on:
       pgmeta:
@@ -69,15 +99,19 @@ services:
     container_name: gp_airflow_sch
     env_file: .env
     environment:
+      TZ: ${TZ:-Europe/Moscow}
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${PG_USER}:${PG_PASSWORD}@pgmeta:5432/${PG_DB}
       AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
+      AIRFLOW_CONN_GREENPLUM_CONN: postgresql://${GP_USER}:${GP_PASSWORD}@greenplum:${GP_PORT:-5432}/${GP_DB}
+      AIRFLOW_CONN_BOOKINGS_DB: postgresql://${BOOKINGS_DB_USER}:${BOOKINGS_DB_PASSWORD}@bookings-db:5432/demo
     command: >
       bash -lc "pip install --no-cache-dir -r /opt/airflow/requirements.txt &&
       airflow scheduler"
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/requirements.txt:/opt/airflow/requirements.txt
+      - ./sql:/sql:ro
       - airflow_data:/opt/airflow/data
     depends_on:
       pgmeta:
@@ -90,13 +124,16 @@ services:
     # container_name: gp_airflow_init
     env_file: .env
     environment:
+      TZ: ${TZ:-Europe/Moscow}
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${PG_USER}:${PG_PASSWORD}@pgmeta:5432/${PG_DB}
       AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
-    user: "0:0"
+      AIRFLOW_CONN_GREENPLUM_CONN: postgresql://${GP_USER}:${GP_PASSWORD}@greenplum:${GP_PORT:-5432}/${GP_DB}
+      AIRFLOW_CONN_BOOKINGS_DB: postgresql://${BOOKINGS_DB_USER}:${BOOKINGS_DB_PASSWORD}@bookings-db:5432/demo
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/requirements.txt:/opt/airflow/requirements.txt
+      - ./sql:/sql:ro
       - airflow_data:/opt/airflow/data
     command: >
       bash -lc "
@@ -117,5 +154,6 @@ services:
 
 volumes:
   pgmeta:
+  bookings_data:
   greenplum_data:
   airflow_data:

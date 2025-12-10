@@ -4,10 +4,13 @@ import logging
 from datetime import datetime, timedelta
 
 from airflow.operators.python import PythonOperator
-from helpers.greenplum import (assert_orders_have_rows,
-                               assert_orders_no_duplicates,
-                               assert_orders_schema,
-                               assert_orders_table_exists, get_gp_conn)
+from helpers.greenplum import (
+    assert_orders_have_rows,
+    assert_orders_no_duplicates,
+    assert_orders_schema,
+    assert_orders_table_exists,
+    get_gp_conn,
+)
 
 from airflow import DAG
 
@@ -16,7 +19,8 @@ def _run_check(check_callable):
     """
     Оборачивает проверку качества данных в контекст подключения к Greenplum.
 
-    Этот DAG предназначен для автоматической проверки качества данных в таблице orders:
+    Этот DAG предназначен для автоматической проверки качества данных
+    после CSV-пайплайна в таблице public.orders:
     1. Проверяет существование таблицы
     2. Проверяет соответствие схемы
     3. Проверяет наличие данных
@@ -47,13 +51,13 @@ def _log_dq_summary():
 default_args = {"owner": "airflow", "retries": 1, "retry_delay": timedelta(seconds=30)}
 
 with DAG(
-    dag_id="greenplum_data_quality",
+    dag_id="csv_to_greenplum_dq",
     start_date=datetime(2024, 1, 1),
     schedule=None,
     catchup=False,
     default_args=default_args,
-    tags=["demo", "greenplum", "quality"],
-    description="Автоматизированные проверки качества данных в Greenplum",
+    tags=["demo", "greenplum", "quality", "csv", "dq"],
+    description="Проверки качества данных после CSV → public.orders в Greenplum",
 ) as dag:
     # Задача 1: Проверка существования таблицы
     check_exists = PythonOperator(

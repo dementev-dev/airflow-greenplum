@@ -86,41 +86,45 @@ DDL будет добавлен в `sql/ddl_gp.sql` в блоке DDL для Gre
 
 ### 4.2. DAG для ежедневной загрузки
 
-- `dag_id`: `bookings_to_gp_stage` (рабочее имя).
+- `dag_id`: `bookings_to_gp_stage`.
 - Основные параметры:
-  - `load_date` (по умолчанию `{{ ds }}`) — учебный день, за который генерим и грузим данные.
+  - `load_date` (по умолчанию `{{ ds }}`) — учебный день, за который генерим и грузим данные;
   - подключения:
-    - `bookings_db_conn_id` — Airflow connection к `bookings-db`;
-    - `greenplum_conn_id` — Airflow connection к Greenplum.
+    - `bookings_db_conn_id` — Airflow connection к `bookings-db` (в коде DAG — `BOOKINGS_CONN_ID = "bookings_db"`);
+    - `greenplum_conn_id` — Airflow connection к Greenplum (`GREENPLUM_CONN_ID = "greenplum_conn"`).
 
-Предлагаемая последовательность задач:
+Последовательность задач (упрощённая, но отражающая те же шаги):
 
 1. `generate_bookings_day`
-   - при необходимости создаёт таблицу `bookings.bookings` в `bookings-db` (одноразово);
-   - **идемпотентность**: проверяет, есть ли данные за `load_date` в `bookings.bookings`;
-     - если нет — генерирует данные за один учебный день (можно опираться на `make bookings-generate-day` и логику из `docs/internal/bookings_tz.md`);
-     - если да — ничего не делает, логирует «данные за этот день уже есть» и считается успешно выполненной.
-2. `get_last_loaded_ts_from_gp`
-   - читает `max(src_created_at_ts)` из `stg.bookings`;
-   - если данных нет — возвращает `None` и режим загрузки `full`;
-   - результат (последняя метка и режим) передаёт через XCom.
-3. `extract_and_load_increment_via_pxf`
-   - делает `INSERT INTO stg.bookings (...) SELECT ... FROM stg.bookings_ext WHERE src_created_at_ts > :last_ts AND src_created_at_ts <= :window_end`;
-   - в режиме `full` подставляет «минимальную» дату (или просто не фильтрует);
-   - заполняет `src_created_at_ts`, `load_dttm`, `batch_id`.
-4. `check_row_counts`
-   - сравнивает количество строк, прочитанных из `stg.bookings_ext`, и количеством реально вставленных в `stg.bookings`;
-   - при расхождении падает с понятным сообщением «что посмотреть/проверить».
-5. (опционально) `finish_summary`
-   - логирует итог: режим загрузки (full/delta), интервал `src_created_at_ts`, количество строк.
+   - PostgresOperator к `bookings-db`;
+   - выполняет скрипт `/sql/bookings/generate_day_if_missing.sql`;
+   - скрипт сам идемпотентно проверяет, есть ли данные за `load_date` в `bookings.bookings`:
+     - если день уже есть — выдаёт NOTICE и ничего не делает;
+     - если нет — вызывает генератор демобазы (логика как в `bookings/generate_next_day.sql`).
+2. `load_bookings_to_stg`
+   - PostgresOperator к Greenplum;
+   - выполняет скрипт `/sql/stg/bookings_load.sql`;
+   - внутри SQL считается `max(src_created_at_ts)` по «старым» батчам и по нему строится окно инкремента:
+     - первая загрузка (full) — берём все строки из `stg.bookings_ext`;
+     - последующие загрузки — берём только записи, где `book_date` больше предыдущего максимума и не позже конца учебного дня;
+   - при вставке заполняются тех.колонки `src_created_at_ts`, `load_dttm`, `batch_id`.
+3. `check_row_counts`
+   - PostgresOperator к Greenplum;
+   - выполняет скрипт `/sql/stg/bookings_dq.sql`;
+   - скрипт заново считает окно инкремента по тем же правилам, что и загрузка, и сравнивает:
+     - количество строк в `stg.bookings_ext` за окно,
+     - количество строк в `stg.bookings` для текущего `batch_id`;
+   - при расхождении выполняет `RAISE EXCEPTION` с понятным текстом ошибки.
+4. `finish_summary`
+   - PythonOperator, который логирует итог выполнения DAG и напоминает, где смотреть детальные логи.
 
-Эта последовательность служит учебным примером для менти: от генерации «операционных» данных до инкремента в сырой слой DWH.
+Таким образом, вся бизнес‑логика инкремента и проверок живёт в SQL‑скриптах, а DAG отвечает за оркестрацию и подключение к нужным БД. Для менти это хороший пример разделения ответственности между SQL и Python.
 
 ## 5. Связь с остальными документами
 
 - `docs/internal/bookings_tz.md` — как готовится и генерируется источник `bookings-db`.
 - `docs/internal/pxf_bookings.md` — детали настройки PXF и внешней таблицы для чтения из `bookings-db`.
-- `sql/ddl_gp.sql` — итоговый DDL для схемы `stg` и таблиц `stg.bookings_ext` / `stg.bookings` (применяется через `make ddl-gp`).
+- `sql/stg/bookings_ddl.sql` — DDL для схемы `stg` и таблиц `stg.bookings_ext` / `stg.bookings` (подключается из `sql/ddl_gp.sql` и применяется через `make ddl-gp`).
 
 Дальнейшая модель DWH (слои ODS/DDS/DM, факт/измерения, SCD) должна быть спроектирована студентом по статье о моделировании данных, используя `stg.bookings` как входной слой.
 

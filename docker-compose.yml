@@ -84,6 +84,7 @@ services:
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/requirements.txt:/opt/airflow/requirements.txt
+      - ./sql:/sql:ro
       - airflow_data:/opt/airflow/data
     depends_on:
       pgmeta:
@@ -106,6 +107,7 @@ services:
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/requirements.txt:/opt/airflow/requirements.txt
+      - ./sql:/sql:ro
       - airflow_data:/opt/airflow/data
     depends_on:
       pgmeta:
@@ -126,6 +128,7 @@ services:
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/requirements.txt:/opt/airflow/requirements.txt
+      - ./sql:/sql:ro
       - airflow_data:/opt/airflow/data
     command: >
       bash -lc "

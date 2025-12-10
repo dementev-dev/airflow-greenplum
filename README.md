@@ -239,6 +239,30 @@ docker compose -f docker-compose.yml exec bookings-db bash -lc 'PGPASSWORD="$POS
 - Объем загруженных данных
 - Отсутствие дубликатов записей
 
+### Пример DAG с SQL-скриптами (bookings → stg)
+
+В репозитории есть учебный DAG `bookings_to_gp_stage`, который показывает «канонический» способ работы с SQL в Airflow:
+
+- подключение к БД через Airflow Connections (`bookings_db`, `greenplum_conn`);
+- бизнес-логика инкрементальной загрузки и DQ вынесена в SQL-файлы в каталоге `sql/`:
+  - `sql/src/bookings_generate_day_if_missing.sql` — генерация учебного дня в демо-БД bookings (идемпотентно);
+  - `sql/stg/bookings_ddl.sql` — DDL для схемы `stg` и таблиц `stg.bookings_ext` / `stg.bookings`;
+  - `sql/stg/bookings_load.sql` — загрузка инкремента из `stg.bookings_ext` в `stg.bookings`;
+  - `sql/stg/bookings_dq.sql` — проверка количества строк между источником и stg.
+
+Фрагмент DAG:
+
+```python
+load_bookings_to_stg = PostgresOperator(
+    task_id="load_bookings_to_stg",
+    postgres_conn_id="greenplum_conn",
+    sql="/sql/stg/bookings_load.sql",
+    params={"load_date": "{{ ds }}", "batch_id": "{{ ds_nodash }}"},
+)
+```
+
+Такой подход помогает держать оркестрацию (DAG) и SQL-логику в отдельных файлах и легче сравнивать её с теорией из статьи про моделирование DWH.
+
 ### Ограничения учебного стенда
 
 - **Greenplum** запущен в single-node режиме (для обучения)

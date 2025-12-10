@@ -61,6 +61,7 @@ with DAG(
         task_id="generate_bookings_day",
         postgres_conn_id=BOOKINGS_CONN_ID,
         sql="src/bookings_generate_day_if_missing.sql",
+        autocommit=True,
     )
 
     # 2. Загружаем инкремент из stg.bookings_ext в stg.bookings

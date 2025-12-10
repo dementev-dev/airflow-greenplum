@@ -36,6 +36,10 @@
    - Запустить вручную после первого DAG.
    - Проверить, что все 5 задач Success и логи содержат `Проверка пройдена`.
 
+- (опционально, для менторов/разработчиков) Smoke-тест DAG через Airflow CLI без UI:
+  - `docker compose -f docker-compose.yml exec gp_airflow_web airflow dags test bookings_to_gp_stage 2024-01-01` — прогоняет `bookings_to_gp_stage` целиком в «off-line» режиме;
+  - `docker compose -f docker-compose.yml exec gp_airflow_web airflow dags trigger bookings_to_gp_stage` — создаёт реальный запуск DAG (логи и статус можно смотреть либо через UI, либо командой `airflow tasks list`/`airflow tasks logs` внутри контейнера).
+
 ## 5. Проверка данных в Greenplum
 - `make gp-psql` — запустить psql в контейнере от имени `gpadmin`.
 - Команды внутри psql:

@@ -47,7 +47,21 @@ make test
 warn "Airflow DAG test: csv_to_greenplum"
 docker compose -f docker-compose.yml exec airflow-webserver airflow dags test csv_to_greenplum 2024-01-01
 
+warn "Check orders count in Greenplum"
+ORDERS_COUNT=$(docker compose -f docker-compose.yml exec greenplum bash -lc "su - gpadmin -c \"/usr/local/greenplum-db/bin/psql -t -A -d gp_dwh -c 'SELECT COUNT(*) FROM public.orders;'\"")
+if [ "${ORDERS_COUNT:-0}" -le 0 ]; then
+  echo "orders table is empty after csv_to_greenplum (COUNT=${ORDERS_COUNT:-0})" >&2
+  exit 1
+fi
+
 warn "Airflow DAG test: bookings_to_gp_stage"
 docker compose -f docker-compose.yml exec airflow-webserver airflow dags test bookings_to_gp_stage 2024-01-01
+
+warn "Check stg.bookings count in Greenplum"
+BOOKINGS_COUNT=$(docker compose -f docker-compose.yml exec greenplum bash -lc "su - gpadmin -c \"/usr/local/greenplum-db/bin/psql -t -A -d gp_dwh -c 'SELECT COUNT(*) FROM stg.bookings;'\"")
+if [ "${BOOKINGS_COUNT:-0}" -le 0 ]; then
+  echo "stg.bookings is empty after bookings_to_gp_stage (COUNT=${BOOKINGS_COUNT:-0})" >&2
+  exit 1
+fi
 
 warn "Smoke test completed successfully"

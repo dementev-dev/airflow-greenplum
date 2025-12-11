@@ -10,6 +10,7 @@ BOOKINGS_INIT_DAYS ?= 1
 .PHONY: up stop down clean airflow-init logs gp-psql ddl-gp \
 	bookings-clone-demodb bookings-init bookings-psql bookings-generate-day \
 	dev-setup dev-sync dev-lock test lint fmt clean-venv
+SHELL := /bin/bash
 
 up:
 	docker compose -f docker-compose.yml up -d
@@ -113,3 +114,6 @@ fmt:
 
 clean-venv:
 	python -c "import shutil; shutil.rmtree('.venv', ignore_errors=True)"
+
+e2e-smoke:
+	./scripts/e2e_smoke.sh

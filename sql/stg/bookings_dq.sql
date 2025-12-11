@@ -23,6 +23,12 @@ BEGIN
     FROM stg.bookings_ext
     WHERE book_date > COALESCE(v_prev_ts, TIMESTAMP '1900-01-01 00:00:00');
 
+    IF v_src_count = 0 THEN
+        RAISE EXCEPTION
+            'В источнике bookings_ext нет строк для окна инкремента (book_date > %). Проверьте генерацию данных (make bookings-init / make bookings-generate-day или таск generate_bookings_day).',
+            COALESCE(v_prev_ts, TIMESTAMP '1900-01-01 00:00:00');
+    END IF;
+
     -- Считаем строки, реально вставленные в stg.bookings в этом батче
     SELECT COUNT(*)
     INTO v_stg_count

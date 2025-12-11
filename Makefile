@@ -42,11 +42,11 @@ bookings-clone-demodb:
 		git -C bookings/demodb checkout $(DEMODB_COMMIT); \
 	fi
 	# Патчим generate/continue: при jobs=1 запускаем process_queue синхронно, без dblink
-	if ! grep -q "CALL process_queue(end_date);" bookings/demodb/engine.sql; then \
+	if ! grep -q "Job 1 (local): ok" bookings/demodb/engine.sql; then \
 		patch -d bookings/demodb -p1 --forward < bookings/patches/engine_jobs1_sync.patch || true; \
 	fi
-	# Делаем установку идемпотентной: DROP DATABASE IF EXISTS demo
-	if ! grep -q "DROP DATABASE IF EXISTS demo;" bookings/demodb/install.sql; then \
+	# Делаем установку идемпотентной и принудительной: DROP DATABASE IF EXISTS demo WITH (FORCE)
+	if ! grep -q "DROP DATABASE IF EXISTS demo WITH (FORCE);" bookings/demodb/install.sql; then \
 		patch -d bookings/demodb -p1 --forward < bookings/patches/install_drop_if_exists.patch || true; \
 	fi
 

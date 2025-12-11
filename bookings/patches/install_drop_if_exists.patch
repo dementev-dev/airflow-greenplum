@@ -5,7 +5,7 @@
  */
  
 -DROP DATABASE demo;
-+DROP DATABASE IF EXISTS demo;
++DROP DATABASE IF EXISTS demo WITH (FORCE);
  CREATE DATABASE demo;
  \c demo
  CREATE EXTENSION btree_gist;

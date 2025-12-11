@@ -216,12 +216,17 @@ docker compose -f docker-compose.yml exec bookings-db bash -lc 'PGPASSWORD="$POS
 - Рекомендуемый учебный сценарий для DAG `bookings_to_gp_stage`: запускать DAG по одному дню вперёд, выбирая в форме Trigger логическую дату `Execution Date (ds)`, совпадающую с тем днём, который вы хотите загрузить (например, `2017-01-01`, затем `2017-01-02` и т.д.).
 
 - Быстрее всего: `make bookings-generate-day` — читает GUC и сам вызывает `continue`.
-- Вручную из psql/DBeaver:
+- Вручную из psql/DBeaver (подзапросы в аргументах CALL не работают, поэтому через DO-блок):
   ```sql
-  CALL continue(
-    (SELECT date_trunc('day', max(book_date)) + interval '1 day' FROM bookings.bookings)
-  );
-  -- или с параллельностью: CALL continue((SELECT ...), 4);
+  DO $$
+  DECLARE
+    v_next_day timestamptz;
+  BEGIN
+    SELECT date_trunc('day', max(book_date)) + interval '1 day'
+    INTO v_next_day
+    FROM bookings.bookings;
+    CALL continue(v_next_day);           -- или CALL continue(v_next_day, 4) для параллельности
+  END $$;
   ```
 - Не вызывайте `CALL generate(...)` поверх существующих данных: она делает TRUNCATE и создаёт демобазу заново.
 

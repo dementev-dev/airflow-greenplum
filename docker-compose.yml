@@ -14,7 +14,7 @@ services:
     volumes:
       - pgmeta:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${PG_USER} -d ${PG_DB}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${PG_USER} -d ${PG_DB}" ]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -35,13 +35,13 @@ services:
       # В этот каталог будет монтироваться генератор demodb
       - ./bookings:/bookings:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${BOOKINGS_DB_USER} -d ${BOOKINGS_DB_NAME}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${BOOKINGS_DB_USER} -d ${BOOKINGS_DB_NAME}" ]
       interval: 5s
       timeout: 5s
       retries: 20
 
   greenplum:
-    image: woblerr/greenplum:6.27.1  # based on https://github.com/woblerr/docker-greenplum
+    image: woblerr/greenplum:6.27.1 # based on https://github.com/woblerr/docker-greenplum
     # container_name: gp_single
     # hostname: gpdbsne
     environment:
@@ -61,13 +61,14 @@ services:
       - greenplum_data:/data
     # Простая проверка доступности: psql откликается
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U ${GP_USER:-gpadmin} -d ${GP_DB:-gp_dwh} || echo 1"]
+      test: [ "CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U ${GP_USER:-gpadmin} -d ${GP_DB:-gp_dwh} || echo 1" ]
       interval: 10s
       timeout: 5s
       retries: 30
 
   airflow-webserver:
-    image: apache/airflow:2.9.2
+    build: .
+    image: airflow-custom:latest
     container_name: gp_airflow_web
     env_file: .env
     environment:
@@ -77,9 +78,7 @@ services:
       AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
       AIRFLOW_CONN_GREENPLUM_CONN: postgresql://${GP_USER}:${GP_PASSWORD}@greenplum:${GP_PORT:-5432}/${GP_DB}
       AIRFLOW_CONN_BOOKINGS_DB: postgresql://${BOOKINGS_DB_USER}:${BOOKINGS_DB_PASSWORD}@bookings-db:5432/demo
-    command: >
-      bash -lc "pip install --no-cache-dir -r /opt/airflow/requirements.txt &&
-      airflow webserver"
+    command: airflow webserver
     ports:
       - "8080:8080"
     volumes:
@@ -96,7 +95,8 @@ services:
         condition: service_completed_successfully
 
   airflow-scheduler:
-    image: apache/airflow:2.9.2
+    build: .
+    image: airflow-custom:latest
     container_name: gp_airflow_sch
     env_file: .env
     environment:
@@ -106,9 +106,7 @@ services:
       AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
       AIRFLOW_CONN_GREENPLUM_CONN: postgresql://${GP_USER}:${GP_PASSWORD}@greenplum:${GP_PORT:-5432}/${GP_DB}
       AIRFLOW_CONN_BOOKINGS_DB: postgresql://${BOOKINGS_DB_USER}:${BOOKINGS_DB_PASSWORD}@bookings-db:5432/demo
-    command: >
-      bash -lc "pip install --no-cache-dir -r /opt/airflow/requirements.txt &&
-      airflow scheduler"
+    command: airflow scheduler
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./airflow/requirements.txt:/opt/airflow/requirements.txt
@@ -123,7 +121,8 @@ services:
         condition: service_completed_successfully
 
   airflow-init:
-    image: apache/airflow:2.9.2
+    build: .
+    image: airflow-custom:latest
     # container_name: gp_airflow_init
     user: "0"
     env_file: .env
@@ -143,7 +142,6 @@ services:
       bash -lc "
         set -e;
         mkdir -p /opt/airflow/data && chown -R airflow:root /opt/airflow/data;
-        su -s /bin/bash airflow -c \"PATH='/home/airflow/.local/bin:$${PATH}' pip install --no-cache-dir -r /opt/airflow/requirements.txt\";
         # Дожидаемся готовности БД ретрая миграции
         for i in {1..30}; do
           su -s /bin/bash airflow -c \"PATH='/home/airflow/.local/bin:$${PATH}' airflow db migrate\" && break || echo 'waiting for pgmeta' && sleep 3;

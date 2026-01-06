@@ -423,4 +423,15 @@ load_bookings_to_stg = PostgresOperator(
 - Пошаговый сценарий с Docker (включая негативные кейсы и reset) — см. `TESTING.md`.
 - Полный smoke-тест стенда (сносит volumes!): `make e2e-smoke` — поднимает стек с нуля, прогоняет `csv_to_greenplum` и `bookings_to_gp_stage` через `airflow dags test` и проверяет, что в `public.orders` и `stg.bookings` появились строки.
 
+
+---
+
+## Благодарности
+
+- **Postgres Pro** — за демо-БД bookings и генератор данных `demodb`: https://github.com/postgrespro/demodb (лицензия MIT: https://github.com/postgrespro/demodb/blob/main/LICENSE).
+- **woblerr** — за Docker-сборку Greenplum: https://github.com/woblerr/docker-greenplum (образ: `woblerr/greenplum`, лицензия MIT: https://github.com/woblerr/docker-greenplum/blob/master/LICENSE).
+
 Удачи в изучении Data Engineering! 🚀
+
+
+

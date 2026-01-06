@@ -1,3 +1,24 @@
+x-airflow-common-env: &airflow-env
+  TZ: ${TZ:-Europe/Moscow}
+  AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${PG_USER}:${PG_PASSWORD}@pgmeta:5432/${PG_DB}
+  AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
+  AIRFLOW_CONN_GREENPLUM_CONN: postgresql://${GP_USER}:${GP_PASSWORD}@greenplum:${GP_PORT:-5432}/${GP_DB}
+  AIRFLOW_CONN_BOOKINGS_DB: postgresql://${BOOKINGS_DB_USER}:${BOOKINGS_DB_PASSWORD}@bookings-db:5432/demo
+
+x-airflow-common-volumes: &airflow-volumes
+  - ./airflow/dags:/opt/airflow/dags
+  - ./sql:/sql:ro
+  - airflow_data:/opt/airflow/data
+
+x-airflow-common-depends: &airflow-depends
+  pgmeta:
+    condition: service_healthy
+  greenplum:
+    condition: service_healthy
+  airflow-init:
+    condition: service_completed_successfully
+
 services:
   # Postgres только для Airflow метаданных
   pgmeta:
@@ -67,75 +88,61 @@ services:
       retries: 30
 
   airflow-webserver:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
     image: airflow-custom:latest
-    container_name: gp_airflow_web
+    container_name: gp_airflow_webserver
     env_file: .env
     environment:
-      TZ: ${TZ:-Europe/Moscow}
-      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${PG_USER}:${PG_PASSWORD}@pgmeta:5432/${PG_DB}
-      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
-      AIRFLOW_CONN_GREENPLUM_CONN: postgresql://${GP_USER}:${GP_PASSWORD}@greenplum:${GP_PORT:-5432}/${GP_DB}
-      AIRFLOW_CONN_BOOKINGS_DB: postgresql://${BOOKINGS_DB_USER}:${BOOKINGS_DB_PASSWORD}@bookings-db:5432/demo
+      <<: *airflow-env
     command: airflow webserver
     ports:
       - "8080:8080"
     volumes:
       - ./airflow/dags:/opt/airflow/dags
-      - ./airflow/requirements.txt:/opt/airflow/requirements.txt
       - ./sql:/sql:ro
       - airflow_data:/opt/airflow/data
+      - ./airflow/requirements.txt:/opt/airflow/requirements.txt
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
     depends_on:
-      pgmeta:
-        condition: service_healthy
-      greenplum:
-        condition: service_healthy
-      airflow-init:
-        condition: service_completed_successfully
+      <<: *airflow-depends
 
   airflow-scheduler:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
     image: airflow-custom:latest
-    container_name: gp_airflow_sch
+    container_name: gp_airflow_scheduler
     env_file: .env
     environment:
-      TZ: ${TZ:-Europe/Moscow}
-      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${PG_USER}:${PG_PASSWORD}@pgmeta:5432/${PG_DB}
-      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
-      AIRFLOW_CONN_GREENPLUM_CONN: postgresql://${GP_USER}:${GP_PASSWORD}@greenplum:${GP_PORT:-5432}/${GP_DB}
-      AIRFLOW_CONN_BOOKINGS_DB: postgresql://${BOOKINGS_DB_USER}:${BOOKINGS_DB_PASSWORD}@bookings-db:5432/demo
+      <<: *airflow-env
     command: airflow scheduler
     volumes:
       - ./airflow/dags:/opt/airflow/dags
-      - ./airflow/requirements.txt:/opt/airflow/requirements.txt
       - ./sql:/sql:ro
       - airflow_data:/opt/airflow/data
+      - ./airflow/requirements.txt:/opt/airflow/requirements.txt
     depends_on:
-      pgmeta:
-        condition: service_healthy
-      greenplum:
-        condition: service_healthy
-      airflow-init:
-        condition: service_completed_successfully
+      <<: *airflow-depends
 
   airflow-init:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
     image: airflow-custom:latest
-    # container_name: gp_airflow_init
+    # Имя контейнера закомментировано (одноразовый сервис)
     user: "0"
     env_file: .env
     environment:
-      TZ: ${TZ:-Europe/Moscow}
-      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${PG_USER}:${PG_PASSWORD}@pgmeta:5432/${PG_DB}
-      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
-      AIRFLOW_CONN_GREENPLUM_CONN: postgresql://${GP_USER}:${GP_PASSWORD}@greenplum:${GP_PORT:-5432}/${GP_DB}
-      AIRFLOW_CONN_BOOKINGS_DB: postgresql://${BOOKINGS_DB_USER}:${BOOKINGS_DB_PASSWORD}@bookings-db:5432/demo
+      <<: *airflow-env
     volumes:
       - ./airflow/dags:/opt/airflow/dags
-      - ./airflow/requirements.txt:/opt/airflow/requirements.txt
       - ./sql:/sql:ro
       - airflow_data:/opt/airflow/data
     command: >

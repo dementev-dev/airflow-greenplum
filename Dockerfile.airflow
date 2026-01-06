@@ -1,0 +1,19 @@
+# Apache Airflow с дополнительными зависимостями для Greenplum
+FROM apache/airflow:2.9.2
+
+LABEL maintainer="your-email@example.com"
+LABEL description="Airflow with Greenplum and Pandas dependencies"
+LABEL version="1.0"
+
+# Копируем requirements в стандартное расположение
+COPY airflow/requirements.txt /opt/airflow/requirements.txt
+
+# Устанавливаем зависимости
+RUN pip install --no-cache-dir -r /opt/airflow/requirements.txt \
+    && pip check \
+    && rm -rf /tmp/pip-*
+
+# Переключаемся на пользователя airflow
+USER airflow
+
+WORKDIR /opt/airflow

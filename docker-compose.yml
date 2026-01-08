@@ -84,7 +84,9 @@ services:
       - greenplum_data:/data
     # Простая проверка доступности: psql откликается
     healthcheck:
-      test: [ "CMD-SHELL", "/usr/local/greenplum-db/bin/pg_isready -h 127.0.0.1 -p 5432 -U ${GP_USER:-gpadmin} -d ${GP_DB:-gp_dwh}" ]
+      # Ждём не только доступность GPDB, но и готовность PXF,
+      # чтобы Airflow не стартовал раньше PXF.
+      test: [ "CMD-SHELL", "/usr/local/greenplum-db/bin/pg_isready -h 127.0.0.1 -p 5432 -U ${GP_USER:-gpadmin} -d ${GP_DB:-gp_dwh} && su - ${GP_USER:-gpadmin} -c '/usr/local/pxf/bin/pxf cluster status' >/dev/null 2>&1" ]
       interval: 10s
       timeout: 5s
       retries: 30

@@ -152,6 +152,9 @@ make gp-psql                    # Подключение к Greenplum
 - создаются каталоги `PXF_BASE/run` и `PXF_BASE/logs`;
 - `CREATE EXTENSION pxf` выполняется автоматически, когда Greenplum становится доступен.
 
+Healthcheck сервиса `greenplum` учитывает не только готовность Greenplum, но и запуск PXF —
+это нужно, чтобы Airflow не стартовал раньше PXF.
+
 Сборка и запуск:
 
 - `make build` — собрать образ (явно);
@@ -162,6 +165,11 @@ make gp-psql                    # Подключение к Greenplum
 - изменили файлы в `pxf/` → выполните `make build` и перезапустите контейнер;
 - для принудительной перезаписи файлов в `PXF_BASE` используйте `PXF_SEED_OVERWRITE=1`;
 - для принудительного `pxf cluster sync` при старте используйте `PXF_SYNC_ON_START=1`.
+
+Проверка PXF:
+
+- статус: `docker compose exec greenplum bash -lc "su - gpadmin -c '/usr/local/pxf/bin/pxf cluster status'"`;
+- логи: `greenplum_data:/data/pxf/logs` (внутри контейнера — `/data/pxf/logs`).
 
 ---
 

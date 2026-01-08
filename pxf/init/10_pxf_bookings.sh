@@ -13,6 +13,8 @@ PXF_BASE_DEFAULT="${GREENPLUM_DATA_DIRECTORY:-/data}/pxf"
 PXF_BASE="${PXF_BASE:-$PXF_BASE_DEFAULT}"
 PXF_SEED_OVERWRITE="${PXF_SEED_OVERWRITE:-0}"
 PXF_SYNC_ON_START="${PXF_SYNC_ON_START:-0}"
+PXF_CLI="${PXF_CLI:-/usr/local/pxf/bin/pxf}"
+GP_USER="${GREENPLUM_USER:-gpadmin}"
 
 log_info() {
     echo "INFO - $*"
@@ -83,11 +85,16 @@ copy_seed_file \
     "pxf-profiles.xml"
 
 if [ "${PXF_SYNC_ON_START}" = "1" ]; then
-    if command -v pxf >/dev/null 2>&1; then
-        if ! pxf cluster sync; then
-            log_warn "pxf cluster sync завершился с ошибкой"
-        fi
+    if [ ! -x "${PXF_CLI}" ]; then
+        log_warn "pxf cli не найден: ${PXF_CLI}, пропускаем pxf cluster sync"
+        exit 0
+    fi
+
+    # PXF CLI не запускается под root, поэтому выполняем синхронизацию под gpadmin.
+    # PXF_BASE передаём явно, т.к. `su -` сбрасывает окружение.
+    if ! su - "${GP_USER}" -c "PXF_BASE='${PXF_BASE}' '${PXF_CLI}' cluster sync"; then
+        log_warn "pxf cluster sync завершился с ошибкой"
     else
-        log_warn "pxf не найден в PATH, пропускаем pxf cluster sync"
+        log_info "pxf cluster sync выполнен"
     fi
 fi

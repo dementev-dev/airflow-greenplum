@@ -20,7 +20,7 @@
 - `cp .env.example .env` (если файла ещё нет) и проверьте переменные:
   - `GP_PORT` — внутренний порт Greenplum в Docker-сети (по умолчанию 5432, менять не нужно); внешний порт для подключения с хоста фиксирован на `5435`, поэтому локальный PostgreSQL на 5432 не помешает.
   - `GP_USE_AIRFLOW_CONN=true` при желании использовать Airflow Connection; `false` — fallback на ENV.
-- `make up` — поднимаем все сервисы. Важно дождаться статуса `healthy` у `pgmeta` и `greenplum` (`docker compose ps`); инициализация Airflow (`airflow-init`) произойдёт автоматически при первом старте.
+- `make up` — поднимаем все сервисы. Важно дождаться статуса `healthy` у `pgmeta` и `greenplum` (`docker compose ps`); `greenplum` считается `healthy` только когда поднят и Greenplum, и PXF.
 - `make logs` — следим, пока webserver и scheduler не перейдут в рабочее состояние (`Listening at: http://0.0.0.0:8080`).
 
 ## 4. Smoke тесты DAG в Airflow UI
@@ -48,6 +48,8 @@
 
 ## 5. Проверка данных в Greenplum
 - `make gp-psql` — запустить psql в контейнере от имени `gpadmin`.
+- (опционально) Проверить, что PXF действительно запущен:
+  - `docker compose exec greenplum bash -lc "su - gpadmin -c '/usr/local/pxf/bin/pxf cluster status'"`
 - Команды внутри psql:
   - `\dt public.*` — таблицы схему public.
   - `SELECT COUNT(*) FROM public.orders;` — оценка объёма.

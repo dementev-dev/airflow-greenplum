@@ -105,3 +105,38 @@
 - Вернуться к использованию `image: woblerr/greenplum:6.27.1` в `docker-compose.yml`.
 - Вернуть mount’ы PXF, если нужно (но это вернёт риск с `:ro`).
 
+---
+
+## Статус (реализовано)
+
+- Добавлен кастомный образ Greenplum: `Dockerfile.greenplum` (seed PXF + startup wrapper).
+- Ensure‑скрипт перенесён в образ и стал идемпотентным: `pxf/init/10_pxf_bookings.sh`.
+- Стартовый скрипт контейнера включает ensure и создаёт `EXTENSION pxf`: `pxf/init/start_greenplum_with_pxf.sh`.
+- В `docker-compose.yml`:
+  - `greenplum` собирается через `build: Dockerfile.greenplum`;
+  - добавлен `hostname: gpdbsne`;
+  - убраны PXF bind-mount’ы (jar/config/init);
+  - healthcheck ждёт не только GPDB, но и готовность PXF.
+- Обновлены инструкции: `README.md`, `.env.example`.
+- Проблема с генератором demodb (пустая `bookings.bookings`) зафиксирована в `TODO.md`.
+
+## Проверка (как воспроизвести)
+
+Команды для ручной проверки:
+
+- Пересобрать и перезапустить Greenplum:
+  - `make build`
+  - `docker compose up -d --force-recreate greenplum`
+- 3–10 рестартов:
+  - `docker compose restart greenplum`
+  - дождаться `healthy` в `docker compose ps`
+- Проверить PXF:
+  - `docker compose exec greenplum bash -lc "su - gpadmin -c '/usr/local/pxf/bin/pxf cluster status'"`
+- Проверить DAG, который использует PXF:
+  - `docker exec -i gp_airflow_scheduler airflow dags test bookings_stg_ddl`
+
+Текущий результат:
+
+- `bookings_stg_ddl` проходит (PXF и `protocol pxf` доступны).
+- `bookings_to_gp_stage` падает не из-за PXF, а из-за пустого источника
+  (`demo.bookings.bookings` = 0 строк). Это отдельная задача (см. `TODO.md`).

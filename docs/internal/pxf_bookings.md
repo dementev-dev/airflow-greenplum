@@ -101,6 +101,51 @@
   - причина: файлы уже лежат в `PXF_BASE` на томе, а seed из образа по умолчанию не перетирает их;
   - решение: `make build` + restart `greenplum` + (при необходимости) `PXF_SEED_OVERWRITE=1`.
 
+## 9. Известная проблема: `protocol "pxf" does not exist` на «холодном старте»
+
+Иногда (и это воспроизводится в `./scripts/e2e_smoke.sh`) при первом `make ddl-gp` можно получить:
+
+`ERROR:  protocol "pxf" does not exist`
+
+### Почему так происходит
+
+В базовом `/start_gpdb.sh` из образа Greenplum создание расширения `pxf` связано с проверкой
+файла `${PXF_BASE}/conf/pxf-env.sh`:
+
+- если `pxf-env.sh` **отсутствует**, скрипт выполняет `pxf cluster prepare/register` и затем
+  `CREATE EXTENSION IF NOT EXISTS pxf`;
+- если `pxf-env.sh` **уже существует**, этот блок **пропускается**, и расширение может не появиться.
+
+При этом наш ensure‑скрипт `pxf/init/10_pxf_bookings.sh` копирует `pxf-env.sh` в `${PXF_BASE}`
+ещё до запуска Greenplum, из‑за чего базовый скрипт считает PXF “уже настроенным” и
+пропускает создание расширения.
+
+Отдельно `/start_greenplum_with_pxf.sh` пытается выполнить `CREATE EXTENSION IF NOT EXISTS pxf`
+в фоне, но это может “не попасть” в окно готовности базы (гонка при старте), поэтому после старта:
+- PXF может быть “running” (`pxf cluster status`), но
+- `protocol pxf` в базе ещё не создан.
+
+### Как проверить
+
+- `docker compose exec greenplum bash -lc "su - gpadmin -c '/usr/local/greenplum-db/bin/psql -d gp_dwh -t -A -c \"SELECT extname FROM pg_extension WHERE extname = ''pxf'';\"'"`
+
+Если команда ничего не вернула — расширение не создано.
+
+### Временный workaround (ручной)
+
+1) Создать расширение:
+`docker compose exec greenplum bash -lc "su - gpadmin -c '/usr/local/greenplum-db/bin/psql -d gp_dwh -c \"CREATE EXTENSION IF NOT EXISTS pxf;\"'"`
+
+2) Повторить DDL:
+`make ddl-gp`
+
+### Что чинить в коде (идея фикса)
+
+Сделать создание расширения `pxf` независимым от наличия `pxf-env.sh`:
+- либо убрать/изменить условие в `/start_gpdb.sh` (в образе),
+- либо перестать копировать `pxf-env.sh` в ensure‑скрипте и дать базовому скрипту создать его,
+- либо сделать retry‑логику `CREATE EXTENSION pxf` надёжной (повторять попытки и проверять результат).
+
 ## 8. Связанные файлы
 
 - `Dockerfile.greenplum`

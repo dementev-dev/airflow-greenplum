@@ -122,8 +122,9 @@
 
 ### Что изменили
 
-- ensure‑скрипт больше не копирует `pxf-env.sh`, если файла ещё нет (даём `/start_gpdb.sh` создать его);
-- в `start_greenplum_with_pxf.sh` добавлена retry‑логика с проверкой наличия extension;
+- создание `extension pxf` вынесено в `start_greenplum_with_pxf.sh` и обёрнуто ретраями;
+- `pxf-env.sh` по‑прежнему копируется в `PXF_BASE`, чтобы `/start_gpdb.sh` не пытался выполнять
+  `pxf cluster prepare` на непустом `PXF_BASE`;
 - healthcheck `greenplum` ждёт не только PXF, но и наличие `extension pxf`.
 
 ### Если ошибка всё ещё возникает

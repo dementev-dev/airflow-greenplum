@@ -3,6 +3,11 @@ set -euo pipefail
 
 ensure_script="/opt/pxf-scripts/ensure_pxf_bookings.sh"
 
+# PXF CLI использует libpq, без PGPASSWORD после stop/start возможна ошибка auth.
+if [ -z "${PGPASSWORD:-}" ]; then
+    export PGPASSWORD="${GREENPLUM_PASSWORD:-gpadmin}"
+fi
+
 ensure_pxf_extension() {
     local gp_user="${GREENPLUM_USER:-gpadmin}"
     local gp_db="${GREENPLUM_DATABASE_NAME:-gp_dwh}"

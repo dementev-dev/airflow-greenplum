@@ -47,11 +47,17 @@ bookings-clone-demodb:
 	fi
 	# Патчим generate/continue: при jobs=1 запускаем process_queue синхронно, без dblink
 	if ! grep -q "Job 1 (local): ok" bookings/demodb/engine.sql; then \
-		patch -d bookings/demodb -p1 --forward < bookings/patches/engine_jobs1_sync.patch || true; \
+		if ! patch -d bookings/demodb -p1 --forward < bookings/patches/engine_jobs1_sync.patch; then \
+			echo "Не удалось применить патч engine_jobs1_sync.patch. Удалите bookings/demodb и повторите make bookings-init." >&2; \
+			exit 1; \
+		fi; \
 	fi
 	# Делаем установку идемпотентной и принудительной: DROP DATABASE IF EXISTS demo WITH (FORCE)
 	if ! grep -q "DROP DATABASE IF EXISTS demo WITH (FORCE);" bookings/demodb/install.sql; then \
-		patch -d bookings/demodb -p1 --forward < bookings/patches/install_drop_if_exists.patch || true; \
+		if ! patch -d bookings/demodb -p1 --forward < bookings/patches/install_drop_if_exists.patch; then \
+			echo "Не удалось применить патч install_drop_if_exists.patch. Удалите bookings/demodb и повторите make bookings-init." >&2; \
+			exit 1; \
+		fi; \
 	fi
 
 bookings-init: bookings-clone-demodb

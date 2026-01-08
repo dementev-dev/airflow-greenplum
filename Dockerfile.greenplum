@@ -1,0 +1,16 @@
+FROM woblerr/greenplum:6.27.1
+
+ENV PXF_SEED_DIR=/opt/pxf-seed \
+    PXF_SEED_OVERWRITE=0 \
+    PXF_SYNC_ON_START=0
+
+RUN mkdir -p /opt/pxf-seed/servers/bookings-db /opt/pxf-scripts
+
+COPY pxf/postgresql-42.7.3.jar /opt/pxf-seed/postgresql-42.7.3.jar
+COPY pxf/servers/bookings-db/jdbc-site.xml /opt/pxf-seed/servers/bookings-db/jdbc-site.xml
+COPY pxf/init/10_pxf_bookings.sh /opt/pxf-scripts/ensure_pxf_bookings.sh
+COPY pxf/init/start_greenplum_with_pxf.sh /start_greenplum_with_pxf.sh
+
+RUN chmod 755 /opt/pxf-scripts/ensure_pxf_bookings.sh /start_greenplum_with_pxf.sh
+
+CMD ["/start_greenplum_with_pxf.sh"]

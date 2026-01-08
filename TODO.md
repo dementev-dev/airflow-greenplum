@@ -25,6 +25,12 @@
     чтобы порядок действий для ментей был однозначным и воспроизводимым;
   - добавить краткий раздел в README/TESTING о типичных ошибках PXF/Greenplum и шагах по их устранению.
 
+- Разобраться с генератором demodb:
+  - после `make bookings-init` таблица `bookings.bookings` остаётся пустой;
+  - патчи `bookings/patches/engine_jobs1_sync.patch` и `bookings/patches/install_drop_if_exists.patch`
+    падают при применении (hunk failed / garbage in patch);
+  - из‑за этого DAG `bookings_to_gp_stage` валится на проверках (источник пустой).
+
 - Добавить раздел «Благодарности» в `README.md`:
   - явно поблагодарить Postgres Pro за демо‑БД bookings (репозиторий `postgrespro/demodb`);
   - указать автора Docker‑сборки Greenplum (`woblerr/docker-greenplum`, образ `woblerr/greenplum`);

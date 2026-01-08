@@ -62,30 +62,33 @@ services:
       retries: 20
 
   greenplum:
-    image: woblerr/greenplum:6.27.1 # based on https://github.com/woblerr/docker-greenplum
+    build:
+      context: .
+      dockerfile: Dockerfile.greenplum
+    image: greenplum-custom:6.27.1
     # container_name: gp_single
-    # hostname: gpdbsne
+    hostname: gpdbsne
     environment:
       TZ: ${TZ:-Europe/Moscow}
       GREENPLUM_USER: ${GP_USER:-gpadmin}
       GREENPLUM_PASSWORD: ${GP_PASSWORD:-gpadmin}
       GREENPLUM_DATABASE_NAME: ${GP_DB:-gp_dwh}
       GREENPLUM_PXF_ENABLE: "true"
+      PXF_SEED_OVERWRITE: ${PXF_SEED_OVERWRITE:-0}
+      PXF_SYNC_ON_START: ${PXF_SYNC_ON_START:-0}
     # Порты: внешний 5435 (на хосте)
     ports:
       - "5435:5432"
     volumes:
       - ./sql:/sql:ro
-      - ./pxf/postgresql-42.7.3.jar:/pxf-local/postgresql-42.7.3.jar:ro
-      - ./pxf/servers/bookings-db:/pxf-local/servers/bookings-db:ro
-      - ./pxf/init/10_pxf_bookings.sh:/docker-entrypoint-initdb.d/10_pxf_bookings.sh:ro
       - greenplum_data:/data
     # Простая проверка доступности: psql откликается
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U ${GP_USER:-gpadmin} -d ${GP_DB:-gp_dwh} || echo 1" ]
+      test: [ "CMD-SHELL", "/usr/local/greenplum-db/bin/pg_isready -h 127.0.0.1 -p 5432 -U ${GP_USER:-gpadmin} -d ${GP_DB:-gp_dwh}" ]
       interval: 10s
       timeout: 5s
       retries: 30
+      start_period: 40s
 
   airflow-webserver:
     build:

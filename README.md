@@ -150,10 +150,10 @@ make gp-psql                    # Подключение к Greenplum
 
 - базовые конфиги PXF копируются в `PXF_BASE/conf` (если их ещё нет);
 - создаются каталоги `PXF_BASE/run` и `PXF_BASE/logs`;
-- `CREATE EXTENSION pxf` выполняется автоматически, когда Greenplum становится доступен.
+- `CREATE EXTENSION pxf` выполняется автоматически, когда Greenplum становится доступен (с ретраями).
 
-Healthcheck сервиса `greenplum` учитывает не только готовность Greenplum, но и запуск PXF —
-это нужно, чтобы Airflow не стартовал раньше PXF.
+Healthcheck сервиса `greenplum` учитывает не только готовность Greenplum, но и запуск PXF,
+а также наличие `extension pxf` — это нужно, чтобы Airflow не стартовал раньше PXF.
 
 Сборка и запуск:
 

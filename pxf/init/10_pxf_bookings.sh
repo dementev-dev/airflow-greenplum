@@ -61,10 +61,14 @@ copy_seed_file \
     "${PXF_BASE}/conf/pxf-application.properties" \
     "pxf-application.properties"
 
-copy_seed_file \
-    "${PXF_CONF_SEED_DIR}/pxf-env.sh" \
-    "${PXF_BASE}/conf/pxf-env.sh" \
-    "pxf-env.sh"
+if [ -f "${PXF_BASE}/conf/pxf-env.sh" ]; then
+    copy_seed_file \
+        "${PXF_CONF_SEED_DIR}/pxf-env.sh" \
+        "${PXF_BASE}/conf/pxf-env.sh" \
+        "pxf-env.sh"
+else
+    log_info "pxf-env.sh отсутствует в ${PXF_BASE}/conf, пропускаем копирование до инициализации PXF"
+fi
 
 # Устанавливаем уменьшенные JVM-опции, если они ещё не заданы явно
 if [ -f "${PXF_BASE}/conf/pxf-env.sh" ]; then

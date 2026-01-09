@@ -10,6 +10,7 @@ x-airflow-common-volumes: &airflow-volumes
   - ./airflow/dags:/opt/airflow/dags
   - ./sql:/sql:ro
   - airflow_data:/opt/airflow/data
+  - airflow_logs:/opt/airflow/logs
 
 x-airflow-common-depends: &airflow-depends
   pgmeta:
@@ -86,7 +87,7 @@ services:
     healthcheck:
       # Ждём не только доступность GPDB, но и готовность PXF,
       # чтобы Airflow не стартовал раньше PXF.
-      test: [ "CMD-SHELL", "/usr/local/greenplum-db/bin/pg_isready -h 127.0.0.1 -p 5432 -U ${GP_USER:-gpadmin} -d ${GP_DB:-gp_dwh} && su - ${GP_USER:-gpadmin} -c '/usr/local/pxf/bin/pxf cluster status' >/dev/null 2>&1" ]
+      test: [ "CMD-SHELL", "/usr/local/greenplum-db/bin/pg_isready -h 127.0.0.1 -p 5432 -U ${GP_USER:-gpadmin} -d ${GP_DB:-gp_dwh} && PGPASSWORD=${GP_PASSWORD:-gpadmin} /usr/local/greenplum-db/bin/psql -h 127.0.0.1 -p 5432 -U ${GP_USER:-gpadmin} -d ${GP_DB:-gp_dwh} -t -A -c \"SELECT 1 FROM pg_extension WHERE extname='pxf';\" | grep -q 1 && su - ${GP_USER:-gpadmin} -c '/usr/local/pxf/bin/pxf cluster status' >/dev/null 2>&1" ]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -101,13 +102,14 @@ services:
     env_file: .env
     environment:
       <<: *airflow-env
-    command: airflow webserver
+    command: bash -lc "rm -f /opt/airflow/airflow-webserver.pid && exec airflow webserver"
     ports:
       - "8080:8080"
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./sql:/sql:ro
       - airflow_data:/opt/airflow/data
+      - airflow_logs:/opt/airflow/logs
       - ./airflow/requirements.txt:/opt/airflow/requirements.txt
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
@@ -132,6 +134,7 @@ services:
       - ./airflow/dags:/opt/airflow/dags
       - ./sql:/sql:ro
       - airflow_data:/opt/airflow/data
+      - airflow_logs:/opt/airflow/logs
       - ./airflow/requirements.txt:/opt/airflow/requirements.txt
     depends_on:
       <<: *airflow-depends
@@ -150,10 +153,11 @@ services:
       - ./airflow/dags:/opt/airflow/dags
       - ./sql:/sql:ro
       - airflow_data:/opt/airflow/data
+      - airflow_logs:/opt/airflow/logs
     command: >
       bash -lc "
         set -e;
-        mkdir -p /opt/airflow/data && chown -R airflow:root /opt/airflow/data;
+        mkdir -p /opt/airflow/data /opt/airflow/logs && chown -R airflow:root /opt/airflow/data /opt/airflow/logs;
         # Дожидаемся готовности БД ретрая миграции
         for i in {1..30}; do
           su -s /bin/bash airflow -c \"PATH='/home/airflow/.local/bin:$${PATH}' airflow db migrate\" && break || echo 'waiting for pgmeta' && sleep 3;
@@ -170,3 +174,4 @@ volumes:
   bookings_data:
   greenplum_data:
   airflow_data:
+  airflow_logs:

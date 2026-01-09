@@ -37,14 +37,15 @@
    - Проверить, что все 5 задач Success и логи содержат `Проверка пройдена`.
 
 - DAG `bookings_to_gp_stage` (полная проверка цепочки bookings → Greenplum STG):
-  - предварительно выполнить один раз: `make bookings-init` (инициализация демо‑БД bookings) и `make ddl-gp` (создаёт `stg.bookings_ext` и `stg.bookings` в Greenplum);
+  - предварительно выполнить один раз: `make bookings-init` (установка демобазы `demo` в контейнере `bookings-db`) и `make ddl-gp` (создаёт `stg.bookings_ext` и `stg.bookings` в Greenplum);
+  - важно: DAG `bookings_stg_ddl` **не** создаёт базу `demo` в `bookings-db`; если вы делали `docker compose down -v` / `make clean`, `make bookings-init` обязателен;
   - включить DAG `bookings_to_gp_stage` и запустить `Trigger DAG`;
   - убедиться, что все задачи (`generate_bookings_day`, `load_bookings_to_stg`, `check_row_counts`, `finish_summary`) завершились со статусом Success;
   - при желании проверить данные: в `bookings-db` появился новый день, а в Greenplum в `stg.bookings` — строки с актуальным `batch_id` (см. пример запросов в разделе 5).
 
 - (опционально, для менторов/разработчиков) Smoke-тест DAG через Airflow CLI без UI:
-   - `docker compose -f docker-compose.yml exec gp_airflow_webserver airflow dags test bookings_to_gp_stage 2024-01-01` — прогоняет `bookings_to_gp_stage` целиком в «off-line» режиме;
-   - `docker compose -f docker-compose.yml exec gp_airflow_webserver airflow dags trigger bookings_to_gp_stage` — создаёт реальный запуск DAG (логи и статус можно смотреть либо через UI, либо командой `airflow tasks list`/`airflow tasks logs` внутри контейнера).
+   - `docker compose -f docker-compose.yml exec airflow-webserver airflow dags test bookings_to_gp_stage 2024-01-01` — прогоняет `bookings_to_gp_stage` целиком в «off-line» режиме;
+   - `docker compose -f docker-compose.yml exec airflow-webserver airflow dags trigger bookings_to_gp_stage` — создаёт реальный запуск DAG (логи и статус можно смотреть либо через UI, либо командой `airflow tasks list`/`airflow tasks logs` внутри контейнера).
 
 ## 5. Проверка данных в Greenplum
 - `make gp-psql` — запустить psql в контейнере от имени `gpadmin`.

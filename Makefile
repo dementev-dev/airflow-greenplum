@@ -22,9 +22,10 @@ stop:
 	docker compose -f docker-compose.yml stop
 
 down:
-	docker compose -f docker-compose.yml down -v
+	docker compose -f docker-compose.yml down
 
-clean: down
+clean:
+	docker compose -f docker-compose.yml down -v
 
 airflow-init:
 	docker compose -f docker-compose.yml run --rm airflow-init

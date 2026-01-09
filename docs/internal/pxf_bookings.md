@@ -101,13 +101,13 @@
   - причина: файлы уже лежат в `PXF_BASE` на томе, а seed из образа по умолчанию не перетирает их;
   - решение: `make build` + restart `greenplum` + (при необходимости) `PXF_SEED_OVERWRITE=1`.
 
-## 9. Известная проблема: `protocol "pxf" does not exist` на «холодном старте»
+## 9. Известная проблема: `protocol "pxf" does not exist` на «холодном старте» (исправлено)
 
-Иногда (и это воспроизводится в `./scripts/e2e_smoke.sh`) при первом `make ddl-gp` можно получить:
+Раньше (воспроизводилось в `./scripts/e2e_smoke.sh`) при первом `make ddl-gp` можно было получить:
 
 `ERROR:  protocol "pxf" does not exist`
 
-### Почему так происходит
+### Почему так происходило
 
 В базовом `/start_gpdb.sh` из образа Greenplum создание расширения `pxf` связано с проверкой
 файла `${PXF_BASE}/conf/pxf-env.sh`:
@@ -116,35 +116,26 @@
   `CREATE EXTENSION IF NOT EXISTS pxf`;
 - если `pxf-env.sh` **уже существует**, этот блок **пропускается**, и расширение может не появиться.
 
-При этом наш ensure‑скрипт `pxf/init/10_pxf_bookings.sh` копирует `pxf-env.sh` в `${PXF_BASE}`
-ещё до запуска Greenplum, из‑за чего базовый скрипт считает PXF “уже настроенным” и
-пропускает создание расширения.
+При этом наш ensure‑скрипт `pxf/init/10_pxf_bookings.sh` копировал `pxf-env.sh` в `${PXF_BASE}`
+ещё до запуска Greenplum, из‑за чего базовый скрипт считал PXF “уже настроенным” и
+пропускал создание расширения.
 
-Отдельно `/start_greenplum_with_pxf.sh` пытается выполнить `CREATE EXTENSION IF NOT EXISTS pxf`
-в фоне, но это может “не попасть” в окно готовности базы (гонка при старте), поэтому после старта:
-- PXF может быть “running” (`pxf cluster status`), но
-- `protocol pxf` в базе ещё не создан.
+### Что изменили
 
-### Как проверить
+- создание `extension pxf` вынесено в `start_greenplum_with_pxf.sh` и обёрнуто ретраями;
+- `pxf-env.sh` по‑прежнему копируется в `PXF_BASE`, чтобы `/start_gpdb.sh` не пытался выполнять
+  `pxf cluster prepare` на непустом `PXF_BASE`;
+- healthcheck `greenplum` ждёт не только PXF, но и наличие `extension pxf`.
+- добавлен экспорт `PGPASSWORD` для `pxf cluster start`, чтобы `docker compose stop/start`
+  не ломал запуск из‑за `password authentication failed` для `gpadmin`.
 
-- `docker compose exec greenplum bash -lc "su - gpadmin -c '/usr/local/greenplum-db/bin/psql -d gp_dwh -t -A -c \"SELECT extname FROM pg_extension WHERE extname = ''pxf'';\"'"`
+### Если ошибка всё ещё возникает
 
-Если команда ничего не вернула — расширение не создано.
+1) Пересоберите образ и перезапустите контейнер `greenplum`:
+`make build && make down && make up`
 
-### Временный workaround (ручной)
-
-1) Создать расширение:
-`docker compose exec greenplum bash -lc "su - gpadmin -c '/usr/local/greenplum-db/bin/psql -d gp_dwh -c \"CREATE EXTENSION IF NOT EXISTS pxf;\"'"`
-
-2) Повторить DDL:
-`make ddl-gp`
-
-### Что чинить в коде (идея фикса)
-
-Сделать создание расширения `pxf` независимым от наличия `pxf-env.sh`:
-- либо убрать/изменить условие в `/start_gpdb.sh` (в образе),
-- либо перестать копировать `pxf-env.sh` в ensure‑скрипте и дать базовому скрипту создать его,
-- либо сделать retry‑логику `CREATE EXTENSION pxf` надёжной (повторять попытки и проверять результат).
+2) Проверьте наличие extension:
+`docker compose exec greenplum bash -lc "su - gpadmin -c '/usr/local/greenplum-db/bin/psql -d gp_dwh -t -A -c \"SELECT extname FROM pg_extension WHERE extname = ''pxf'';\"'"`
 
 ## 8. Связанные файлы
 
@@ -153,3 +144,58 @@
 - `pxf/init/10_pxf_bookings.sh` (ensure‑логика)
 - `pxf/init/start_greenplum_with_pxf.sh` (старт контейнера)
 - `README.md` (раздел «Greenplum + PXF: свой образ»)
+
+## 10. Известная проблема: после `docker compose stop/start` Greenplum может упасть (auth для PXF)
+
+### Симптом
+
+После `docker compose stop`, затем `docker compose start` контейнер `greenplum` иногда уходит в `Exited (1)`.
+В логах видно, что GPDB поднялся, но упал на старте PXF:
+
+- `INFO - pxf cluster start`
+- `ERROR: Could not connect to GPDB`
+- `FATAL: password authentication failed for user "gpadmin"`
+
+### Текущее понимание причины (почему это “иногда”)
+
+1) При старте GPDB образ `woblerr/greenplum` генерирует/дописывает `pg_hba.conf` на persistent volume.
+2) В `pg_hba.conf` присутствует trust‑правило для **конкретного IP** контейнера в docker‑сети
+   (пример из диагностики: `host all gpadmin 172.21.0.2/32 trust`).
+3) После `docker compose stop/start` Docker может выдать контейнеру **другой IP** (например, `172.21.0.3`).
+   Тогда trust‑правило больше не подходит, и подключение начинает идти по `md5`.
+4) `pxf cluster start` подключается к GPDB по TCP на `host=gpdbsne` (hostname контейнера),
+   то есть попадает именно в `pg_hba.conf` (а не в local‑auth).
+5) В результате при “не совпавшем IP” получаем `md5` + пароль (возможно пустой/не тот) → падение на `28P01`.
+
+Эта проблема выглядит флапающей, потому что IP после `stop/start` иногда совпадает с захардкоженным trust‑/32,
+а иногда нет.
+
+### Как подтвердить при следующем воспроизведении
+
+1) Посмотреть логи `greenplum`:
+`docker compose logs --tail=200 greenplum`
+
+2) Найти реальный IP клиента в master‑логах GPDB (на томе):
+`Password does not match ...` обычно содержит адрес вида `172.21.0.X`.
+
+3) Сравнить его с trust‑строкой в `pg_hba.conf` на томе:
+`/data/master/gpseg-1/pg_hba.conf`
+
+Если IP в ошибке (например, `172.21.0.3`) **не** совпадает с trust‑/32 (например, `172.21.0.2/32`) —
+это почти наверняка корень падения.
+
+### Что с этим делать дальше (варианты решения, без реализации здесь)
+
+Основная цель — убрать зависимость от “случайного IP после stop/start”:
+
+- заставить `pxf cluster start` подключаться к GPDB через `127.0.0.1` (тогда работает существующий trust на localhost);
+- или перестать добавлять в `pg_hba.conf` trust на конкретный `172.21.0.2/32` и заменить на более стабильное правило
+  (например, на подсеть docker‑сети или на `samehost`);
+- или закрепить IP контейнера в compose (static IP), чтобы он не “плавал”;
+- или отказаться от `stop/start` в пользу сценария, который не меняет сетевое окружение (но это хуже для UX студентов).
+
+### Что реализовано
+
+- В `pxf/init/start_greenplum_with_pxf.sh` добавлен шаг, который на каждом старте
+  обеспечивает в `pg_hba.conf` trust‑правило `host all gpadmin samehost trust`
+  (вставка перед `host all all 0.0.0.0/0 md5`), и делает `pg_ctl reload`, если GPDB уже запущен.

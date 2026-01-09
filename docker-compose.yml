@@ -33,7 +33,7 @@ services:
       POSTGRES_PASSWORD: ${PG_PASSWORD}
       POSTGRES_DB: ${PG_DB}
     ports:
-      - "5433:5432"
+      - "${PGMETA_PORT:-5433}:5432"
     volumes:
       - pgmeta:/var/lib/postgresql/data
     healthcheck:
@@ -80,7 +80,7 @@ services:
       PXF_SYNC_ON_START: ${PXF_SYNC_ON_START:-0}
     # Порты: внешний 5435 (на хосте)
     ports:
-      - "5435:5432"
+      - "${GP_HOST_PORT:-5435}:5432"
     volumes:
       - ./sql:/sql:ro
       - greenplum_data:/data
@@ -105,7 +105,7 @@ services:
       <<: *airflow-env
     command: bash -lc "rm -f /opt/airflow/airflow-webserver.pid && exec airflow webserver"
     ports:
-      - "8080:8080"
+      - "${AIRFLOW_WEB_PORT:-8080}:8080"
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./sql:/sql:ro

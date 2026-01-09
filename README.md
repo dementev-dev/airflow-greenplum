@@ -342,7 +342,7 @@ load_bookings_to_stg = PostgresOperator(
     task_id="load_bookings_to_stg",
     postgres_conn_id="greenplum_conn",
     sql="stg/bookings_load.sql",
-    params={"batch_id": "{{ ds_nodash }}"},
+    params={"batch_id": "{{ run_id }}"},
 )
 ```
 

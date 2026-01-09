@@ -12,19 +12,25 @@ INSERT INTO stg.bookings (
     batch_id
 )
 SELECT
-    book_ref::text,
-    book_date::text,
-    total_amount::text,
-    book_date::timestamp,
+    ext.book_ref::text,
+    ext.book_date::text,
+    ext.total_amount::text,
+    ext.book_date::timestamp,
     now(),
-    '{{ ds_nodash }}'::text
-FROM stg.bookings_ext
-WHERE book_date > COALESCE(
+    '{{ run_id }}'::text
+FROM stg.bookings_ext AS ext
+WHERE ext.book_date > COALESCE(
     (
         SELECT max(src_created_at_ts)
         FROM stg.bookings
-        WHERE batch_id <> '{{ ds_nodash }}'::text
+        WHERE batch_id <> '{{ run_id }}'::text
             OR batch_id IS NULL
     ),
     TIMESTAMP '1900-01-01 00:00:00'
-);
+)
+    AND NOT EXISTS (
+        SELECT 1
+        FROM stg.bookings AS b
+        WHERE b.batch_id = '{{ run_id }}'::text
+            AND b.book_ref = ext.book_ref::text
+    );

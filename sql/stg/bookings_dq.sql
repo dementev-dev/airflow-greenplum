@@ -5,7 +5,7 @@
 
 DO $$
 DECLARE
-    v_batch_id    text    := '{{ ds_nodash }}'::text;
+    v_batch_id    text    := '{{ run_id }}'::text;
     v_prev_ts     timestamp;
     v_src_count   bigint;
     v_stg_count   bigint;

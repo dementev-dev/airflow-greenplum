@@ -101,7 +101,7 @@ services:
     env_file: .env
     environment:
       <<: *airflow-env
-    command: airflow webserver
+    command: bash -lc "rm -f /opt/airflow/airflow-webserver.pid && exec airflow webserver"
     ports:
       - "8080:8080"
     volumes:

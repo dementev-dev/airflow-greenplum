@@ -409,6 +409,7 @@ load_bookings_to_stg = PostgresOperator(
 | Проблема | Решение |
 |----------|---------|
 | Airflow UI не открывается | Дождитесь сообщения `Listening at: http://0.0.0.0:8080` в логах (`make logs`) |
+| После `docker compose stop/start` Airflow UI не отвечает, а `airflow-webserver` в `Exited (1)` | Это обычно stale PID-файл Gunicorn (`/opt/airflow/airflow-webserver.pid`). Пересоздайте webserver: `docker compose up -d --force-recreate airflow-webserver` (или просто `make up`). |
 | Ошибка подключения к Greenplum | Убедитесь, что контейнер `greenplum` стал статусом `healthy` (проверьте `docker compose ps`) |
 | Не открывается порт 8080/5433/5434/5435 | Проверьте, что эти порты не заняты локальными сервисами; при необходимости остановите их или измените порты в `.env`/`docker-compose.yml` |
 | Нет файла в `./data` после запуска DAG | Проверьте логи задачи `generate_csv`, убедитесь, что `CSV_DIR` смонтирован в docker-compose |

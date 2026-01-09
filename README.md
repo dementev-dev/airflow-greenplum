@@ -174,6 +174,19 @@ Healthcheck сервиса `greenplum` учитывает не только го
 
 ---
 
+### Airflow: свой образ
+
+Airflow тоже собирается из собственного `Dockerfile.airflow`, чтобы зависимости ставились при сборке, а не во время старта контейнеров. В образ включены:
+
+- Python‑зависимости из `airflow/requirements.txt`;
+- утилита `psql` для быстрых проверок внутри контейнера.
+
+Если меняли `airflow/requirements.txt` или `Dockerfile.airflow`, пересоберите образы: `make build`, затем `make up`.
+
+В docker-compose по умолчанию задан `AIRFLOW__CORE__EXECUTOR=LocalExecutor` (параллельное выполнение задач). Если нужен последовательный режим — замените на `SequentialExecutor` в `docker-compose.yml`.
+
+---
+
 ### Локальное окружение разработчика
 
 Локальным окружением управляет [uv](https://docs.astral.sh/uv/) — он скачивает нужный Python и создаёт `.venv` на основе `pyproject.toml` / `uv.lock`.

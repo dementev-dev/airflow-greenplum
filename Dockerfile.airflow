@@ -5,15 +5,20 @@ LABEL maintainer="your-email@example.com"
 LABEL description="Airflow with Greenplum and Pandas dependencies"
 LABEL version="1.0"
 
+# Устанавливаем psql для ручной диагностики внутри контейнера
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
 # Копируем requirements в стандартное расположение
 COPY airflow/requirements.txt /opt/airflow/requirements.txt
 
 # Устанавливаем зависимости
+USER airflow
 RUN pip install --no-cache-dir -r /opt/airflow/requirements.txt \
     && pip check \
     && rm -rf /tmp/pip-*
-
-# Переключаемся на пользователя airflow
-USER airflow
 
 WORKDIR /opt/airflow

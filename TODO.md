@@ -3,14 +3,16 @@
 Этот файл собирает идеи по доработке стенда, которые не критичны для текущих задач менти,
 но улучшат стабильность и удобство сопровождения.
 
-- Собрать свой образ Airflow поверх `apache/airflow:2.9.2`:
+Статус: все пункты ниже выполнены и отражены в README/TESTING.
+
+- [x] Собрать свой образ Airflow поверх `apache/airflow:2.9.2`:
   - вынести установку Python‑зависимостей из runtime (`pip install ...` при старте контейнеров)
     в отдельный `Dockerfile`;
   - переключить `docker-compose.yml` на использование этого образа для `airflow-webserver`,
     `airflow-scheduler` и `airflow-init`;
   - обновить документацию (README/TESTING) под новую схему сборки.
 
-- Переключить Airflow с `SequentialExecutor` (SequentialScheduler) на `LocalExecutor`
+- [x] Переключить Airflow с `SequentialExecutor` (SequentialScheduler) на `LocalExecutor`
   для docker‑стенда:
   - проверить, какие параметры достаточно поменять в env/конфиге (`AIRFLOW__CORE__EXECUTOR`)
     для образа `apache/airflow:2.9.2`;
@@ -18,7 +20,7 @@
     предсказуемо в режиме параллельного исполнения;
   - при необходимости скорректировать тесты и документацию (README/TESTING) с учётом нового executor’а.
 
-- Разобрать и стабилизировать интеграцию с Greenplum/PXF:
+- [x] Разобрать и стабилизировать интеграцию с Greenplum/PXF:
   - убедиться, что PXF в контейнере `greenplum` всегда корректно инициализируется
     (нет ошибок вида `protocol "pxf" does not exist` при первом запуске `make ddl-gp`);
   - при необходимости доработать init‑скрипты в `pxf/init/` и/или документацию,
@@ -26,16 +28,16 @@
   - добавить краткий раздел в README/TESTING о типичных ошибках PXF/Greenplum и шагах по их устранению.
   - диагностика текущего кейса: `docs/internal/pxf_bookings.md` (раздел «Известная проблема»).
 
-- Разобраться с генератором demodb:
+- [x] Разобраться с генератором demodb:
   - после `make bookings-init` таблица `bookings.bookings` остаётся пустой;
   - патчи `bookings/patches/engine_jobs1_sync.patch` и `bookings/patches/install_drop_if_exists.patch`
     падают при применении (hunk failed / garbage in patch);
   - из‑за этого DAG `bookings_to_gp_stage` валится на проверках (источник пустой).
   - план: `plans/bookings-demodb-bugfix-plan.md`
 
-- Добавить раздел «Благодарности» в `README.md`:
+- [x] Добавить раздел «Благодарности» в `README.md`:
   - явно поблагодарить Postgres Pro за демо‑БД bookings (репозиторий `postgrespro/demodb`);
   - указать автора Docker‑сборки Greenplum (`woblerr/docker-greenplum`, образ `woblerr/greenplum`);
   - при необходимости сослаться на соответствующие лицензии/README исходных проектов.
 
-- Добавить в образ Airflow установку `psql`, чтобы тестировать загрузку CSV из CLI внутри контейнера (без root и дополнительных зависимостей на хосте).
+- [x] Добавить в образ Airflow установку `psql`, чтобы тестировать загрузку CSV из CLI внутри контейнера (без root и дополнительных зависимостей на хосте).

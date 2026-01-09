@@ -49,6 +49,13 @@ make gp-psql
    - Login/Password: `gpadmin` / `gpadmin`
    - Port: `5432`
 
+## PXF (в 5 строк)
+
+PXF (Platform Extension Framework) — компонент Greenplum для работы с внешними источниками.
+В этом стенде PXF используется для чтения таблицы `bookings.bookings` из Postgres прямо из Greenplum
+через внешнюю таблицу `stg.bookings_ext`. Поэтому загрузка в `stg.bookings` выглядит как обычный
+`INSERT ... SELECT` без промежуточных CSV.
+
 ## Greenplum + PXF: свой образ
 
 Greenplum собирается из собственного `Dockerfile.greenplum`, чтобы:
@@ -106,10 +113,18 @@ make fmt
 
 Все настройки лежат в `.env` (шаблон: `.env.example`).
 
+### Порты на хосте
+
+- `AIRFLOW_WEB_PORT` — Airflow UI (по умолчанию `8080`)
+- `PGMETA_PORT` — мета‑БД Airflow (по умолчанию `5433`, обычно нужно только для диагностики)
+- `BOOKINGS_DB_PORT` — bookings-db (по умолчанию `5434`)
+- `GP_HOST_PORT` — Greenplum (по умолчанию `5435`)
+
 ### Greenplum
 
 - `GP_USER`, `GP_PASSWORD`, `GP_DB`
-- `GP_PORT` — внутренний порт в Docker-сети (обычно `5432`), внешний порт на хосте фиксирован на `5435`
+- `GP_PORT` — внутренний порт в Docker-сети (обычно `5432`)
+- `GP_HOST_PORT` — внешний порт на хосте (по умолчанию `5435`)
 
 ### bookings-db (Postgres)
 

@@ -143,7 +143,7 @@
 - `docker-compose.yml` (сервис `greenplum`: `build`, `hostname`, env, healthcheck)
 - `pxf/init/10_pxf_bookings.sh` (ensure‑логика)
 - `pxf/init/start_greenplum_with_pxf.sh` (старт контейнера)
-- `README.md` (раздел «Greenplum + PXF: свой образ»)
+- `docs/stack.md` (раздел «Greenplum + PXF: свой образ»)
 
 ## 10. Известная проблема: после `docker compose stop/start` Greenplum может упасть (auth для PXF)
 

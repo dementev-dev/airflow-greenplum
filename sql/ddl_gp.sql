@@ -6,7 +6,7 @@
 -- Чтобы не ломать задания, новые объекты лучше добавлять в отдельные файлы
 -- и подключать их отсюда, а существующие определения не удалять.
 --
--- Подробнее про STG/bookings: см. docs/internal/bookings_stg_readme.md.
+-- Подробнее про STG/bookings: см. docs/bookings_to_gp_stage.md.
 
 -- Таблица для CSV‑пайплайна (csv_to_greenplum).
 \i base/orders_ddl.sql

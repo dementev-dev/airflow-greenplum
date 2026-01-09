@@ -1,0 +1,125 @@
+# Технические детали стенда (Docker / Airflow / Greenplum)
+
+Этот документ не обязателен для прохождения лабораторных, но полезен, если вы:
+
+- хотите понять, как устроен стенд “под капотом”;
+- меняете конфиги/зависимости и пересобираете образы;
+- отлаживаете проблемы со стартом Greenplum/PXF или Connections в Airflow.
+
+## Make (опционально, но удобно)
+
+Если `make` не установлен, можно пользоваться `docker compose ...`.
+Но с `make` команды короче и проще.
+
+Установка `make` (если нужно):
+
+- Linux (Debian/Ubuntu): `sudo apt install -y make`
+- macOS: `brew install make`
+- Windows:
+  - WSL: `sudo apt install -y make`
+  - Chocolatey: `choco install make`
+  - Scoop: `scoop install make`
+
+Примеры:
+
+```bash
+make up
+make logs
+make gp-psql
+```
+
+## Airflow Connections
+
+Готовые DAG по умолчанию подключаются к БД через Airflow Connections:
+
+- `greenplum_conn` — Greenplum;
+- `bookings_db` — демо‑БД bookings (`bookings-db`).
+
+В `docker-compose.yml` Connections задаются через переменные окружения `AIRFLOW_CONN_...`,
+поэтому они могут не отображаться в UI — для DAG это нормально.
+
+Если нужно завести вручную:
+
+1) Airflow UI → Admin → Connections → Add a new record
+2) Пример для Greenplum:
+   - Conn Id: `greenplum_conn`
+   - Conn Type: `Postgres`
+   - Host: `greenplum`
+   - Schema: `gp_dwh`
+   - Login/Password: `gpadmin` / `gpadmin`
+   - Port: `5432`
+
+## Greenplum + PXF: свой образ
+
+Greenplum собирается из собственного `Dockerfile.greenplum`, чтобы:
+
+- не ловить проблемы с правами/`chown` при bind‑mount конфигов;
+- держать PXF‑конфиги и JDBC‑драйвер внутри образа;
+- делать старт контейнера идемпотентным.
+
+При старте контейнера:
+
+- seed‑конфиги PXF докладываются в `PXF_BASE` на persistent volume;
+- создаются каталоги `PXF_BASE/run` и `PXF_BASE/logs`;
+- расширение `pxf` создаётся автоматически, когда Greenplum становится доступен (с ретраями).
+
+Полезные команды:
+
+```bash
+make build              # пересобрать образы
+docker compose ps       # проверить health
+```
+
+Перезапись seed‑файлов в `PXF_BASE`:
+
+- `PXF_SEED_OVERWRITE=1` — перезаписать конфиги при старте;
+- `PXF_SYNC_ON_START=1` — выполнить `pxf cluster sync` при старте.
+
+Подробнее: `docs/internal/pxf_bookings.md`.
+
+## Airflow: свой образ
+
+Airflow тоже собирается из собственного `Dockerfile.airflow`, чтобы зависимости ставились при сборке,
+а не во время старта контейнеров.
+
+Если меняли `airflow/requirements.txt` или `Dockerfile.airflow`, пересоберите образы:
+
+```bash
+make build
+make up
+```
+
+## Локальное окружение разработчика (uv)
+
+Локальным окружением управляет `uv` — он создаёт `.venv` из `pyproject.toml` / `uv.lock`.
+
+```bash
+uv sync
+make test
+make lint
+make fmt
+```
+
+Не устанавливайте зависимости через `pip install --user ...` — это часто ломает окружение и IDE.
+
+## Переменные окружения (`.env`)
+
+Все настройки лежат в `.env` (шаблон: `.env.example`).
+
+### Greenplum
+
+- `GP_USER`, `GP_PASSWORD`, `GP_DB`
+- `GP_PORT` — внутренний порт в Docker-сети (обычно `5432`), внешний порт на хосте фиксирован на `5435`
+
+### bookings-db (Postgres)
+
+- `BOOKINGS_DB_USER`, `BOOKINGS_DB_PASSWORD`
+- `BOOKINGS_DB_PORT` — внешний порт (по умолчанию `5434`)
+- `BOOKINGS_START_DATE` — стартовая дата модельного времени
+- `BOOKINGS_INIT_DAYS` — сколько дней генерировать при первом `make bookings-init`
+- `BOOKINGS_JOBS` — число джобов генератора (по умолчанию `1`)
+
+### CSV pipeline (побочный пример)
+
+- `CSV_DIR` — путь к каталогу с CSV внутри контейнеров Airflow (по умолчанию `/opt/airflow/data`)
+- `CSV_ROWS` — количество строк, генерируемых DAG (по умолчанию `1000`)

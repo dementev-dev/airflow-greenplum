@@ -72,7 +72,7 @@
 
 ### 2.2. Знакомство с STG в Greenplum
 
-1. Прочитайте `sql/stg/bookings_ddl.sql` и мини‑README `docs/internal/bookings_stg_readme.md` (если интересно — `docs/internal/bookings_stg_design.md`).
+1. Прочитайте `sql/stg/bookings_ddl.sql` и краткое описание потока `docs/bookings_to_gp_stage.md` (если интересно — `docs/internal/bookings_stg_design.md`).
 2. Ответьте себе на вопросы:
    - чем внешняя таблица `stg.bookings_ext` отличается от внутренней `stg.bookings`;
    - зачем нужны тех.колонки `src_created_at_ts`, `load_dttm`, `batch_id`;
@@ -111,12 +111,12 @@
    - `sql/src/bookings_generate_day_if_missing.sql`
    - `sql/stg/bookings_load.sql`
    - `sql/stg/bookings_dq.sql`
-3. Соотнесите шаги DAG с документом `docs/internal/bookings_stg_readme.md`:
+3. Соотнесите шаги DAG с документом `docs/bookings_to_gp_stage.md`:
    - генерация учебного дня в `bookings.bookings`;
    - загрузка инкремента в `stg.bookings`;
    - проверка количества строк между источником и STG.
 4. Обратите внимание, как в DAG используется логическая дата запуска:
-   - `{{ ds_nodash }}` используется как `batch_id` — метка загрузки в таблице `stg.bookings` для конкретного запуска;
+   - `{{ run_id }}` используется как `batch_id` — метка загрузки в таблице `stg.bookings` для конкретного запуска;
    - сами даты данных (какие дни есть в `bookings.bookings`) определяются генератором по `max(book_date)`, а не по `ds`.
 
 На этом этапе достаточно понять общую цепочку. Детальные задания по переработке модели данных и построению ODS/DDS/DM слоёв будут добавлены позже.

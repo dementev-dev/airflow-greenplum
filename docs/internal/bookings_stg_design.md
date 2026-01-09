@@ -68,7 +68,7 @@ DDL будет добавлен в `sql/ddl_gp.sql` в блоке DDL для Gre
   - считаем режим `full` — загружаем все строки из `stg.bookings_ext`.
 - При последующих запусках:
   - читаем `max(src_created_at_ts)` из `stg.bookings` за все предыдущие загрузки;
-  - считаем, что нужно загрузить только строки, где `src_created_at_ts` больше этой максимальной метки и не позже конца текущего учебного дня.
+  - загружаем строки, где `src_created_at_ts` больше этой максимальной метки (верхняя граница по времени не задаётся).
 
 Таким образом, вся логика инкремента «замкнута» на один техно‑столбец `src_created_at_ts`, который студент потом сможет использовать и на следующих слоях (например, в CDC‑логике).
 
@@ -88,7 +88,7 @@ DDL будет добавлен в `sql/ddl_gp.sql` в блоке DDL для Gre
 
 - `dag_id`: `bookings_to_gp_stage`.
 - Основные параметры:
-  - `batch_id` (по умолчанию `{{ ds_nodash }}`) — метка батча, которая попадает в `stg.bookings.batch_id`;
+  - `batch_id` (в текущей реализации `{{ run_id }}`) — метка батча, которая попадает в `stg.bookings.batch_id`;
   - подключения:
     - `bookings_db_conn_id` — Airflow connection к `bookings-db` (в коде DAG — `BOOKINGS_CONN_ID = "bookings_db"`);
     - `greenplum_conn_id` — Airflow connection к Greenplum (`GREENPLUM_CONN_ID = "greenplum_conn"`).

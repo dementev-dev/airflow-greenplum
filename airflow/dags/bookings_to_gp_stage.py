@@ -54,7 +54,7 @@ with DAG(
     template_searchpath="/sql",
     default_args=default_args,
     tags=["demo", "bookings", "greenplum", "stg"],
-    description="Учебный DAG: загрузка из bookings-db в stg.bookings (Greenplum)",
+    description="Учебный DAG: загрузка из bookings-db в stg.bookings и stg.tickets (Greenplum)",
 ) as dag:
     # 1. Генерируем один (или несколько стартовых) учебный день в демо-БД bookings
     generate_bookings_day = PostgresOperator(
@@ -78,10 +78,25 @@ with DAG(
         sql="stg/bookings_dq.sql",
     )
 
-    # 4. Финальный лог/сводка
+    # 4. Загружаем инкремент билетов из stg.tickets_ext в stg.tickets
+    load_tickets_to_stg = PostgresOperator(
+        task_id="load_tickets_to_stg",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/tickets_load.sql",
+    )
+
+    # 5. Проверяем качество данных для tickets
+    check_tickets_dq = PostgresOperator(
+        task_id="check_tickets_dq",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/tickets_dq.sql",
+    )
+
+    # 6. Финальный лог/сводка
     finish_summary = PythonOperator(
         task_id="finish_summary",
         python_callable=_finish_summary,
     )
 
-    generate_bookings_day >> load_bookings_to_stg >> check_row_counts >> finish_summary
+    generate_bookings_day >> load_bookings_to_stg >> check_row_counts
+    check_row_counts >> load_tickets_to_stg >> check_tickets_dq >> finish_summary

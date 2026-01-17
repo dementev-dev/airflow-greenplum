@@ -1,0 +1,49 @@
+-- Загрузка инкремента из stg.tickets_ext в stg.tickets
+-- Инкремент определяется по дате бронирования (book_date из bookings.bookings)
+
+INSERT INTO stg.tickets (
+    ticket_no,
+    book_ref,
+    passenger_id,
+    passenger_name,
+    outbound,
+    src_created_at_ts,
+    load_dttm,
+    batch_id
+)
+SELECT
+    ext.ticket_no,
+    ext.book_ref,
+    ext.passenger_id,
+    ext.passenger_name,
+    ext.outbound,
+    b.book_date::timestamp,               -- временная метка из бронирования
+    now(),
+    '{{ run_id }}'::text
+FROM stg.tickets_ext AS ext
+JOIN (
+    -- Подзапрос: получаем book_date для инкремента
+    -- Связываем tickets с bookings через внешнюю таблицу stg.bookings_ext
+    SELECT
+        b.book_ref,
+        b.book_date
+    FROM stg.bookings_ext AS b_ext
+    JOIN bookings.bookings AS b ON b_ext.book_ref = b.book_ref
+    -- Берём только новые бронирования (по дате)
+    WHERE b_ext.book_date > COALESCE(
+        (
+            SELECT max(src_created_at_ts)
+            FROM stg.tickets
+            WHERE batch_id <> '{{ run_id }}'::text
+                OR batch_id IS NULL
+        ),
+        TIMESTAMP '1900-01-01 00:00:00'
+    )
+) AS b ON ext.book_ref = b.book_ref
+AND NOT EXISTS (
+    -- Защита от дубликатов в рамках одного батча
+    SELECT 1
+    FROM stg.tickets AS t
+    WHERE t.batch_id = '{{ run_id }}'::text
+        AND t.ticket_no = ext.ticket_no
+);

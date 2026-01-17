@@ -29,4 +29,6 @@ CREATE TABLE IF NOT EXISTS stg.tickets (
     batch_id           TEXT
 )
 WITH (appendonly=true, orientation=row, compresstype=zlib, compresslevel=1)
-DISTRIBUTED BY (ticket_no);
+-- Распределяем по book_ref, чтобы джойны tickets → bookings по book_ref были без motion.
+DISTRIBUTED BY (book_ref);
+

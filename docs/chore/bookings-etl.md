@@ -37,27 +37,26 @@
 ```sql
 -- sql/stg/tickets_ddl.sql
 
-DROP TABLE IF EXISTS stg.tickets CASCADE;
-
-CREATE TABLE stg.tickets (
+CREATE TABLE IF NOT EXISTS stg.tickets (
     -- Бизнес-атрибуты (из источника)
     ticket_no      TEXT NOT NULL,      -- номер билета
     book_ref       TEXT NOT NULL,      -- ссылка на бронирование
     passenger_id   TEXT,               -- идентификатор пассажира
     passenger_name TEXT,               -- имя пассажира
-    outbound       TEXT,               -- флаг направления (boolean → text для Greenplum)
+    outbound       TEXT,               -- флаг направления (в источнике boolean; в STG храним как TEXT)
     
     -- Технические атрибуты
     src_created_at_ts TIMESTAMP,        -- временная метка источника (для инкремента)
-    load_dttm       TIMESTAMP NOT NULL, -- время загрузки в Greenplum
+    load_dttm       TIMESTAMP NOT NULL DEFAULT now(), -- время загрузки в Greenplum
     batch_id        TEXT                -- идентификатор батча (из Airflow run_id)
 )
-DISTRIBUTED BY (ticket_no);            -- распределение по первичному ключу
+WITH (appendonly=true, orientation=row, compresstype=zlib, compresslevel=1)
+DISTRIBUTED BY (book_ref);             -- распределение по ключу связи с bookings
 ```
 
 **Решения по проектированию:**
-- **DISTRIBUTED BY (ticket_no):** равномерное распределение, так как это первичный ключ
-- **boolean → TEXT:** Greenplum хорошо работает с текстовым представлением для флагов
+- **DISTRIBUTED BY (book_ref):** типовой джойн `tickets → bookings` идёт по `book_ref`, так меньше motion в MPP
+- **boolean → TEXT:** в сыром STG храним бизнес-колонки как TEXT (для обучения и минимизации кастов на входе)
 - **src_created_at_ts:** временная метка из даты связанного бронирования (см. раздел 7)
 
 ## 4. Проектирование внешней таблицы (PXF)
@@ -122,7 +121,11 @@ CREATE TABLE IF NOT EXISTS stg.tickets (
     batch_id           TEXT
 )
 WITH (appendonly=true, orientation=row, compresstype=zlib, compresslevel=1)
-DISTRIBUTED BY (ticket_no);
+-- Распределяем по book_ref, чтобы джойны tickets → bookings по book_ref были без motion.
+DISTRIBUTED BY (book_ref);
+
+-- На случай, если таблица уже была создана раньше с другим ключом распределения.
+ALTER TABLE IF EXISTS stg.tickets SET DISTRIBUTED BY (book_ref);
 ```
 
 ## 6. LOAD-скрипт (загрузка инкремента)
@@ -173,11 +176,10 @@ WHERE b.book_date > COALESCE(
     TIMESTAMP '1900-01-01 00:00:00'
 )
 AND NOT EXISTS (
-    -- Защита от дубликатов в рамках одного батча
+    -- Защита от дублей: ticket_no в источнике уникален, и в stg его не дублируем.
     SELECT 1
     FROM stg.tickets AS t
-    WHERE t.batch_id = '{{ run_id }}'::text
-        AND t.ticket_no = ext.ticket_no
+    WHERE t.ticket_no = ext.ticket_no
 );
 ```
 
@@ -194,56 +196,83 @@ AND NOT EXISTS (
 Скрипт `sql/stg/tickets_dq.sql`:
 
 ```sql
--- Проверка 1: совпадение количества билетов в источнике и STG
--- Используем только внешние таблицы: stg.tickets_ext + stg.bookings_ext
+-- Проверки качества данных для tickets
+
 DO $$
 DECLARE
-    v_source_count BIGINT;
-    v_stg_count BIGINT;
+    v_batch_id      TEXT      := '{{ run_id }}'::text;
+    v_prev_ts       TIMESTAMP;
+    v_source_count  BIGINT;
+    v_stg_count     BIGINT;
+    v_orphan_count  BIGINT;
+    v_null_count    BIGINT;
 BEGIN
-    -- Количество в источнике (новые билеты)
-    SELECT COUNT(*) INTO v_source_count
+    -- Опорная метка: максимум src_created_at_ts среди предыдущих батчей
+    SELECT max(src_created_at_ts)
+    INTO v_prev_ts
+    FROM stg.tickets
+    WHERE batch_id <> v_batch_id
+        OR batch_id IS NULL;
+
+    -- Источник: считаем строки в том же окне инкремента, что и загрузка
+    SELECT COUNT(*)
+    INTO v_source_count
     FROM stg.tickets_ext AS t
     JOIN stg.bookings_ext AS b ON t.book_ref = b.book_ref
-    WHERE b.book_date > COALESCE(
-        (SELECT max(src_created_at_ts) FROM stg.tickets 
-         WHERE batch_id <> '{{ run_id }}'::text OR batch_id IS NULL),
-        TIMESTAMP '1900-01-01 00:00:00'
-    );
-    
-    -- Количество в STG (текущий батч)
-    SELECT COUNT(*) INTO v_stg_count
+    WHERE b.book_date > COALESCE(v_prev_ts, TIMESTAMP '1900-01-01 00:00:00');
+
+    IF v_source_count = 0 THEN
+        RAISE EXCEPTION
+            'В источнике tickets_ext нет строк для окна инкремента (book_date > %). Проверьте генерацию данных (таск generate_bookings_day).',
+            COALESCE(v_prev_ts, TIMESTAMP '1900-01-01 00:00:00');
+    END IF;
+
+    -- STG: считаем строки текущего батча
+    SELECT COUNT(*)
+    INTO v_stg_count
     FROM stg.tickets
-    WHERE batch_id = '{{ run_id }}'::text;
-    
-    -- Проверка совпадения
+    WHERE batch_id = v_batch_id;
+
     IF v_source_count <> v_stg_count THEN
-        RAISE EXCEPTION 'DQ FAILED: несовпадение количества билетов. Источник: %, STG: %', 
-                          v_source_count, v_stg_count;
-    ELSE
-        RAISE NOTICE 'DQ PASSED: количество билетов совпадает (%)', v_stg_count;
+        RAISE EXCEPTION
+            'DQ FAILED: несовпадение количества билетов. Источник: %, STG (batch_id=%): %',
+            v_source_count,
+            v_batch_id,
+            v_stg_count;
+    END IF;
+
+    -- Ссылочная целостность: tickets должны иметь соответствующие bookings в STG
+    SELECT COUNT(*)
+    INTO v_orphan_count
+    FROM stg.tickets AS t
+    WHERE t.batch_id = v_batch_id
+        AND NOT EXISTS (
+            SELECT 1
+            FROM stg.bookings AS b
+            WHERE b.book_ref = t.book_ref
+        );
+
+    IF v_orphan_count <> 0 THEN
+        RAISE EXCEPTION
+            'DQ FAILED: найдены tickets без соответствующих bookings (batch_id=%): %',
+            v_batch_id,
+            v_orphan_count;
+    END IF;
+
+    -- Обязательные поля
+    SELECT COUNT(*)
+    INTO v_null_count
+    FROM stg.tickets AS t
+    WHERE t.batch_id = v_batch_id
+        AND (t.ticket_no IS NULL OR t.book_ref IS NULL);
+
+    IF v_null_count <> 0 THEN
+        RAISE EXCEPTION
+            'DQ FAILED: найдены tickets с NULL в обязательных полях (batch_id=%): %',
+            v_batch_id,
+            v_null_count;
     END IF;
 END $$;
-
--- Проверка 2: ссылочная целостность (все ticket_no должны иметь соответствующие book_ref)
-SELECT 
-    COUNT(*) AS orphan_tickets
-FROM stg.tickets
-WHERE batch_id = '{{ run_id }}'::text
-    AND NOT EXISTS (
-        SELECT 1
-        FROM stg.bookings
-        WHERE stg.bookings.book_ref = stg.tickets.book_ref
-    );
--- Ожидаемое значение: 0
-
--- Проверка 3: отсутствие NULL в обязательных полях
-SELECT 
-    COUNT(*) AS null_tickets
-FROM stg.tickets
-WHERE batch_id = '{{ run_id }}'::text
-    AND (ticket_no IS NULL OR book_ref IS NULL);
--- Ожидаемое значение: 0
 ```
 
 ## 8. Интеграция с существующими DAG
@@ -396,7 +425,7 @@ WHERE b.book_ref IS NULL;
 8. ✅ Проверка через Airflow UI
 9. ✅ Проверка идемпотентности DDL
 10. ✅ Проверка инкрементальной загрузки
-11. ⏳ Обновить `README.md` (добавить tickets в список STG-таблиц)
+11. ✅ Обновить `README.md` (добавить tickets в список STG-таблиц)
 
 ## 11. Сопутствующие изменения
 
@@ -412,8 +441,8 @@ WHERE b.book_ref IS NULL;
 ### Необходимые изменения в документации:
 
 **README.md:**
-- ⏳ Добавить `tickets` в список STG-таблиц
-- ⏳ Обновить описание DAG `bookings_to_gp_stage` (упомянуть загрузку билетов)
+- ✅ Добавить `tickets` в список STG-таблиц
+- ✅ Обновить описание DAG `bookings_to_gp_stage` (упомянуть загрузку билетов)
 
 ## 12. Результаты тестирования
 

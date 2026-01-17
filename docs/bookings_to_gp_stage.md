@@ -2,7 +2,7 @@
 
 Этот DAG — основной учебный пример в стенде. Он показывает путь данных из источника **Postgres**
 (`bookings-db`, демо‑БД `demo`) в сырой слой **STG** в **Greenplum** с инкрементальной загрузкой
-и простой проверкой качества данных.
+и простыми проверками качества данных.
 
 ## Что делает DAG
 
@@ -10,6 +10,8 @@
   (генератор всегда “шагает” вперёд от `max(book_date)`).
 - В Greenplum загружает инкремент в `stg.bookings` через внешнюю таблицу `stg.bookings_ext`, используя PXF.
 - Сверяет количество строк между источником (за окно инкремента) и загруженным батчем.
+- Загружает инкремент в `stg.tickets` через внешнюю таблицу `stg.tickets_ext`, используя PXF.
+- Запускает DQ‑проверки для `stg.tickets` (количество, ссылочная целостность, обязательные поля).
 
 ## Что должно быть готово перед запуском
 
@@ -25,7 +27,7 @@ make up
 make bookings-init
 ```
 
-3) В Greenplum созданы `stg.bookings_ext` и `stg.bookings` (выберите один вариант):
+3) В Greenplum созданы STG‑объекты `stg.bookings_ext`/`stg.bookings` и `stg.tickets_ext`/`stg.tickets` (выберите один вариант):
 
 - учебный вариант: запустить DAG `bookings_stg_ddl` в Airflow UI;
 - технический шорткат: `make ddl-gp`.
@@ -68,7 +70,20 @@ make bookings-init
   вставленных в `stg.bookings` для текущего `batch_id`;
 - при расхождении делает `RAISE EXCEPTION` с понятным текстом.
 
-4) `finish_summary`
+4) `load_tickets_to_stg`
+
+- выполняет `sql/stg/tickets_load.sql` в Greenplum;
+- так как в `bookings.tickets` нет явной временной колонки, окно инкремента берётся по `book_date`
+  из связанной внешней таблицы `stg.bookings_ext` (JOIN по `book_ref`);
+- вставляет строки в `stg.tickets`, добавляя `src_created_at_ts`, `load_dttm` и `batch_id={{ run_id }}`.
+
+5) `check_tickets_dq`
+
+- выполняет `sql/stg/tickets_dq.sql` в Greenplum;
+- проверяет количество строк в том же окне инкремента, а также ссылочную целостность и обязательные поля;
+- при проблемах делает `RAISE EXCEPTION`, чтобы DAG падал “красным”.
+
+6) `finish_summary`
 
 - логирует краткую сводку в конце запуска.
 

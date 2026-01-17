@@ -5,8 +5,9 @@ from __future__ import annotations
 Запускается вручную перед DAG загрузки bookings_to_gp_stage или после изменения DDL.
 """
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
+import pendulum
 from airflow.providers.postgres.operators.postgres import PostgresOperator
 
 from airflow import DAG
@@ -17,7 +18,7 @@ default_args = {"owner": "airflow", "retries": 1, "retry_delay": timedelta(secon
 
 with DAG(
     dag_id="bookings_stg_ddl",
-    start_date=datetime(2024, 1, 1),
+    start_date=pendulum.datetime(2024, 1, 1, tz="UTC"),
     schedule=None,
     catchup=False,
     template_searchpath="/sql",

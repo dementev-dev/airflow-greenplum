@@ -32,9 +32,8 @@ WHERE b.book_date > COALESCE(
     TIMESTAMP '1900-01-01 00:00:00'
 )
 AND NOT EXISTS (
-    -- Защита от дубликатов в рамках одного батча
+    -- Защита от дублей: ticket_no в источнике уникален, и в stg его не дублируем.
     SELECT 1
     FROM stg.tickets AS t
-    WHERE t.batch_id = '{{ run_id }}'::text
-        AND t.ticket_no = ext.ticket_no
+    WHERE t.ticket_no = ext.ticket_no
 );

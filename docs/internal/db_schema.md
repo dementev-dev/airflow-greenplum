@@ -21,6 +21,7 @@
 - **Обязательная связь для аэропортов и самолёта**: `flights.route_no → routes → (departure_airport, arrival_airport, airplane_code)`
 - **Даты**: как минимум различаем `book_date` (дата покупки) и `scheduled_departure` (дата/время вылета)
 - **Инкремент в STG**: для `tickets` опорная дата берётся из `bookings.book_date`, потому что в `tickets` нет собственного поля времени изменения
+- **DQ-проверки**: проверки качества данных выполняем SQL-скриптами, но **не сохраняем результаты в отдельные таблицы/слой DQ** (при проблемах падаем с понятной ошибкой и останавливаем пайплайн)
 
 ### Статус реализации по слоям
 
@@ -41,7 +42,8 @@
 - **Технологические колонки**:
   - `src_created_at_ts TIMESTAMP` — дата/время из источника для инкремента
   - `load_dttm TIMESTAMP NOT NULL DEFAULT now()` — когда запись была загружена
-  - `batch_id TEXT NOT NULL` — идентификатор пачки (например, `{{ ds_nodash }}`)
+  - `batch_id TEXT` — идентификатор пачки (рекомендуем `NOT NULL`, например `{{ ds_nodash }}` или `{{ run_id }}`)
+- **DQ-проверки (после загрузки STG)**: отдельные SQL-скрипты, которые валидируют данные (counts, дубли, NULL, orphan records) и при ошибке делают `RAISE EXCEPTION`; примеры: `sql/stg/bookings_dq.sql`, `sql/stg/tickets_dq.sql`
 
 #### ODS (Operational Data Store)
 - **Назначение**: Очищенные данные в 3NF, готовые для аналитики
@@ -59,9 +61,9 @@
 
 | Измерение | Бизнес-ключ | Суррогатный ключ | Атрибуты |
 |-----------|-------------|------------------|----------|
-| `dim.calendar` | `date DATE` | `calendar_sk INT` | `year`, `month`, `day`, `day_of_week`, `is_holiday` |
+| `dim.calendar` | `date DATE` | `calendar_sk INT` | `year`, `month`, `day`, `day_of_week`, `is_holiday` (опционально) |
 | `dim.airports` | `airport_code CHAR(3)` | `airport_sk INT` | `airport_name`, `city`, `timezone`, `coordinates` |
-| `dim.airplanes` | `airplane_code TEXT` | `airplane_sk INT` | `model`, `total_seats`, `range_km` |
+| `dim.airplanes` | `airplane_code CHAR(3)` | `airplane_sk INT` | `model`, `total_seats`, `range_km` |
 | `dim.tariffs` | `fare_conditions TEXT` | `tariff_sk INT` | `fare_conditions` (Economy/Comfort/Business) |
 | `dim.passengers` | `passenger_id TEXT` | `passenger_sk INT` | `passenger_name` (SCD Type 1) |
 
@@ -278,10 +280,10 @@ graph LR
 
 ## Связанные документы
 
-- [`docs/internal/bookings_stg_design.md`](docs/internal/bookings_stg_design.md) — Детальный дизайн STG слоя для bookings
-- [`docs/internal/bookings_tz.md`](docs/internal/bookings_tz.md) — Работа с часовыми поясами в источнике
-- [`docs/internal/pxf_bookings.md`](docs/internal/pxf_bookings.md) — Настройка PXF для чтения из bookings-db
-- [`TESTING.md`](TESTING.md) — Пошаговый чек-лист для тестирования стенда
+- [`docs/internal/bookings_stg_design.md`](bookings_stg_design.md) — Детальный дизайн STG слоя для bookings
+- [`docs/internal/bookings_tz.md`](bookings_tz.md) — Работа с часовыми поясами в источнике
+- [`docs/internal/pxf_bookings.md`](pxf_bookings.md) — Настройка PXF для чтения из bookings-db
+- [`TESTING.md`](../../TESTING.md) — Пошаговый чек-лист для тестирования стенда
 
 ---
 

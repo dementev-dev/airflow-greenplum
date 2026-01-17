@@ -22,6 +22,7 @@ CREATE EXTERNAL TABLE public.ext_bookings_bookings (
 LOCATION ('pxf://bookings.bookings?PROFILE=JDBC&SERVER=bookings-db')
 FORMAT 'CUSTOM' (formatter='pxfwritable_import');
 
--- DDL для слоя stg по таблице bookings вынесен в отдельный файл.
--- Здесь подключаем его через psql \i, чтобы сохранить единый входной скрипт.
+-- DDL для слоя stg по таблицам bookings и tickets вынесены в отдельные файлы.
+-- Здесь подключаем их через psql \i, чтобы сохранить единый входной скрипт.
 \i stg/bookings_ddl.sql
+\i stg/tickets_ddl.sql

@@ -1,7 +1,12 @@
--- Создание внешней таблицы для доступа к bookings.tickets через PXF
+-- DDL для слоя STG по таблице tickets.
+-- Используется как из общего скрипта ddl_gp.sql (через \i),
+-- так и может выполняться отдельно при изменении схемы.
 
-DROP EXTERNAL TABLE IF EXISTS stg.tickets_ext CASCADE;
+-- Схема stg для сырого слоя DWH.
+CREATE SCHEMA IF NOT EXISTS stg;
 
+-- Внешняя таблица в схеме stg для чтения данных из bookings.tickets через PXF.
+DROP EXTERNAL TABLE IF EXISTS stg.tickets_ext;
 CREATE EXTERNAL TABLE stg.tickets_ext (
     ticket_no      TEXT,
     book_ref       TEXT,
@@ -9,23 +14,19 @@ CREATE EXTERNAL TABLE stg.tickets_ext (
     passenger_name TEXT,
     outbound       TEXT
 )
-LOCATION ('pxf://bookings-db:5432/demo?PROFILE=postgres&SERVER=bookings_db')
-FORMAT 'CUSTOM' (FORMATTER='pxfwritable_import')
-ENCODING 'UTF8';
+LOCATION ('pxf://bookings.tickets?PROFILE=JDBC&SERVER=bookings-db')
+FORMAT 'CUSTOM' (formatter='pxfwritable_import');
 
--- Создание внутренней таблицы для хранения данных в Greenplum
-
-DROP TABLE IF EXISTS stg.tickets CASCADE;
-
-CREATE TABLE stg.tickets (
-    ticket_no      TEXT NOT NULL,
-    book_ref       TEXT NOT NULL,
-    passenger_id   TEXT,
-    passenger_name TEXT,
-    outbound       TEXT,
-
-    src_created_at_ts TIMESTAMP,
-    load_dttm       TIMESTAMP NOT NULL,
-    batch_id        TEXT
+-- Внутренняя таблица stg.tickets — сырой слой, все бизнес-колонки как TEXT.
+CREATE TABLE IF NOT EXISTS stg.tickets (
+    ticket_no          TEXT NOT NULL,
+    book_ref           TEXT NOT NULL,
+    passenger_id       TEXT,
+    passenger_name     TEXT,
+    outbound           TEXT,
+    src_created_at_ts  TIMESTAMP,
+    load_dttm          TIMESTAMP NOT NULL DEFAULT now(),
+    batch_id           TEXT
 )
+WITH (appendonly=true, orientation=row, compresstype=zlib, compresslevel=1)
 DISTRIBUTED BY (ticket_no);

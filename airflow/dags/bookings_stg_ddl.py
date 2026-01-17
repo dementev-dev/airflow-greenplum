@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 """
-Учебный DAG: создаёт схему stg и таблицы bookings_ext/bookings в Greenplum.
+Учебный DAG: создаёт схему stg и таблицы bookings_ext/bookings/tickets в Greenplum.
 Запускается вручную перед DAG загрузки bookings_to_gp_stage или после изменения DDL.
 """
 
@@ -22,11 +22,19 @@ with DAG(
     catchup=False,
     template_searchpath="/sql",
     default_args=default_args,
-    tags=["demo", "greenplum", "ddl", "bookings", "stg"],
-    description="Создаёт/обновляет stg.bookings_ext и stg.bookings для учебного DAG",
+    tags=["demo", "greenplum", "ddl", "bookings", "tickets", "stg"],
+    description="Создаёт/обновляет stg.bookings_ext/bookings/tickets для учебного DAG",
 ) as dag:
     apply_stg_bookings_ddl = PostgresOperator(
         task_id="apply_stg_bookings_ddl",
         postgres_conn_id=GREENPLUM_CONN_ID,
         sql="stg/bookings_ddl.sql",
     )
+
+    apply_stg_tickets_ddl = PostgresOperator(
+        task_id="apply_stg_tickets_ddl",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/tickets_ddl.sql",
+    )
+
+    apply_stg_bookings_ddl >> apply_stg_tickets_ddl

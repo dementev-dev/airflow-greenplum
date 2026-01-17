@@ -29,6 +29,11 @@ CREATE TABLE IF NOT EXISTS stg.tickets (
     batch_id           TEXT
 )
 WITH (appendonly=true, orientation=row, compresstype=zlib, compresslevel=1)
--- Распределяем по book_ref, чтобы джойны tickets → bookings по book_ref были без motion.
+-- Ключ распределения: book_ref
+-- Обоснование: book_ref — это основной бизнес-ключ для бронирований.
+-- Использование book_ref обеспечивает:
+-- 1. Co-location данных tickets и bookings при JOIN по book_ref
+-- 2. Равномерное распределение данных по сегментам (book_ref имеет высокую кардинальность)
+-- 3. Оптимизацию запросов, которые фильтруют или группируют по book_ref
 DISTRIBUTED BY (book_ref);
 

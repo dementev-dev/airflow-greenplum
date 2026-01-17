@@ -8,6 +8,8 @@ DECLARE
     v_stg_count     BIGINT;
     v_orphan_count  BIGINT;
     v_null_count    BIGINT;
+    v_dup_count     BIGINT;
+    v_empty_name_count BIGINT;
 BEGIN
     -- Опорная метка: максимум src_created_at_ts среди предыдущих батчей
     SELECT max(src_created_at_ts)
@@ -44,15 +46,13 @@ BEGIN
     END IF;
 
     -- Проверка ссылочной целостности: все tickets должны иметь соответствующие bookings в этом же STG
+    -- Используем LEFT JOIN вместо NOT EXISTS для лучшей производительности на больших объёмах
     SELECT COUNT(*)
     INTO v_orphan_count
     FROM stg.tickets AS t
+    LEFT JOIN stg.bookings AS b ON t.book_ref = b.book_ref
     WHERE t.batch_id = v_batch_id
-        AND NOT EXISTS (
-            SELECT 1
-            FROM stg.bookings AS b
-            WHERE b.book_ref = t.book_ref
-        );
+        AND b.book_ref IS NULL;
 
     IF v_orphan_count <> 0 THEN
         RAISE EXCEPTION
@@ -73,6 +73,33 @@ BEGIN
             'DQ FAILED: найдены tickets с NULL в обязательных полях (batch_id=%): %',
             v_batch_id,
             v_null_count;
+    END IF;
+
+    -- Проверка на дубликаты ticket_no
+    SELECT COUNT(*) - COUNT(DISTINCT ticket_no)
+    INTO v_dup_count
+    FROM stg.tickets AS t
+    WHERE t.batch_id = v_batch_id;
+
+    IF v_dup_count <> 0 THEN
+        RAISE EXCEPTION
+            'DQ FAILED: найдены дубликаты ticket_no (batch_id=%): %',
+            v_batch_id,
+            v_dup_count;
+    END IF;
+
+    -- Проверка на пустые passenger_name
+    SELECT COUNT(*)
+    INTO v_empty_name_count
+    FROM stg.tickets AS t
+    WHERE t.batch_id = v_batch_id
+        AND (t.passenger_name IS NULL OR t.passenger_name = '');
+
+    IF v_empty_name_count <> 0 THEN
+        RAISE EXCEPTION
+            'DQ FAILED: найдены tickets с пустым именем пассажира (batch_id=%): %',
+            v_batch_id,
+            v_empty_name_count;
     END IF;
 
     RAISE NOTICE

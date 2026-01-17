@@ -7,17 +7,15 @@ DECLARE
     v_stg_count BIGINT;
 BEGIN
     -- Количество в источнике (новые билеты)
+    -- Используем только внешние таблицы: stg.tickets_ext + stg.bookings_ext
     SELECT COUNT(*) INTO v_source_count
-    FROM (
-        SELECT t.ticket_no
-        FROM stg.tickets_ext AS t
-        JOIN stg.bookings_ext AS b ON t.book_ref = b.book_ref
-        WHERE b.book_date > COALESCE(
-            (SELECT max(src_created_at_ts) FROM stg.tickets
-             WHERE batch_id <> '{{ run_id }}'::text OR batch_id IS NULL),
-            TIMESTAMP '1900-01-01 00:00:00'
-        )
-    ) AS source;
+    FROM stg.tickets_ext AS t
+    JOIN stg.bookings_ext AS b ON t.book_ref = b.book_ref
+    WHERE b.book_date > COALESCE(
+        (SELECT max(src_created_at_ts) FROM stg.tickets
+         WHERE batch_id <> '{{ run_id }}'::text OR batch_id IS NULL),
+        TIMESTAMP '1900-01-01 00:00:00'
+    );
 
     -- Количество в STG (текущий батч)
     SELECT COUNT(*) INTO v_stg_count

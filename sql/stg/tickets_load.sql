@@ -1,6 +1,13 @@
 -- Загрузка инкремента из stg.tickets_ext в stg.tickets
 -- Инкремент определяется по дате бронирования (book_date из bookings.bookings)
 
+-- CTE для определения максимальной даты загрузки предыдущего батча
+WITH max_batch_ts AS (
+    SELECT COALESCE(MAX(src_created_at_ts), TIMESTAMP '1900-01-01 00:00:00') AS max_ts
+    FROM stg.tickets
+    WHERE batch_id <> '{{ run_id }}'::text
+        OR batch_id IS NULL
+)
 INSERT INTO stg.tickets (
     ticket_no,
     book_ref,
@@ -22,18 +29,15 @@ SELECT
     '{{ run_id }}'::text
 FROM stg.tickets_ext AS ext
 JOIN stg.bookings_ext AS b ON ext.book_ref = b.book_ref
-WHERE b.book_date > COALESCE(
-    (
-        SELECT max(src_created_at_ts)
-        FROM stg.tickets
-        WHERE batch_id <> '{{ run_id }}'::text
-            OR batch_id IS NULL
-    ),
-    TIMESTAMP '1900-01-01 00:00:00'
-)
+CROSS JOIN max_batch_ts AS mb
+WHERE b.book_date > mb.max_ts
 AND NOT EXISTS (
     -- Защита от дублей: ticket_no в источнике уникален, и в stg его не дублируем.
     SELECT 1
     FROM stg.tickets AS t
     WHERE t.ticket_no = ext.ticket_no
 );
+
+-- Обновляем статистику для оптимизатора Greenplum
+-- Это критично для корректной работы оптимизатора и выбора оптимального плана выполнения
+ANALYZE stg.tickets;

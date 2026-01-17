@@ -9,6 +9,8 @@ DECLARE
     v_prev_ts     timestamp;
     v_src_count   bigint;
     v_stg_count   bigint;
+    v_dup_count   bigint;
+    v_null_amount_count bigint;
 BEGIN
     -- Опорная метка: максимум src_created_at_ts среди предыдущих батчей
     SELECT max(src_created_at_ts)
@@ -40,6 +42,33 @@ BEGIN
             'Несовпадение количества строк при загрузке bookings: источник=%, stg=%. Проверьте окно инкремента и логи задач загрузки.',
             v_src_count,
             v_stg_count;
+    END IF;
+
+    -- Проверка на дубликаты book_ref
+    SELECT COUNT(*) - COUNT(DISTINCT book_ref)
+    INTO v_dup_count
+    FROM stg.bookings AS b
+    WHERE b.batch_id = v_batch_id;
+
+    IF v_dup_count <> 0 THEN
+        RAISE EXCEPTION
+            'DQ FAILED: найдены дубликаты book_ref (batch_id=%): %',
+            v_batch_id,
+            v_dup_count;
+    END IF;
+
+    -- Проверка на NULL или пустые total_amount
+    SELECT COUNT(*)
+    INTO v_null_amount_count
+    FROM stg.bookings AS b
+    WHERE b.batch_id = v_batch_id
+        AND (b.total_amount IS NULL OR b.total_amount = '');
+
+    IF v_null_amount_count <> 0 THEN
+        RAISE EXCEPTION
+            'DQ FAILED: найдены bookings с NULL или пустым total_amount (batch_id=%): %',
+            v_batch_id,
+            v_null_amount_count;
     END IF;
 
     RAISE NOTICE

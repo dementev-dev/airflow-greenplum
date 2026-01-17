@@ -25,5 +25,11 @@ CREATE TABLE IF NOT EXISTS stg.bookings (
     batch_id          TEXT NOT NULL
 )
 WITH (appendonly=true, orientation=row, compresstype=zlib, compresslevel=1)
+-- Ключ распределения: book_ref
+-- Обоснование: book_ref — это уникальный идентификатор бронирования.
+-- Использование book_ref обеспечивает:
+-- 1. Равномерное распределение данных по сегментам (book_ref имеет высокую кардинальность)
+-- 2. Co-location данных bookings и tickets при JOIN по book_ref
+-- 3. Оптимизацию запросов, которые фильтруют или группируют по book_ref
 DISTRIBUTED BY (book_ref);
 

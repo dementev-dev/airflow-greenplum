@@ -6,12 +6,20 @@
 
 Эта документация описывает архитектуру хранилища данных (DWH) для учебного проекта Airflow + Greenplum. Источник данных — демо-БД `bookings` (Postgres).
 
+### Ключевые договорённости (для LLM и студентов)
+
+- **Источник**: используем основные таблицы схемы `bookings` (табличные данные, не `VIEW`).
+- **Зерно факта `fact.flight_sales`**: 1 строка = 1 сегмент билета (`ticket_no` + `flight_id`, источник: `segments`).
+- **Обязательная связь для аэропортов и самолёта**: `flights.route_no → routes → (departure_airport, arrival_airport, airplane_code)`.
+- **Даты**: как минимум различаем `book_date` (дата покупки) и `scheduled_departure` (дата/время вылета).
+- **Инкремент в STG**: для `tickets` опорная дата берётся из `bookings.book_date`, потому что в `tickets` нет собственного поля времени изменения.
+
 ### Статус реализации по слоям
 
 | Слой | Статус | Реализовано |
 |------|--------|-------------|
 | **Source** | ✅ Готово | Демо-БД bookings (Postgres) |
-| **STG** | ⚠️ В процессе | 2 из 8 таблиц (bookings, tickets) |
+| **STG** | ⚠️ В процессе | 2 из 9 таблиц (bookings, tickets) |
 | **DQ** | ⚠️ В процессе | Есть скрипты для bookings и tickets |
 | **ODS** | ❌ Не реализован | Планируется |
 | **DDS** | ❌ Не реализован | Планируется |
@@ -35,6 +43,7 @@ graph LR
         direction TB
         SRC_Airports[airports_data]:::source
         SRC_Airplanes[airplanes_data]:::source
+        SRC_Routes[routes]:::source
         SRC_Seats[seats]:::source
         SRC_Bookings[bookings]:::source
         SRC_Tickets[tickets]:::source
@@ -48,6 +57,7 @@ graph LR
         direction TB
         STG_Airports[stg.airports]:::stg
         STG_Airplanes[stg.airplanes]:::stg
+        STG_Routes[stg.routes]:::stg
         STG_Seats[stg.seats]:::stg
         STG_Bookings[stg.bookings]:::stg
         STG_Tickets[stg.tickets]:::stg
@@ -59,6 +69,7 @@ graph LR
     %% Links Source to STG
     SRC_Airports --> STG_Airports
     SRC_Airplanes --> STG_Airplanes
+    SRC_Routes --> STG_Routes
     SRC_Seats --> STG_Seats
     SRC_Bookings --> STG_Bookings
     SRC_Tickets --> STG_Tickets
@@ -71,6 +82,7 @@ graph LR
         direction TB
         DQ_Bookings[dq.bookings_checks]:::dq
         DQ_Tickets[dq.tickets_checks]:::dq
+        DQ_Routes[dq.routes_checks]:::dq
         DQ_Flights[dq.flights_checks]:::dq
         DQ_Segments[dq.segments_checks]:::dq
     end
@@ -78,6 +90,7 @@ graph LR
     %% Links STG to DQ
     STG_Bookings --> DQ_Bookings
     STG_Tickets --> DQ_Tickets
+    STG_Routes --> DQ_Routes
     STG_Flights --> DQ_Flights
     STG_Segments --> DQ_Segments
 
@@ -86,6 +99,7 @@ graph LR
         direction TB
         ODS_Airports[ods.airports]:::ods
         ODS_Airplanes[ods.airplanes]:::ods
+        ODS_Routes[ods.routes]:::ods
         ODS_Seats[ods.seats]:::ods
         ODS_Bookings[ods.bookings]:::ods
         ODS_Tickets[ods.tickets]:::ods
@@ -97,6 +111,7 @@ graph LR
     %% Links DQ to ODS
     DQ_Bookings --> ODS_Bookings
     DQ_Tickets --> ODS_Tickets
+    DQ_Routes --> ODS_Routes
     DQ_Flights --> ODS_Flights
     DQ_Segments --> ODS_Segments
     STG_Airports --> ODS_Airports
@@ -134,7 +149,9 @@ graph LR
     %% Fact assembly (Main process)
     ODS_Segments -->|Main Stream| FACT_Sales
     ODS_Tickets -->|Join book_ref passenger_id| FACT_Sales
-    ODS_Flights -->|Join Times Status| FACT_Sales
+    ODS_Bookings -->|Join book_date| FACT_Sales
+    ODS_Flights -->|Join Times Status Route| FACT_Sales
+    ODS_Routes -->|Join Dep/Arr Airplane| FACT_Sales
     ODS_Boarding -->|LEFT JOIN Seat No| FACT_Sales
     
     %% Link dimensions to fact
@@ -150,7 +167,7 @@ graph LR
 
 ## Пояснения к схеме (для студентов)
 
-Эта диаграмма покрывает 100% таблиц источника и показывает логику их трансформации. Вот на что стоит обратить внимание при обучении:
+Эта диаграмма покрывает основные таблицы источника и показывает логику их трансформации. Вот на что стоит обратить внимание при обучении:
 
 ### 1. Ветка справочников (Reference Data)
 
@@ -160,26 +177,29 @@ graph LR
 
 ### 2. Ветка генерации измерений (Dimension Generation)
 
-* **`tickets` → `dim.passengers`**: Это самая сложная трансформация для измерения. В источнике нет таблицы "Пассажиры". Мы должны объяснить студентам, что мы "майним" пассажиров из билетов. Важно: один и тот же пассажир может иметь разные записи с разными именами (опечатки, изменение фамилии), поэтому нужна логика SCD Type 2 для отслеживания изменений.
+* **`tickets` → `dim.passengers`**: Это самая сложная трансформация для измерения. В источнике нет таблицы "Пассажиры". Мы должны объяснить студентам, что мы "майним" пассажиров из билетов. Важно: один и тот же пассажир может иметь разные записи с разными именами (опечатки, изменение фамилии), поэтому в проде часто делают логику SCD Type 2 для отслеживания изменений.
+  - Для домашки (и первого эталонного решения) обычно достаточно **SCD Type 1**: одна актуальная запись на `passenger_id`, а SCD2 можно оставить как усложнение.
 
-* **`segments` → `dim.tariffs`**: Таблицы тарифов физически нет в источнике, она "зашита" строкой (Economy, Business) в таблице полётов. Мы выносим её в отдельный справочник (Нормализация), чтобы в факте хранить маленький `INT` ключ, а не длинную строку.
+* **`segments` → `dim.tariffs`**: Таблицы тарифов физически нет в источнике, она хранится строкой (`fare_conditions`: Economy/Comfort/Business) в таблице `segments`. Мы выносим её в отдельный справочник (нормализация), чтобы в факте хранить маленький `INT` ключ, а не длинную строку.
 
 ### 3. Сборка Факта (`fact.flight_sales`)
 
-Это центр звезды. Мы собираем его из четырёх ODS таблиц:
+Это центр звезды. Мы собираем его из шести ODS таблиц:
 
-1. **`ods.segments`**: Основа (зерно факта — один полётный сегмент билета). Дает сумму (`amount`).
+1. **`ods.segments`**: Основа (зерно факта — один полётный сегмент билета). Дает стоимость (`price`).
 2. **`ods.tickets`**: Приджойниваем, чтобы получить `book_ref` и `passenger_id`.
-3. **`ods.flights`**: Приджойниваем, чтобы получить точное время вылета/прилета (для FK на календарь) и статусы.
-4. **`ods.boarding_passes`**: Приджойниваем (LEFT JOIN), чтобы узнать, **сел ли пассажир реально в самолёт** и на какое место (`seat_no`). Это важный бизнес-аспект: билет куплен, но посадочный не выдан = пассажир не летел.
+3. **`ods.bookings`**: Приджойниваем по `book_ref`, чтобы получить `book_date` (дата покупки).
+4. **`ods.flights`**: Приджойниваем, чтобы получить расписание/факт времени и статус рейса, а также `route_no` (связка на маршруты).
+5. **`ods.routes`**: Приджойниваем по `route_no`, чтобы получить аэропорты вылета/прилёта и `airplane_code` (в `flights` этих полей нет напрямую).
+6. **`ods.boarding_passes`**: Приджойниваем (LEFT JOIN), чтобы узнать, **сел ли пассажир реально в самолёт** и на какое место (`seat_no`). Это важный бизнес-аспект: билет куплен, но посадочный не выдан = пассажир не летел.
 
 ### 4. Почему нет `dim.bookings`?
 
-В классической Star Schema измерения — это справочники (airports, aircrafts, passengers), а факты — транзакции/события (sales, bookings). 
+В классической Star Schema измерения — это справочники (airports, airplanes, passengers), а факты — транзакции/события (sales, bookings). 
 
 `bookings` — это транзакционная таблица, а не справочник. Вместо отдельного измерения `dim.bookings` мы храним:
 - `book_ref` — бизнес-ключ бронирования (в факте)
-- `book_date` — дата бронирования (в факте)
+- `book_date` — дата бронирования (в факте, берём из `ods.bookings` по `book_ref`)
 
 Это позволяет отвечать на вопросы типа: *"За сколько дней до вылета люди обычно покупают билеты?"* (разница между `book_date` и датой вылета из `dim.calendar`).
 
@@ -214,7 +234,7 @@ graph LR
 
 ## TODO
 
-- [ ] Реализовать STG слой полностью (все 8 таблиц)
+- [ ] Реализовать STG слой полностью (все 9 таблиц)
 - [ ] Реализовать DQ слой для всех таблиц
 - [ ] Реализовать ODS слой
 - [ ] Реализовать DDS слой (измерения и факт)

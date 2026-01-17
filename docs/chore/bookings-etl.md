@@ -67,7 +67,7 @@ DISTRIBUTED BY (ticket_no);            -- распределение по пер
 ```sql
 -- sql/stg/tickets_ddl.sql (продолжение)
 
-DROP EXTERNAL TABLE IF EXISTS stg.tickets_ext CASCADE;
+DROP EXTERNAL TABLE IF EXISTS stg.tickets_ext;
 
 CREATE EXTERNAL TABLE stg.tickets_ext (
     ticket_no      TEXT,
@@ -76,22 +76,29 @@ CREATE EXTERNAL TABLE stg.tickets_ext (
     passenger_name TEXT,
     outbound       TEXT
 )
-LOCATION ('pxf://bookings-db:5432/demo?PROFILE=postgres&SERVER=bookings_db')
-FORMAT 'CUSTOM' (FORMATTER='pxfwritable_import')
-ENCODING 'UTF8';
+LOCATION ('pxf://bookings.tickets?PROFILE=JDBC&SERVER=bookings-db')
+FORMAT 'CUSTOM' (formatter='pxfwritable_import');
 ```
 
 **Решения:**
 - Только бизнес-атрибуты во внешней таблице (без тех.колонок)
-- PXF-профиль уже настроен через `bookings_db`
+- PXF-профиль `JDBC` (как в `stg.bookings_ext`) — более стабильный вариант
+- PXF-сервер настроен как `bookings-db` в конфигурации
 
 ## 5. DDL-скрипт (создание таблиц)
 
 Полный файл `sql/stg/tickets_ddl.sql`:
 
 ```sql
--- Внешняя таблица для доступа через PXF к bookings-db
-DROP EXTERNAL TABLE IF EXISTS stg.tickets_ext CASCADE;
+-- DDL для слоя STG по таблице tickets.
+-- Используется как из общего скрипта ddl_gp.sql (через \i),
+-- так и может выполняться отдельно при изменении схемы.
+
+-- Схема stg для сырого слоя DWH.
+CREATE SCHEMA IF NOT EXISTS stg;
+
+-- Внешняя таблица в схеме stg для чтения данных из bookings.tickets через PXF.
+DROP EXTERNAL TABLE IF EXISTS stg.tickets_ext;
 
 CREATE EXTERNAL TABLE stg.tickets_ext (
     ticket_no      TEXT,
@@ -100,24 +107,21 @@ CREATE EXTERNAL TABLE stg.tickets_ext (
     passenger_name TEXT,
     outbound       TEXT
 )
-LOCATION ('pxf://bookings-db:5432/demo?PROFILE=postgres&SERVER=bookings_db')
-FORMAT 'CUSTOM' (FORMATTER='pxfwritable_import')
-ENCODING 'UTF8';
+LOCATION ('pxf://bookings.tickets?PROFILE=JDBC&SERVER=bookings-db')
+FORMAT 'CUSTOM' (formatter='pxfwritable_import');
 
--- Внутренняя таблица для хранения данных в Greenplum
-DROP TABLE IF EXISTS stg.tickets CASCADE;
-
-CREATE TABLE stg.tickets (
-    ticket_no      TEXT NOT NULL,
-    book_ref       TEXT NOT NULL,
-    passenger_id   TEXT,
-    passenger_name TEXT,
-    outbound       TEXT,
-    
-    src_created_at_ts TIMESTAMP,
-    load_dttm       TIMESTAMP NOT NULL,
-    batch_id        TEXT
+-- Внутренняя таблица stg.tickets — сырой слой, все бизнес-колонки как TEXT.
+CREATE TABLE IF NOT EXISTS stg.tickets (
+    ticket_no          TEXT NOT NULL,
+    book_ref           TEXT NOT NULL,
+    passenger_id       TEXT,
+    passenger_name     TEXT,
+    outbound           TEXT,
+    src_created_at_ts  TIMESTAMP,
+    load_dttm          TIMESTAMP NOT NULL DEFAULT now(),
+    batch_id           TEXT
 )
+WITH (appendonly=true, orientation=row, compresstype=zlib, compresslevel=1)
 DISTRIBUTED BY (ticket_no);
 ```
 
@@ -158,25 +162,16 @@ SELECT
     now(),
     '{{ run_id }}'::text
 FROM stg.tickets_ext AS ext
-JOIN (
-    -- Подзапрос: получаем book_date для инкремента
-    -- Связываем tickets с bookings через внешнюю таблицу stg.bookings_ext
-    SELECT 
-        b.book_ref,
-        b.book_date
-    FROM stg.bookings_ext AS b_ext
-    JOIN bookings.bookings AS b ON b_ext.book_ref = b.book_ref
-    -- Берём только новые бронирования (по дате)
-    WHERE b_ext.book_date > COALESCE(
-        (
-            SELECT max(src_created_at_ts)
-            FROM stg.tickets
-            WHERE batch_id <> '{{ run_id }}'::text
-                OR batch_id IS NULL
-        ),
-        TIMESTAMP '1900-01-01 00:00:00'
-    )
-) AS b ON ext.book_ref = b.book_ref
+JOIN stg.bookings_ext AS b ON ext.book_ref = b.book_ref
+WHERE b.book_date > COALESCE(
+    (
+        SELECT max(src_created_at_ts)
+        FROM stg.tickets
+        WHERE batch_id <> '{{ run_id }}'::text
+            OR batch_id IS NULL
+    ),
+    TIMESTAMP '1900-01-01 00:00:00'
+)
 AND NOT EXISTS (
     -- Защита от дубликатов в рамках одного батча
     SELECT 1
@@ -188,9 +183,11 @@ AND NOT EXISTS (
 
 **Объяснение логики:**
 1. Из `stg.tickets_ext` берём все билеты
-2. JOIN с подзапросом по `book_ref` — это даёт `book_date` из бронирования
+2. Прямой JOIN с `stg.bookings_ext` по `book_ref` — это даёт `book_date` из бронирования
 3. Фильтр по `book_date > max(src_created_at_ts)` — берём только новые билеты
 4. `NOT EXISTS` — защита от повторной загрузки того же билета в текущем батче
+
+**Важное примечание:** Используем только внешние таблицы (`stg.tickets_ext` и `stg.bookings_ext`), так как прямой доступ к `bookings.bookings` через PXF невозможен.
 
 ## 7. DQ-проверки (качество данных)
 
@@ -198,6 +195,7 @@ AND NOT EXISTS (
 
 ```sql
 -- Проверка 1: совпадение количества билетов в источнике и STG
+-- Используем только внешние таблицы: stg.tickets_ext + stg.bookings_ext
 DO $$
 DECLARE
     v_source_count BIGINT;
@@ -205,26 +203,25 @@ DECLARE
 BEGIN
     -- Количество в источнике (новые билеты)
     SELECT COUNT(*) INTO v_source_count
-    FROM (
-        SELECT t.ticket_no
-        FROM stg.tickets_ext AS t
-        JOIN stg.bookings_ext AS b ON t.book_ref = b.book_ref
-        WHERE b.book_date > COALESCE(
-            (SELECT max(src_created_at_ts) FROM stg.tickets 
-             WHERE batch_id <> '{{ run_id }}'::text OR batch_id IS NULL),
-            TIMESTAMP '1900-01-01 00:00:00'
-        )
-    ) AS source;
+    FROM stg.tickets_ext AS t
+    JOIN stg.bookings_ext AS b ON t.book_ref = b.book_ref
+    WHERE b.book_date > COALESCE(
+        (SELECT max(src_created_at_ts) FROM stg.tickets 
+         WHERE batch_id <> '{{ run_id }}'::text OR batch_id IS NULL),
+        TIMESTAMP '1900-01-01 00:00:00'
+    );
     
     -- Количество в STG (текущий батч)
     SELECT COUNT(*) INTO v_stg_count
     FROM stg.tickets
     WHERE batch_id = '{{ run_id }}'::text;
     
-    -- Проверка
+    -- Проверка совпадения
     IF v_source_count <> v_stg_count THEN
         RAISE EXCEPTION 'DQ FAILED: несовпадение количества билетов. Источник: %, STG: %', 
                           v_source_count, v_stg_count;
+    ELSE
+        RAISE NOTICE 'DQ PASSED: количество билетов совпадает (%)', v_stg_count;
     END IF;
 END $$;
 
@@ -249,12 +246,36 @@ WHERE batch_id = '{{ run_id }}'::text
 -- Ожидаемое значение: 0
 ```
 
-## 8. Интеграция с существующим DAG
+## 8. Интеграция с существующими DAG
 
-### Решение: расширить существующий DAG
+### 8.1. Создание DDL через `bookings_stg_ddl.py`
 
-**Почему не отдельный DAG:**
-- `generate_bookings_day` уже есть в `bookings_to_gp_stage`
+**Почему расширяем существующий DDL DAG:**
+- Уже есть инфраструктура для создания `stg.bookings_ext` и `stg.bookings`
+- Единый DAG для создания всех STG-объектов
+- Минимальные изменения → проще для новичков
+
+**Изменения в `airflow/dags/bookings_stg_ddl.py`:**
+
+Добавить задачу после создания bookings DDL:
+
+```python
+# После существующих задач:
+
+apply_stg_tickets_ddl = PostgresOperator(
+    task_id="apply_stg_tickets_ddl",
+    postgres_conn_id=GREENPLUM_CONN_ID,
+    sql="stg/tickets_ddl.sql",
+)
+
+# Обновляем связи задач
+apply_stg_bookings_ddl >> apply_stg_tickets_ddl
+```
+
+### 8.2. Загрузка данных через `bookings_to_gp_stage.py`
+
+**Почему расширяем существующий загрузочный DAG:**
+- `generate_bookings_day` уже есть
 - Минимальные изменения → проще для новичков
 - Единый поток данных (bookings + tickets за один запуск)
 
@@ -283,36 +304,20 @@ check_tickets_dq = PostgresOperator(
 check_row_counts >> load_tickets_to_stg >> check_tickets_dq >> finish_summary
 ```
 
-**Полный DAG (с обновлениями):**
+**Фактические изменения в DAG:**
 
-```python
-# ... (импорты и default_args без изменений)
+Обновлён `description` DAG и добавлены две новые задачи:
+- `load_tickets_to_stg` — загружает билеты через PXF
+- `check_tickets_dq` — проверяет качество данных билетов
 
-with DAG(
-    dag_id="bookings_to_gp_stage",
-    # ... (параметры без изменений)
-) as dag:
-    generate_bookings_day = PostgresOperator(...)  # уже есть
-    load_bookings_to_stg = PostgresOperator(...)   # уже есть
-    check_row_counts = PostgresOperator(...)       # уже есть
-    finish_summary = PythonOperator(...)           # уже есть
-
-    # Новые задачи
-    load_tickets_to_stg = PostgresOperator(
-        task_id="load_tickets_to_stg",
-        postgres_conn_id=GREENPLUM_CONN_ID,
-        sql="stg/tickets_load.sql",
-    )
-
-    check_tickets_dq = PostgresOperator(
-        task_id="check_tickets_dq",
-        postgres_conn_id=GREENPLUM_CONN_ID,
-        sql="stg/tickets_dq.sql",
-    )
-
-    # Обновлённые связи
-    generate_bookings_day >> load_bookings_to_stg >> check_row_counts
-    check_row_counts >> load_tickets_to_stg >> check_tickets_dq >> finish_summary
+Порядок выполнения:
+```
+generate_bookings_day 
+  → load_bookings_to_stg 
+    → check_row_counts 
+      → load_tickets_to_stg 
+        → check_tickets_dq 
+          → finish_summary
 ```
 
 ## 9. Тестирование
@@ -327,10 +332,17 @@ make bookings-init         # инициализировать демо-БД
 
 **2. Создание таблиц:**
 ```bash
+# Вариант 1: через Airflow UI (предпочтительно)
+# Запустите DAG `bookings_stg_ddl` в Airflow UI
+
+# Вариант 2: через make-команду
+make ddl-gp
+
+# Вариант 3: напрямую через psql
 make gp-psql
 ```
 ```sql
--- внутри psql:
+-- внутри psql (если выбрали вариант 3):
 \i sql/stg/tickets_ddl.sql
 \dt stg.*
 ```
@@ -378,18 +390,45 @@ WHERE b.book_ref IS NULL;
 2. ✅ Создать файл `sql/stg/tickets_load.sql`
 3. ✅ Создать файл `sql/stg/tickets_dq.sql`
 4. ✅ Обновить `airflow/dags/bookings_to_gp_stage.py` (добавить задачи tickets)
-5. ⏳ Локальное тестирование (раздел 9)
-6. ⏳ Проверка через Airflow UI
-7. ⏳ Обновить `README.md` (добавить tickets в список STG-таблиц)
+5. ✅ Обновить `airflow/dags/bookings_stg_ddl.py` (добавить создание tickets DDL)
+6. ✅ Обновить `sql/ddl_gp.sql` (подключить tickets_ddl.sql)
+7. ✅ Локальное тестирование (раздел 9)
+8. ✅ Проверка через Airflow UI
+9. ✅ Проверка идемпотентности DDL
+10. ✅ Проверка инкрементальной загрузки
+11. ⏳ Обновить `README.md` (добавить tickets в список STG-таблиц)
 
 ## 11. Сопутствующие изменения
 
-После успешного тестирования обновить документацию:
+### Изменения в коде:
 
-**README.md:**
-- Добавить `tickets` в список STG-таблиц
-- Обновить описание DAG `bookings_to_gp_stage` (упомянуть загрузку билетов)
+**sql/ddl_gp.sql:**
+- ✅ Добавлено подключение `sql/stg/tickets_ddl.sql`
 
 **educational-tasks.md:**
-- Добавить задание по анализу `tickets` в STG
-- Предложить построить витрину для анализа билетов (количество, выручка по направлениям)
+- ✅ Добавлен раздел 2.3 по анализу структуры `tickets` в STG
+- ✅ Добавлен раздел 3.3 по анализу данных `bookings + tickets`
+
+### Необходимые изменения в документации:
+
+**README.md:**
+- ⏳ Добавить `tickets` в список STG-таблиц
+- ⏳ Обновить описание DAG `bookings_to_gp_stage` (упомянуть загрузку билетов)
+
+## 12. Результаты тестирования
+
+### Первый запуск (полная загрузка):
+- **Загружено:** 182436 билетов
+- **Бронирования:** 45730
+- **Связи:** все билеты имеют соответствующие бронирования (0 orphan tickets)
+- **DQ-проверки:** все пройдены успешно
+
+### Второй запуск (инкрементальная загрузка):
+- **Загружено:** новые билеты (количество зависит от сгенерированных данных)
+- **Всего в таблице:** сумма всех батчей
+- **Уникальность:** все ticket_no уникальные (нет дубликатов)
+- **DQ-проверки:** все пройдены успешно
+
+### Идемпотентность DDL:
+- **Первый запуск DDL:** таблицы созданы, данные не затронуты
+- **Второй запуск DDL:** данные не пропали, таблицы существуют (CREATE TABLE IF NOT EXISTS)

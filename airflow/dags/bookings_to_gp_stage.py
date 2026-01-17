@@ -15,8 +15,9 @@ from __future__ import annotations
 - `run_id` используется как метка запуска (в `batch_id`, в логах и DQ).
 """
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
+import pendulum
 from airflow.operators.python import PythonOperator
 from airflow.providers.postgres.operators.postgres import PostgresOperator
 
@@ -48,9 +49,10 @@ def _finish_summary() -> None:
 
 with DAG(
     dag_id="bookings_to_gp_stage",
-    start_date=datetime(2024, 1, 1),
+    start_date=pendulum.datetime(2024, 1, 1, tz="UTC"),
     schedule=None,
     catchup=False,
+    max_active_runs=1,
     template_searchpath="/sql",
     default_args=default_args,
     tags=["demo", "bookings", "greenplum", "stg"],

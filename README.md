@@ -80,6 +80,7 @@ make bookings-init
 make gp-psql
 -- внутри psql:
 SELECT COUNT(*) FROM stg.bookings;
+SELECT COUNT(*) FROM stg.tickets;
 SELECT * FROM stg.bookings ORDER BY src_created_at_ts DESC LIMIT 10;
 ```
 
@@ -89,9 +90,9 @@ SELECT * FROM stg.bookings ORDER BY src_created_at_ts DESC LIMIT 10;
 
 Основные (для потока bookings → DWH):
 
-- `bookings_stg_ddl` — создаёт `stg.bookings_ext` и `stg.bookings` в Greenplum;
-- `bookings_to_gp_stage` — генерирует учебный день в `bookings-db` и грузит инкремент в `stg.bookings`
-  (через PXF), затем выполняет DQ‑проверку.
+- `bookings_stg_ddl` — создаёт `stg.bookings_ext`/`stg.bookings` и `stg.tickets_ext`/`stg.tickets` в Greenplum;
+- `bookings_to_gp_stage` — генерирует учебный день в `bookings-db`, грузит инкремент в `stg.bookings` и `stg.tickets`
+  (через PXF), затем выполняет DQ‑проверки.
 
 Вспомогательные (побочный трек с CSV):
 

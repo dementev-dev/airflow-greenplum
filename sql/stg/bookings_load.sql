@@ -29,6 +29,7 @@ FROM stg.bookings_ext AS ext
 CROSS JOIN max_batch_ts AS mb
 WHERE ext.book_date > mb.max_ts
 AND NOT EXISTS (
+    -- Идемпотентность: при повторном запуске/ретрае не вставляем повторно те же строки в рамках текущего batch_id.
     SELECT 1
     FROM stg.bookings AS b
     WHERE b.batch_id = '{{ run_id }}'::text

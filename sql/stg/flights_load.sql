@@ -37,6 +37,7 @@ FROM stg.flights_ext AS ext
 CROSS JOIN max_batch_ts AS mb
 WHERE ext.scheduled_departure > mb.max_ts
 AND NOT EXISTS (
+    -- Идемпотентность: при повторном запуске/ретрае не вставляем повторно те же строки в рамках текущего batch_id.
     SELECT 1
     FROM stg.flights AS f
     WHERE f.batch_id = '{{ run_id }}'::text

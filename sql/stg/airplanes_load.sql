@@ -20,7 +20,7 @@ SELECT
     '{{ run_id }}'::text
 FROM stg.airplanes_ext AS ext
 WHERE NOT EXISTS (
-    -- Защита от дублей в рамках одного batch_id
+    -- Идемпотентность: при повторном запуске/ретрае не вставляем повторно те же строки в рамках текущего batch_id.
     SELECT 1
     FROM stg.airplanes AS a
     WHERE a.batch_id = '{{ run_id }}'::text

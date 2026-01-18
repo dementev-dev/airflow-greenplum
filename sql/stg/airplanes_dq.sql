@@ -15,7 +15,7 @@ BEGIN
 
     IF v_src_count = 0 THEN
         RAISE EXCEPTION
-            'В источнике airplanes_ext нет строк.';
+            'В источнике airplanes_ext нет строк. Проверьте: bookings-db запущен, PXF работает, STG DDL применён (bookings_stg_ddl или make ddl-gp).';
     END IF;
 
     -- Считаем строки, реально вставленные в stg.airplanes в этом батче

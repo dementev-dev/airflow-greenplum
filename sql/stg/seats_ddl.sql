@@ -26,9 +26,6 @@ CREATE TABLE IF NOT EXISTS stg.seats (
 )
 WITH (appendonly=true, orientation=row, compresstype=zlib, compresslevel=1)
 -- Ключ распределения: airplane_code
--- Обоснование: airplane_code обеспечивает co-location с таблицей airplanes.
--- Использование airplane_code обеспечивает:
--- 1. Co-location данных seats и airplanes при JOIN по airplane_code
--- 2. Группировка мест по самолётам (в одном самолёте обычно много мест)
--- 3. Оптимизацию запросов, которые фильтруют или группируют по airplane_code
+-- Обоснование: airplane_code обеспечивает коллокацию seats ↔ airplanes при JOIN по airplane_code
+-- (в MPP это уменьшает вероятность перераспределения данных / motion).
 DISTRIBUTED BY (airplane_code);

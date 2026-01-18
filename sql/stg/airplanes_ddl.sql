@@ -32,7 +32,7 @@ WITH (appendonly=true, orientation=row, compresstype=zlib, compresslevel=1)
 -- Обоснование: airplane_code — это уникальный идентификатор самолёта.
 -- Использование airplane_code обеспечивает:
 -- 1. Равномерное распределение данных по сегментам (airplane_code имеет высокую кардинальность)
--- 2. Co-location данных airplanes и routes при JOIN по airplane_code
--- 3. Co-location данных airplanes и seats при JOIN по airplane_code
--- 4. Оптимизацию запросов, которые фильтруют или группируют по airplane_code
+-- 2. Коллокацию данных airplanes и seats при JOIN по airplane_code
+-- 3. Оптимизацию запросов, которые фильтруют или группируют по airplane_code
+-- Примечание: JOIN с таблицей routes (распределённой по route_no) может требовать motion.
 DISTRIBUTED BY (airplane_code);

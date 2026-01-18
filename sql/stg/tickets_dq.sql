@@ -26,9 +26,25 @@ BEGIN
     WHERE b.book_date > COALESCE(v_prev_ts, TIMESTAMP '1900-01-01 00:00:00');
 
     IF v_source_count = 0 THEN
-        RAISE EXCEPTION
-            'В источнике tickets_ext нет строк для окна инкремента (book_date > %). Проверьте генерацию данных (таск generate_bookings_day).',
-            COALESCE(v_prev_ts, TIMESTAMP '1900-01-01 00:00:00');
+        -- Пустое окно инкремента допустимо: новых данных может не быть.
+        -- В этом случае ожидаем, что в текущем batch_id тоже 0 строк.
+        SELECT COUNT(*)
+        INTO v_stg_count
+        FROM stg.tickets
+        WHERE batch_id = v_batch_id;
+
+        IF v_stg_count <> 0 THEN
+            RAISE EXCEPTION
+                'DQ FAILED: источник tickets_ext за окно инкремента пустой, но в stg.tickets есть строки текущего batch_id (batch_id=%): %',
+                v_batch_id,
+                v_stg_count;
+        END IF;
+
+        RAISE NOTICE
+            'В источнике tickets_ext нет строк для окна инкремента (book_date > %). Пропускаем DQ проверки (batch_id=%).',
+            COALESCE(v_prev_ts, TIMESTAMP '1900-01-01 00:00:00'),
+            v_batch_id;
+        RETURN;
     END IF;
 
     -- Количество в STG (текущий батч)

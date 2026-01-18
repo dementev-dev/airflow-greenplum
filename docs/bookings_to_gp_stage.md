@@ -100,8 +100,8 @@ make bookings-init
 - `load_segments_to_stg` → `check_segments_dq` (инкремент по `book_date` через tickets/bookings)
 - `load_boarding_passes_to_stg` → `check_boarding_passes_dq` (full snapshot)
 
-Важно: для некоторых таблиц “пустое окно инкремента” считается ошибкой (DQ делает `RAISE EXCEPTION`),
-а для `boarding_passes` DQ может быть пропущена, если в источнике 0 строк.
+Важно: для инкрементальных таблиц “пустое окно инкремента” допустимо — загрузка и DQ логируют `NOTICE` и завершаются успешно.
+Для snapshot-справочников (airports/airplanes/routes/seats) пустой источник считается ошибкой (DQ делает `RAISE EXCEPTION`).
 
 8) `finish_summary`
 

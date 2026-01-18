@@ -82,19 +82,15 @@ with DAG(
         sql="stg/boarding_passes_ddl.sql",
     )
 
-    # Сначала создаются справочники, затем транзакционные таблицы
+    # Сначала создаются справочники, затем транзакционные таблицы (последовательно)
     (
         apply_stg_bookings_ddl
         >> apply_stg_tickets_ddl
-        >> [
-            apply_stg_airports_ddl,
-            apply_stg_airplanes_ddl,
-            apply_stg_routes_ddl,
-            apply_stg_seats_ddl,
-        ]
-        >> [
-            apply_stg_flights_ddl,
-            apply_stg_segments_ddl,
-            apply_stg_boarding_passes_ddl,
-        ]
+        >> apply_stg_airports_ddl
+        >> apply_stg_airplanes_ddl
+        >> apply_stg_routes_ddl
+        >> apply_stg_seats_ddl
+        >> apply_stg_flights_ddl
+        >> apply_stg_segments_ddl
+        >> apply_stg_boarding_passes_ddl
     )

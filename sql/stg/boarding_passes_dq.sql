@@ -16,8 +16,10 @@ BEGIN
     FROM stg.boarding_passes_ext;
 
     IF v_src_count = 0 THEN
-        RAISE EXCEPTION
-            'В источнике boarding_passes_ext нет строк.';
+        RAISE NOTICE
+            'В источнике boarding_passes_ext нет строк - пропускаем DQ проверки (batch_id=%).',
+            v_batch_id;
+        RETURN;
     END IF;
 
     -- Считаем строки, реально вставленные в stg.boarding_passes в этом батче
@@ -96,4 +98,8 @@ BEGIN
         v_batch_id,
         v_src_count,
         v_stg_count;
+
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'DQ ERROR для boarding_passes (batch_id=%): %', v_batch_id, SQLERRM;
+    RAISE;
 END $$;

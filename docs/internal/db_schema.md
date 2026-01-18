@@ -101,7 +101,7 @@
   - `total_amount TEXT` - общая сумма
 - **Технические колонки:** `src_created_at_ts` (=book_date), `load_dttm`, `batch_id`
 - **Стратегия загрузки:** Инкремент по `book_date`
-- **DQ проверки:** count (окно инкремента), дубликаты book_ref, NULL обязательных полей
+- **DQ проверки:** count (окно инкремента, пустое окно допустимо), дубликаты book_ref, NULL обязательных полей
 
 #### stg.tickets (транзакции, инкремент)
 - **Источник:** `bookings.tickets` (через PXF)
@@ -115,7 +115,7 @@
   - `outbound TEXT` - направление (в источнике boolean)
 - **Технические колонки:** `src_created_at_ts` (из book_date через bookings), `load_dttm`, `batch_id`
 - **Стратегия загрузки:** Инкремент по `book_date` (через bookings)
-- **DQ проверки:** count (окно инкремента), дубликаты ticket_no, NULL обязательных полей, пустой passenger_name, ссылочная целостность (bookings)
+- **DQ проверки:** count (окно инкремента, пустое окно допустимо), дубликаты ticket_no, NULL обязательных полей, пустой passenger_name, ссылочная целостность (bookings)
 
 #### stg.airports (справочник, full load)
 - **Источник:** `bookings.airports_data` (через PXF)
@@ -185,7 +185,7 @@
   - `actual_arrival TEXT` - фактическое время прилёта
 - **Технические колонки:** `src_created_at_ts` (=scheduled_departure), `load_dttm`, `batch_id`
 - **Стратегия загрузки:** Инкремент по `scheduled_departure`
-- **DQ проверки:** count (окно инкремента), дубликаты flight_id, NULL обязательных полей, ссылочная целостность (routes, batch_id = текущий батч)
+- **DQ проверки:** count (окно инкремента, пустое окно допустимо), дубликаты flight_id, NULL обязательных полей, ссылочная целостность (routes, batch_id = текущий батч)
 
 #### stg.segments (транзакции, инкремент)
 - **Источник:** `bookings.segments` (через PXF)
@@ -198,7 +198,7 @@
   - `price TEXT` - цена
 - **Технические колонки:** `src_created_at_ts` (из book_date через tickets), `load_dttm`, `batch_id`
 - **Стратегия загрузки:** Инкремент по `book_date` (через tickets)
-- **DQ проверки:** count (окно инкремента), дубликаты (ticket_no, flight_id), NULL обязательных полей, ссылочная целостность (tickets, flights)
+- **DQ проверки:** count (окно инкремента, пустое окно допустимо), дубликаты (ticket_no, flight_id), NULL обязательных полей, ссылочная целостность (tickets, flights)
 
 #### stg.boarding_passes (транзакции, full snapshot)
 - **Источник:** `bookings.boarding_passes` (через PXF)

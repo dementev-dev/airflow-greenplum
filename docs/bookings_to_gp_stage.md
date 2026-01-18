@@ -12,6 +12,8 @@
 - Сверяет количество строк между источником (за окно инкремента) и загруженным батчем.
 - Загружает инкремент в `stg.tickets` через внешнюю таблицу `stg.tickets_ext`, используя PXF.
 - Запускает DQ‑проверки для `stg.tickets` (количество, ссылочная целостность, обязательные поля).
+- Загружает справочники (full load): `stg.airports`, `stg.airplanes`, `stg.routes`, `stg.seats` + DQ.
+- Загружает транзакции: `stg.flights` (инкремент), `stg.segments` (инкремент), `stg.boarding_passes` (full snapshot) + DQ.
 
 ## Что должно быть готово перед запуском
 
@@ -113,3 +115,8 @@ LIMIT 10;
 - Ошибки про `stg.bookings_ext`/`stg.bookings`: не применён DDL → запустите `bookings_stg_ddl` или `make ddl-gp`.
 - Ошибки PXF (`protocol "pxf" does not exist`, connection refused): перезапустите `greenplum` и повторите DDL.
   Для технических деталей см. `docs/internal/pxf_bookings.md`.
+
+## Рекомендации по качеству решения
+
+Ревью решения и список улучшений, которые делают пайплайн более “эталонным” для обучения:
+`docs/internal/bookings_stg_code_review.md`.

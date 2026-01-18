@@ -26,3 +26,14 @@ FORMAT 'CUSTOM' (formatter='pxfwritable_import');
 -- Здесь подключаем их через psql \i, чтобы сохранить единый входной скрипт.
 \i stg/bookings_ddl.sql
 \i stg/tickets_ddl.sql
+
+-- DDL для новых таблиц STG слоя (справочники)
+\i stg/airports_ddl.sql
+\i stg/airplanes_ddl.sql
+\i stg/routes_ddl.sql
+\i stg/seats_ddl.sql
+
+-- DDL для новых таблиц STG слоя (транзакции)
+\i stg/flights_ddl.sql
+\i stg/segments_ddl.sql
+\i stg/boarding_passes_ddl.sql

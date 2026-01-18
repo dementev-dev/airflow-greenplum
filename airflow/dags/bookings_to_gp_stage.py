@@ -94,11 +94,116 @@ with DAG(
         sql="stg/tickets_dq.sql",
     )
 
+    # Загрузка справочников (full load)
+    load_airports_to_stg = PostgresOperator(
+        task_id="load_airports_to_stg",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/airports_load.sql",
+    )
+
+    check_airports_dq = PostgresOperator(
+        task_id="check_airports_dq",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/airports_dq.sql",
+    )
+
+    load_airplanes_to_stg = PostgresOperator(
+        task_id="load_airplanes_to_stg",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/airplanes_load.sql",
+    )
+
+    check_airplanes_dq = PostgresOperator(
+        task_id="check_airplanes_dq",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/airplanes_dq.sql",
+    )
+
+    load_routes_to_stg = PostgresOperator(
+        task_id="load_routes_to_stg",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/routes_load.sql",
+    )
+
+    check_routes_dq = PostgresOperator(
+        task_id="check_routes_dq",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/routes_dq.sql",
+    )
+
+    load_seats_to_stg = PostgresOperator(
+        task_id="load_seats_to_stg",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/seats_load.sql",
+    )
+
+    check_seats_dq = PostgresOperator(
+        task_id="check_seats_dq",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/seats_dq.sql",
+    )
+
+    # Загрузка транзакций (инкремент/full snapshot)
+    load_flights_to_stg = PostgresOperator(
+        task_id="load_flights_to_stg",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/flights_load.sql",
+    )
+
+    check_flights_dq = PostgresOperator(
+        task_id="check_flights_dq",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/flights_dq.sql",
+    )
+
+    load_segments_to_stg = PostgresOperator(
+        task_id="load_segments_to_stg",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/segments_load.sql",
+    )
+
+    check_segments_dq = PostgresOperator(
+        task_id="check_segments_dq",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/segments_dq.sql",
+    )
+
+    load_boarding_passes_to_stg = PostgresOperator(
+        task_id="load_boarding_passes_to_stg",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/boarding_passes_load.sql",
+    )
+
+    check_boarding_passes_dq = PostgresOperator(
+        task_id="check_boarding_passes_dq",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/boarding_passes_dq.sql",
+    )
+
     # 6. Финальный лог/сводка
     finish_summary = PythonOperator(
         task_id="finish_summary",
         python_callable=_finish_summary,
     )
 
+    # Сначала загружаются и проверяются bookings и tickets
     generate_bookings_day >> load_bookings_to_stg >> check_row_counts
-    check_row_counts >> load_tickets_to_stg >> check_tickets_dq >> finish_summary
+    check_row_counts >> load_tickets_to_stg >> check_tickets_dq
+
+    # Затем загружаются справочники
+    check_tickets_dq >> [
+        (load_airports_to_stg >> check_airports_dq),
+        (load_airplanes_to_stg >> check_airplanes_dq),
+        (load_routes_to_stg >> check_routes_dq),
+        (load_seats_to_stg >> check_seats_dq),
+    ]
+
+    # Затем загружаются транзакции
+    [check_airports_dq, check_airplanes_dq, check_routes_dq, check_seats_dq] >> [
+        (load_flights_to_stg >> check_flights_dq),
+        (load_segments_to_stg >> check_segments_dq),
+        (load_boarding_passes_to_stg >> check_boarding_passes_dq),
+    ]
+
+    # В конце финальный лог
+    [check_flights_dq, check_segments_dq, check_boarding_passes_dq] >> finish_summary

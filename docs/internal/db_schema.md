@@ -1,6 +1,6 @@
 # Схема БД DWH (Bookings → Greenplum)
 
-> **Статус:** Проект в разработке. Реализован только STG слой (частично: bookings, tickets).
+> **Статус:** Проект в разработке. Реализован STG слой полностью (все 9 таблиц).
 
 ## Обзор
 
@@ -28,7 +28,7 @@
 | Слой | Статус | Реализовано |
 |------|--------|-------------|
 | **Source** | ✅ Готово | Демо-БД bookings (Postgres) |
-| **STG** | ⚠️ В процессе | 2 из 9 таблиц (bookings, tickets) |
+| **STG** | ✅ Готово | 9 из 9 таблиц (bookings, tickets, airports, airplanes, routes, seats, flights, segments, boarding_passes) |
 | **ODS** | ❌ Не реализован | Планируется |
 | **DDS** | ❌ Не реализован | Планируется |
 
@@ -87,6 +87,127 @@
   - `ticket_no TEXT` — номер билета
   - `flight_id INT` — ID рейса
   - `seat_no TEXT` — место (если есть)
+
+---
+
+### Детальное описание таблиц STG слоя
+
+#### stg.bookings (транзакции, инкремент)
+- **Источник:** `bookings.bookings` (через PXF)
+- **Ключ распределения:** `book_ref`
+- **Бизнес-колонки:**
+  - `book_ref TEXT` - номер бронирования
+  - `book_date TEXT` - дата бронирования
+  - `total_amount TEXT` - общая сумма
+- **Технические колонки:** `src_created_at_ts` (=book_date), `load_dttm`, `batch_id`
+- **Стратегия загрузки:** Инкремент по `book_date`
+- **DQ проверки:** count (окно инкремента), дубликаты book_ref, NULL обязательных полей
+
+#### stg.tickets (транзакции, инкремент)
+- **Источник:** `bookings.tickets` (через PXF)
+- **Ключ распределения:** `ticket_no`
+- **Бизнес-колонки:**
+  - `ticket_no TEXT` - номер билета
+  - `book_ref TEXT` - номер бронирования
+  - `passenger_id TEXT` - идентификатор пассажира
+  - `passenger_name TEXT` - имя пассажира
+  - `contact_data TEXT` - контактные данные (JSONB)
+- **Технические колонки:** `src_created_at_ts` (из book_date через bookings), `load_dttm`, `batch_id`
+- **Стратегия загрузки:** Инкремент по `book_date` (через bookings)
+- **DQ проверки:** count (окно инкремента), дубликаты ticket_no, NULL обязательных полей, ссылочная целостность
+
+#### stg.airports (справочник, full load)
+- **Источник:** `bookings.airports_data` (через PXF)
+- **Ключ распределения:** `airport_code`
+- **Бизнес-колонки:**
+  - `airport_code TEXT` - код аэропорта
+  - `airport_name TEXT` - название аэропорта (из JSONB)
+  - `city TEXT` - город (из JSONB)
+  - `country TEXT` - страна (из JSONB)
+  - `coordinates TEXT` - координаты
+  - `timezone TEXT` - часовой пояс
+- **Технические колонки:** `src_created_at_ts`, `load_dttm`, `batch_id`
+- **Стратегия загрузки:** Full load (все строки при каждом запуске)
+- **DQ проверки:** count, дубликаты airport_code, NULL обязательных полей
+
+#### stg.airplanes (справочник, full load)
+- **Источник:** `bookings.airplanes_data` (через PXF)
+- **Ключ распределения:** `airplane_code`
+- **Бизнес-колонки:**
+  - `airplane_code TEXT` - код самолёта
+  - `model TEXT` - модель (из JSONB)
+  - `range TEXT` - дальность полёта
+  - `speed TEXT` - скорость
+- **Технические колонки:** `src_created_at_ts`, `load_dttm`, `batch_id`
+- **Стратегия загрузки:** Full load
+- **DQ проверки:** count, дубликаты airplane_code, NULL обязательных полей
+
+#### stg.routes (справочник, full load)
+- **Источник:** `bookings.routes` (через PXF)
+- **Ключ распределения:** `route_no`
+- **Бизнес-колонки:**
+  - `route_no TEXT` - номер маршрута
+  - `validity TEXT` - период действия (из tstzrange)
+  - `departure_airport TEXT` - аэропорт вылета
+  - `arrival_airport TEXT` - аэропорт прилёта
+  - `airplane_code TEXT` - код самолёта
+  - `days_of_week TEXT` - дни недели (из int[])
+  - `scheduled_time TEXT` - плановое время
+  - `duration TEXT` - длительность
+- **Технические колонки:** `src_created_at_ts`, `load_dttm`, `batch_id`
+- **Стратегия загрузки:** Full load
+- **DQ проверки:** count, дубликаты (route_no, validity), NULL обязательных полей, ссылочная целостность
+
+#### stg.seats (справочник, full load)
+- **Источник:** `bookings.seats` (через PXF)
+- **Ключ распределения:** `airplane_code` (co-location с airplanes)
+- **Бизнес-колонки:**
+  - `airplane_code TEXT` - код самолёта
+  - `seat_no TEXT` - номер места
+  - `fare_conditions TEXT` - класс обслуживания
+- **Технические колонки:** `src_created_at_ts`, `load_dttm`, `batch_id`
+- **Стратегия загрузки:** Full load
+- **DQ проверки:** count, дубликаты (airplane_code, seat_no), NULL обязательных полей, ссылочная целостность
+
+#### stg.flights (транзакции, инкремент)
+- **Источник:** `bookings.flights` (через PXF)
+- **Ключ распределения:** `flight_id`
+- **Бизнес-колонки:**
+  - `flight_id TEXT` - идентификатор рейса
+  - `route_no TEXT` - номер маршрута
+  - `status TEXT` - статус
+  - `scheduled_departure TEXT` - плановое время вылета
+  - `scheduled_arrival TEXT` - плановое время прилёта
+  - `actual_departure TEXT` - фактическое время вылета
+  - `actual_arrival TEXT` - фактическое время прилёта
+- **Технические колонки:** `src_created_at_ts` (=scheduled_departure), `load_dttm`, `batch_id`
+- **Стратегия загрузки:** Инкремент по `scheduled_departure`
+- **DQ проверки:** count (окно инкремента), дубликаты flight_id, NULL обязательных полей, ссылочная целостность
+
+#### stg.segments (транзакции, инкремент)
+- **Источник:** `bookings.segments` (через PXF)
+- **Ключ распределения:** `ticket_no` (co-location с tickets)
+- **Бизнес-колонки:**
+  - `ticket_no TEXT` - номер билета
+  - `flight_id TEXT` - идентификатор рейса
+  - `fare_conditions TEXT` - класс обслуживания
+  - `price TEXT` - цена
+- **Технические колонки:** `src_created_at_ts` (из book_date через tickets), `load_dttm`, `batch_id`
+- **Стратегия загрузки:** Инкремент по `book_date` (через tickets)
+- **DQ проверки:** count (окно инкремента), дубликаты (ticket_no, flight_id), NULL обязательных полей, ссылочная целостность
+
+#### stg.boarding_passes (транзакции, full snapshot)
+- **Источник:** `bookings.boarding_passes` (через PXF)
+- **Ключ распределения:** `ticket_no` (co-location с tickets/segments)
+- **Бизнес-колонки:**
+  - `ticket_no TEXT` - номер билета
+  - `flight_id TEXT` - идентификатор рейса
+  - `seat_no TEXT` - номер места
+  - `boarding_no TEXT` - номер посадки
+  - `boarding_time TEXT` - время посадки
+- **Технические колонки:** `src_created_at_ts` (=now()), `load_dttm`, `batch_id`
+- **Стратегия загрузки:** Full snapshot (все строки при каждом запуске)
+- **DQ проверки:** count, дубликаты (ticket_no, flight_id), NULL обязательных полей, ссылочная целостность
 
 ---
 
@@ -299,7 +420,7 @@ graph LR
 
 ## TODO
 
-- [ ] Реализовать STG слой полностью (все 9 таблиц)
+- [x] Реализовать STG слой полностью (все 9 таблиц)
 - [ ] Реализовать ODS слой
 - [ ] Реализовать DDS слой (измерения и факт)
 - [ ] Создать DAG для загрузки ODS

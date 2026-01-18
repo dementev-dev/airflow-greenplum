@@ -70,3 +70,85 @@ def test_csv_to_greenplum_dq_dag_structure():
     assert h in s.get_direct_relatives("downstream")
     assert d in h.get_direct_relatives("downstream")
     assert q in d.get_direct_relatives("downstream")
+
+
+def test_bookings_stg_ddl_dag_structure():
+    """Проверка структуры DAG bookings_stg_ddl."""
+    dag = _load_dag("airflow.dags.bookings_stg_ddl")
+
+    expected_tasks = {
+        "apply_stg_bookings_ddl",
+        "apply_stg_tickets_ddl",
+        "apply_stg_airports_ddl",
+        "apply_stg_airplanes_ddl",
+        "apply_stg_routes_ddl",
+        "apply_stg_seats_ddl",
+        "apply_stg_flights_ddl",
+        "apply_stg_segments_ddl",
+        "apply_stg_boarding_passes_ddl",
+    }
+    assert expected_tasks.issubset(dag.task_dict.keys())
+
+    # Проверка линейных зависимостей
+    # Справочники создаются после bookings/tickets
+    assert dag.has_task("apply_stg_bookings_ddl")
+    assert dag.has_task("apply_stg_tickets_ddl")
+    assert dag.has_task("apply_stg_airports_ddl")
+    assert dag.has_task("apply_stg_airplanes_ddl")
+    assert dag.has_task("apply_stg_routes_ddl")
+    assert dag.has_task("apply_stg_seats_ddl")
+    assert dag.has_task("apply_stg_flights_ddl")
+    assert dag.has_task("apply_stg_segments_ddl")
+    assert dag.has_task("apply_stg_boarding_passes_ddl")
+
+
+def test_bookings_to_gp_stage_dag_structure():
+    """Проверка структуры DAG bookings_to_gp_stage."""
+    dag = _load_dag("airflow.dags.bookings_to_gp_stage")
+
+    expected_tasks = {
+        "generate_bookings_day",
+        "load_bookings_to_stg",
+        "check_row_counts",
+        "load_tickets_to_stg",
+        "check_tickets_dq",
+        "load_airports_to_stg",
+        "check_airports_dq",
+        "load_airplanes_to_stg",
+        "check_airplanes_dq",
+        "load_routes_to_stg",
+        "check_routes_dq",
+        "load_seats_to_stg",
+        "check_seats_dq",
+        "load_flights_to_stg",
+        "check_flights_dq",
+        "load_segments_to_stg",
+        "check_segments_dq",
+        "load_boarding_passes_to_stg",
+        "check_boarding_passes_dq",
+        "finish_summary",
+    }
+    assert expected_tasks.issubset(dag.task_dict.keys())
+
+    # Проверка линейных зависимостей
+    # bookings/tickets → справочники → транзакции → финальный лог
+    assert dag.has_task("generate_bookings_day")
+    assert dag.has_task("load_bookings_to_stg")
+    assert dag.has_task("check_row_counts")
+    assert dag.has_task("load_tickets_to_stg")
+    assert dag.has_task("check_tickets_dq")
+    assert dag.has_task("load_airports_to_stg")
+    assert dag.has_task("check_airports_dq")
+    assert dag.has_task("load_airplanes_to_stg")
+    assert dag.has_task("check_airplanes_dq")
+    assert dag.has_task("load_routes_to_stg")
+    assert dag.has_task("check_routes_dq")
+    assert dag.has_task("load_seats_to_stg")
+    assert dag.has_task("check_seats_dq")
+    assert dag.has_task("load_flights_to_stg")
+    assert dag.has_task("check_flights_dq")
+    assert dag.has_task("load_segments_to_stg")
+    assert dag.has_task("check_segments_dq")
+    assert dag.has_task("load_boarding_passes_to_stg")
+    assert dag.has_task("check_boarding_passes_dq")
+    assert dag.has_task("finish_summary")

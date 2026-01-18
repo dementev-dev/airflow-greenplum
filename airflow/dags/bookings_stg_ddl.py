@@ -38,4 +38,63 @@ with DAG(
         sql="stg/tickets_ddl.sql",
     )
 
-    apply_stg_bookings_ddl >> apply_stg_tickets_ddl
+    # DDL для справочников
+    apply_stg_airports_ddl = PostgresOperator(
+        task_id="apply_stg_airports_ddl",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/airports_ddl.sql",
+    )
+
+    apply_stg_airplanes_ddl = PostgresOperator(
+        task_id="apply_stg_airplanes_ddl",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/airplanes_ddl.sql",
+    )
+
+    apply_stg_routes_ddl = PostgresOperator(
+        task_id="apply_stg_routes_ddl",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/routes_ddl.sql",
+    )
+
+    apply_stg_seats_ddl = PostgresOperator(
+        task_id="apply_stg_seats_ddl",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/seats_ddl.sql",
+    )
+
+    # DDL для транзакционных таблиц
+    apply_stg_flights_ddl = PostgresOperator(
+        task_id="apply_stg_flights_ddl",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/flights_ddl.sql",
+    )
+
+    apply_stg_segments_ddl = PostgresOperator(
+        task_id="apply_stg_segments_ddl",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/segments_ddl.sql",
+    )
+
+    apply_stg_boarding_passes_ddl = PostgresOperator(
+        task_id="apply_stg_boarding_passes_ddl",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/boarding_passes_ddl.sql",
+    )
+
+    # Сначала создаются справочники, затем транзакционные таблицы
+    (
+        apply_stg_bookings_ddl
+        >> apply_stg_tickets_ddl
+        >> [
+            apply_stg_airports_ddl,
+            apply_stg_airplanes_ddl,
+            apply_stg_routes_ddl,
+            apply_stg_seats_ddl,
+        ]
+        >> [
+            apply_stg_flights_ddl,
+            apply_stg_segments_ddl,
+            apply_stg_boarding_passes_ddl,
+        ]
+    )

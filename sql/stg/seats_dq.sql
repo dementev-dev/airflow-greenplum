@@ -33,7 +33,8 @@ BEGIN
     END IF;
 
     -- Проверка на дубликаты составного ключа (airplane_code, seat_no)
-    SELECT COUNT(*) - COUNT(DISTINCT airplane_code || '|' || seat_no)
+    -- Используем md5 от ROW, чтобы избежать коллизий при склейке строк.
+    SELECT COUNT(*) - COUNT(DISTINCT md5(ROW(airplane_code, seat_no)::text))
     INTO v_dup_count
     FROM stg.seats AS s
     WHERE s.batch_id = v_batch_id;

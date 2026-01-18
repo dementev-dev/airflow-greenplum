@@ -62,7 +62,8 @@ BEGIN
     END IF;
 
     -- Проверка на дубликаты (ticket_no, flight_id)
-    SELECT COUNT(*) - COUNT(DISTINCT ticket_no || '|' || flight_id)
+    -- Используем md5 от ROW, чтобы избежать коллизий при склейке строк.
+    SELECT COUNT(*) - COUNT(DISTINCT md5(ROW(ticket_no, flight_id)::text))
     INTO v_dup_count
     FROM stg.segments AS s
     WHERE s.batch_id = v_batch_id;

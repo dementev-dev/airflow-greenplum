@@ -1,5 +1,8 @@
 # План ETL для загрузки `bookings.tickets` в STG слой
 
+> Архивный документ: это рабочий план, который использовался при разработке.
+> Актуальная реализация потока — DAG `bookings_to_gp_stage` и SQL в `sql/stg/`.
+
 **Ветка:** `chore/bookings-etl`
 **Цель:** Добавить загрузку таблицы `tickets` в STG слой Greenplum по аналогии с `bookings`
 

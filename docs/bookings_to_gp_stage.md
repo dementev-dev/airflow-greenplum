@@ -29,7 +29,9 @@ make up
 make bookings-init
 ```
 
-3) В Greenplum созданы STG‑объекты `stg.bookings_ext`/`stg.bookings` и `stg.tickets_ext`/`stg.tickets` (выберите один вариант):
+3) В Greenplum созданы STG‑объекты (внешние `*_ext` через PXF и внутренние таблицы слоя `stg`)
+для всех таблиц потока: `bookings`, `tickets`, `airports`, `airplanes`, `routes`, `seats`, `flights`,
+`segments`, `boarding_passes` (выберите один вариант):
 
 - учебный вариант: запустить DAG `bookings_stg_ddl` в Airflow UI;
 - технический шорткат: `make ddl-gp`.
@@ -130,7 +132,7 @@ LIMIT 10;
 ## Типичные ошибки
 
 - `database "demo" does not exist`: демо‑БД не установлена → выполните `make bookings-init`.
-- Ошибки про `stg.bookings_ext`/`stg.bookings`: не применён DDL → запустите `bookings_stg_ddl` или `make ddl-gp`.
+- Ошибки про `stg.*`/`stg.*_ext`: не применён DDL → запустите `bookings_stg_ddl` или `make ddl-gp`.
 - Ошибки PXF (`protocol "pxf" does not exist`, connection refused): перезапустите `greenplum` и повторите DDL.
   Для технических деталей см. `docs/internal/pxf_bookings.md`.
 

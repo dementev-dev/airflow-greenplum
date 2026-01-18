@@ -32,8 +32,7 @@ WITH (appendonly=true, orientation=row, compresstype=zlib, compresslevel=1)
 -- Ключ распределения: book_ref
 -- Обоснование: book_ref — это основной бизнес-ключ для бронирований.
 -- Использование book_ref обеспечивает:
--- 1. Co-location данных tickets и bookings при JOIN по book_ref
+-- 1. Коллокацию данных tickets и bookings при JOIN по book_ref
 -- 2. Равномерное распределение данных по сегментам (book_ref имеет высокую кардинальность)
 -- 3. Оптимизацию запросов, которые фильтруют или группируют по book_ref
 DISTRIBUTED BY (book_ref);
-

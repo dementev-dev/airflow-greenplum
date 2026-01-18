@@ -36,6 +36,6 @@ WITH (appendonly=true, orientation=row, compresstype=zlib, compresslevel=1)
 -- Обоснование: airport_code — это уникальный идентификатор аэропорта.
 -- Использование airport_code обеспечивает:
 -- 1. Равномерное распределение данных по сегментам (airport_code имеет высокую кардинальность)
--- 2. Co-location данных airports и routes при JOIN по departure_airport/arrival_airport
--- 3. Оптимизацию запросов, которые фильтруют или группируют по airport_code
+-- 2. Оптимизацию запросов, которые фильтруют или группируют по airport_code
+-- Примечание: JOIN с таблицей routes (распределённой по route_no) может требовать motion.
 DISTRIBUTED BY (airport_code);

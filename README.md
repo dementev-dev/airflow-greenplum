@@ -89,8 +89,9 @@ SELECT * FROM stg.bookings ORDER BY src_created_at_ts DESC LIMIT 10;
 Основные (для потока bookings → DWH):
 
 - `bookings_stg_ddl` — создаёт `stg.bookings_ext`/`stg.bookings` и `stg.tickets_ext`/`stg.tickets` в Greenplum;
-- `bookings_to_gp_stage` — генерирует учебный день в `bookings-db`, грузит инкремент в `stg.bookings` и `stg.tickets`
-  (через PXF), затем выполняет DQ‑проверки.
+- `bookings_stg_ddl` — создаёт/обновляет весь STG слой для bookings (9 таблиц: bookings, tickets, airports, airplanes,
+  routes, seats, flights, segments, boarding_passes; включая внешние `*_ext` через PXF);
+- `bookings_to_gp_stage` — генерирует учебный день в `bookings-db`, затем загружает данные в STG и выполняет DQ‑проверки.
 
 Вспомогательные (побочный трек с CSV):
 

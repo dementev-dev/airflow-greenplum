@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 """
-Учебный DAG: создаёт схему stg и таблицы bookings_ext/bookings/tickets в Greenplum.
-Запускается вручную перед DAG загрузки bookings_to_gp_stage или после изменения DDL.
+Учебный DAG: создаёт/обновляет слой stg в Greenplum для демо-источника bookings.
+
+Запускается вручную перед DAG загрузки `bookings_to_gp_stage` или после изменения DDL.
+Создаёт внешние таблицы PXF (`*_ext`) и внутренние таблицы STG (9 таблиц: bookings, tickets,
+airports, airplanes, routes, seats, flights, segments, boarding_passes).
 """
 
 from datetime import timedelta
@@ -23,8 +26,8 @@ with DAG(
     catchup=False,
     template_searchpath="/sql",
     default_args=default_args,
-    tags=["demo", "greenplum", "ddl", "bookings", "tickets", "stg"],
-    description="Создаёт/обновляет stg.bookings_ext/bookings/tickets для учебного DAG",
+    tags=["demo", "greenplum", "ddl", "bookings", "stg"],
+    description="Учебный DDL DAG: создаёт/обновляет stg.* (PXF external + internal STG) для bookings",
 ) as dag:
     apply_stg_bookings_ddl = PostgresOperator(
         task_id="apply_stg_bookings_ddl",
@@ -82,7 +85,8 @@ with DAG(
         sql="stg/boarding_passes_ddl.sql",
     )
 
-    # Сначала создаются справочники, затем транзакционные таблицы (последовательно)
+    # DDL применяем последовательно, чтобы порядок был понятным для новичков,
+    # а ошибки — воспроизводимыми (в логах сразу видно, на каком объекте упали).
     (
         apply_stg_bookings_ddl
         >> apply_stg_tickets_ddl

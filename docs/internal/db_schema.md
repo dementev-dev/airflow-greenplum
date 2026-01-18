@@ -402,6 +402,7 @@ graph LR
 ## Связанные документы
 
 - [`docs/internal/bookings_stg_design.md`](bookings_stg_design.md) — Детальный дизайн STG слоя для bookings
+- [`docs/internal/bookings_stg_code_review.md`](bookings_stg_code_review.md) — Ревью решения и рекомендации по улучшению
 - [`docs/internal/bookings_tz.md`](bookings_tz.md) — Работа с часовыми поясами в источнике
 - [`docs/internal/pxf_bookings.md`](pxf_bookings.md) — Настройка PXF для чтения из bookings-db
 - [`TESTING.md`](../../TESTING.md) — Пошаговый чек-лист для тестирования стенда

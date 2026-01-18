@@ -76,7 +76,9 @@ BEGIN
     SELECT COUNT(*)
     INTO v_orphan_route_count
     FROM stg.flights AS f
-    LEFT JOIN stg.routes AS r ON f.route_no = r.route_no
+    LEFT JOIN stg.routes AS r
+        ON f.route_no = r.route_no
+        AND r.batch_id = v_batch_id
     WHERE f.batch_id = v_batch_id
         AND r.route_no IS NULL;
 

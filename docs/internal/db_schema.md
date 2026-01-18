@@ -105,16 +105,17 @@
 
 #### stg.tickets (транзакции, инкремент)
 - **Источник:** `bookings.tickets` (через PXF)
-- **Ключ распределения:** `ticket_no`
+- **Ключ распределения:** `book_ref`
+- **Примечание:** JOIN `tickets` ↔ `segments`/`boarding_passes` по `ticket_no` может требовать motion (ключи распределения разные).
 - **Бизнес-колонки:**
   - `ticket_no TEXT` - номер билета
   - `book_ref TEXT` - номер бронирования
   - `passenger_id TEXT` - идентификатор пассажира
   - `passenger_name TEXT` - имя пассажира
-  - `contact_data TEXT` - контактные данные (JSONB)
+  - `outbound TEXT` - направление (в источнике boolean)
 - **Технические колонки:** `src_created_at_ts` (из book_date через bookings), `load_dttm`, `batch_id`
 - **Стратегия загрузки:** Инкремент по `book_date` (через bookings)
-- **DQ проверки:** count (окно инкремента), дубликаты ticket_no, NULL обязательных полей, ссылочная целостность
+- **DQ проверки:** count (окно инкремента), дубликаты ticket_no, NULL обязательных полей, пустой passenger_name, ссылочная целостность (bookings)
 
 #### stg.airports (справочник, full load)
 - **Источник:** `bookings.airports_data` (через PXF)
@@ -145,6 +146,7 @@
 #### stg.routes (справочник, full load)
 - **Источник:** `bookings.routes` (через PXF)
 - **Ключ распределения:** `route_no`
+- **Примечание:** JOIN по `departure_airport`/`arrival_airport`/`airplane_code` может требовать motion (ключи распределения разные).
 - **Бизнес-колонки:**
   - `route_no TEXT` - номер маршрута
   - `validity TEXT` - период действия (из tstzrange)
@@ -156,7 +158,7 @@
   - `duration TEXT` - длительность
 - **Технические колонки:** `src_created_at_ts`, `load_dttm`, `batch_id`
 - **Стратегия загрузки:** Full load
-- **DQ проверки:** count, дубликаты (route_no, validity), NULL обязательных полей, ссылочная целостность
+- **DQ проверки:** count, дубликаты (route_no, validity), NULL обязательных полей, ссылочная целостность (batch_id = текущий батч)
 
 #### stg.seats (справочник, full load)
 - **Источник:** `bookings.seats` (через PXF)
@@ -167,11 +169,12 @@
   - `fare_conditions TEXT` - класс обслуживания
 - **Технические колонки:** `src_created_at_ts`, `load_dttm`, `batch_id`
 - **Стратегия загрузки:** Full load
-- **DQ проверки:** count, дубликаты (airplane_code, seat_no), NULL обязательных полей, ссылочная целостность
+- **DQ проверки:** count, дубликаты (airplane_code, seat_no), NULL обязательных полей, ссылочная целостность (batch_id = текущий батч)
 
 #### stg.flights (транзакции, инкремент)
 - **Источник:** `bookings.flights` (через PXF)
 - **Ключ распределения:** `flight_id`
+- **Примечание:** JOIN с таблицами, распределёнными по другим ключам, может требовать motion.
 - **Бизнес-колонки:**
   - `flight_id TEXT` - идентификатор рейса
   - `route_no TEXT` - номер маршрута
@@ -182,11 +185,12 @@
   - `actual_arrival TEXT` - фактическое время прилёта
 - **Технические колонки:** `src_created_at_ts` (=scheduled_departure), `load_dttm`, `batch_id`
 - **Стратегия загрузки:** Инкремент по `scheduled_departure`
-- **DQ проверки:** count (окно инкремента), дубликаты flight_id, NULL обязательных полей, ссылочная целостность
+- **DQ проверки:** count (окно инкремента), дубликаты flight_id, NULL обязательных полей, ссылочная целостность (routes, batch_id = текущий батч)
 
 #### stg.segments (транзакции, инкремент)
 - **Источник:** `bookings.segments` (через PXF)
-- **Ключ распределения:** `ticket_no` (co-location с tickets)
+- **Ключ распределения:** `ticket_no` (co-location с boarding_passes)
+- **Примечание:** JOIN `segments` ↔ `tickets` по `ticket_no` может требовать motion (stg.tickets распределена по `book_ref`).
 - **Бизнес-колонки:**
   - `ticket_no TEXT` - номер билета
   - `flight_id TEXT` - идентификатор рейса
@@ -194,11 +198,12 @@
   - `price TEXT` - цена
 - **Технические колонки:** `src_created_at_ts` (из book_date через tickets), `load_dttm`, `batch_id`
 - **Стратегия загрузки:** Инкремент по `book_date` (через tickets)
-- **DQ проверки:** count (окно инкремента), дубликаты (ticket_no, flight_id), NULL обязательных полей, ссылочная целостность
+- **DQ проверки:** count (окно инкремента), дубликаты (ticket_no, flight_id), NULL обязательных полей, ссылочная целостность (tickets, flights)
 
 #### stg.boarding_passes (транзакции, full snapshot)
 - **Источник:** `bookings.boarding_passes` (через PXF)
-- **Ключ распределения:** `ticket_no` (co-location с tickets/segments)
+- **Ключ распределения:** `ticket_no` (co-location с segments)
+- **Примечание:** JOIN `boarding_passes` ↔ `tickets` по `ticket_no` может требовать motion (stg.tickets распределена по `book_ref`).
 - **Бизнес-колонки:**
   - `ticket_no TEXT` - номер билета
   - `flight_id TEXT` - идентификатор рейса

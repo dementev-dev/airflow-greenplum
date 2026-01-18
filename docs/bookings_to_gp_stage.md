@@ -85,7 +85,25 @@ make bookings-init
 - проверяет количество строк в том же окне инкремента, а также ссылочную целостность и обязательные поля;
 - при проблемах делает `RAISE EXCEPTION`, чтобы DAG падал “красным”.
 
-6) `finish_summary`
+6) Справочники (full load)
+
+Каждый справочник загружается “снэпшотом” (все строки) и затем проверяется DQ-скриптом:
+
+- `load_airports_to_stg` → `check_airports_dq` (`sql/stg/airports_load.sql`, `sql/stg/airports_dq.sql`)
+- `load_airplanes_to_stg` → `check_airplanes_dq` (`sql/stg/airplanes_load.sql`, `sql/stg/airplanes_dq.sql`)
+- `load_routes_to_stg` → `check_routes_dq` (`sql/stg/routes_load.sql`, `sql/stg/routes_dq.sql`)
+- `load_seats_to_stg` → `check_seats_dq` (`sql/stg/seats_load.sql`, `sql/stg/seats_dq.sql`)
+
+7) Транзакции
+
+- `load_flights_to_stg` → `check_flights_dq` (инкремент по `scheduled_departure`)
+- `load_segments_to_stg` → `check_segments_dq` (инкремент по `book_date` через tickets/bookings)
+- `load_boarding_passes_to_stg` → `check_boarding_passes_dq` (full snapshot)
+
+Важно: для некоторых таблиц “пустое окно инкремента” считается ошибкой (DQ делает `RAISE EXCEPTION`),
+а для `boarding_passes` DQ может быть пропущена, если в источнике 0 строк.
+
+8) `finish_summary`
 
 - логирует краткую сводку в конце запуска.
 

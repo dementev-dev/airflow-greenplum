@@ -38,5 +38,5 @@ WITH (appendonly=true, orientation=row, compresstype=zlib, compresslevel=1)
 -- Использование flight_id обеспечивает:
 -- 1. Равномерное распределение данных по сегментам (flight_id имеет высокую кардинальность)
 -- 2. Оптимизацию запросов, которые фильтруют или группируют по flight_id
--- 3. Co-location данных flights и boarding_passes при JOIN по flight_id
+-- Примечание: JOIN с таблицами, распределёнными по другим ключам, может требовать motion.
 DISTRIBUTED BY (flight_id);

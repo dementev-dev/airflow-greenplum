@@ -37,9 +37,9 @@ CREATE TABLE IF NOT EXISTS stg.routes (
 )
 WITH (appendonly=true, orientation=row, compresstype=zlib, compresslevel=1)
 -- Ключ распределения: route_no
--- Обоснование: route_no — это уникальный идентификатор маршрута.
+-- Обоснование: route_no — бизнес-идентификатор маршрута и часто используется в фильтрах/джойнах.
 -- Использование route_no обеспечивает:
 -- 1. Равномерное распределение данных по сегментам (route_no имеет высокую кардинальность)
--- 2. Co-location данных routes с airports и airplanes при JOIN
--- 3. Оптимизацию запросов, которые фильтруют или группируют по route_no
+-- 2. Оптимизацию запросов, которые фильтруют или группируют по route_no
+-- Примечание: JOIN по airport_code/airplane_code может требовать перераспределения данных (motion).
 DISTRIBUTED BY (route_no);

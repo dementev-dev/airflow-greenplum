@@ -62,7 +62,7 @@
 ### 2.3. Smoke-тесты DAG’ов (статус: исправлено)
 
 Что сделано:
-- Тесты усилены: теперь проверяются ключевые зависимости графа через `get_direct_relatives("downstream")`.
+- Тесты усилены: теперь проверяются ключевые зависимости графа через `get_direct_relatives(upstream=False)` и “барьеры” через `get_flat_relatives(upstream=False)`.
 
 ### 2.4. Документация по DAG (статус: синхронизировано)
 
@@ -135,7 +135,7 @@ LEFT JOIN stg.airports AS a
 ```python
 tickets_dq = dag.get_task("check_tickets_dq")
 airports_load = dag.get_task("load_airports_to_stg")
-assert airports_load in tickets_dq.get_direct_relatives("downstream")
+assert airports_load in tickets_dq.get_direct_relatives(upstream=False)
 ```
 
 ---

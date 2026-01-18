@@ -28,7 +28,8 @@ SELECT
     '{{ run_id }}'::text
 FROM stg.routes_ext AS ext
 WHERE NOT EXISTS (
-    -- Защита от дублей в рамках одного batch_id по составному ключу (route_no, validity)
+    -- Идемпотентность: при повторном запуске/ретрае не вставляем повторно те же строки в рамках текущего batch_id.
+    -- Считаем ключом строки (route_no, validity).
     SELECT 1
     FROM stg.routes AS r
     WHERE r.batch_id = '{{ run_id }}'::text

@@ -32,7 +32,7 @@ JOIN stg.bookings_ext AS b ON ext.book_ref = b.book_ref
 CROSS JOIN max_batch_ts AS mb
 WHERE b.book_date > mb.max_ts
 AND NOT EXISTS (
-    -- Защита от дублей: ticket_no в источнике уникален, и в stg его не дублируем.
+    -- Идемпотентность: ticket_no — бизнес-ключ билета, не вставляем его повторно (включая ретраи/повторные запуски DAG).
     SELECT 1
     FROM stg.tickets AS t
     WHERE t.ticket_no = ext.ticket_no

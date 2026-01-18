@@ -23,7 +23,8 @@ SELECT
     '{{ run_id }}'::text
 FROM stg.boarding_passes_ext AS ext
 WHERE NOT EXISTS (
-    -- Защита от дублей в рамках одного batch_id
+    -- Идемпотентность: при повторном запуске/ретрае не вставляем повторно те же строки в рамках текущего batch_id.
+    -- Считаем ключом строки (ticket_no, flight_id).
     SELECT 1
     FROM stg.boarding_passes AS bp
     WHERE bp.batch_id = '{{ run_id }}'::text

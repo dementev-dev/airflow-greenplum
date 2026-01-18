@@ -32,7 +32,8 @@ JOIN stg.bookings_ext AS b ON t.book_ref = b.book_ref
 CROSS JOIN max_batch_ts AS mb
 WHERE b.book_date > mb.max_ts
 AND NOT EXISTS (
-    -- Защита от дублей в рамках одного batch_id
+    -- Идемпотентность: при повторном запуске/ретрае не вставляем повторно те же строки в рамках текущего batch_id.
+    -- Считаем ключом строки (ticket_no, flight_id).
     SELECT 1
     FROM stg.segments AS s
     WHERE s.batch_id = '{{ run_id }}'::text

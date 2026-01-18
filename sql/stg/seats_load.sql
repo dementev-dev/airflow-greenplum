@@ -18,7 +18,8 @@ SELECT
     '{{ run_id }}'::text
 FROM stg.seats_ext AS ext
 WHERE NOT EXISTS (
-    -- Защита от дублей в рамках одного batch_id по составному ключу (airplane_code, seat_no)
+    -- Идемпотентность: при повторном запуске/ретрае не вставляем повторно те же строки в рамках текущего batch_id.
+    -- Считаем ключом строки (airplane_code, seat_no).
     SELECT 1
     FROM stg.seats AS s
     WHERE s.batch_id = '{{ run_id }}'::text

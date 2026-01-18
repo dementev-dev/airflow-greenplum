@@ -6,13 +6,14 @@
 CREATE SCHEMA IF NOT EXISTS stg;
 
 -- Внешняя таблица в схеме stg для чтения данных из bookings.airports_data через PXF.
+-- PXF не поддерживает типы JSONB, POINT - используем TEXT для всех колонок.
 DROP EXTERNAL TABLE IF EXISTS stg.airports_ext;
 CREATE EXTERNAL TABLE stg.airports_ext (
     airport_code TEXT,
-    airport_name  JSONB,
-    city          JSONB,
-    country       JSONB,
-    coordinates   POINT,
+    airport_name  TEXT,
+    city          TEXT,
+    country       TEXT,
+    coordinates   TEXT,
     timezone      TEXT
 )
 LOCATION ('pxf://bookings.airports_data?PROFILE=JDBC&SERVER=bookings-db')

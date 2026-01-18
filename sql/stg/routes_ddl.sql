@@ -6,16 +6,17 @@
 CREATE SCHEMA IF NOT EXISTS stg;
 
 -- Внешняя таблица в схеме stg для чтения данных из bookings.routes через PXF.
+-- PXF не поддерживает типы TSTZRANGE, INTEGER[], TIME, INTERVAL - используем TEXT для всех колонок.
 DROP EXTERNAL TABLE IF EXISTS stg.routes_ext;
 CREATE EXTERNAL TABLE stg.routes_ext (
     route_no          TEXT,
-    validity          TSTZRANGE,
+    validity          TEXT,
     departure_airport TEXT,
     arrival_airport   TEXT,
     airplane_code     TEXT,
-    days_of_week      INTEGER[],
-    scheduled_time    TIME WITHOUT TIME ZONE,
-    duration          INTERVAL
+    days_of_week      TEXT,
+    scheduled_time    TEXT,
+    duration          TEXT
 )
 LOCATION ('pxf://bookings.routes?PROFILE=JDBC&SERVER=bookings-db')
 FORMAT 'CUSTOM' (formatter='pxfwritable_import');

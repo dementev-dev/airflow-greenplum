@@ -65,7 +65,9 @@ BEGIN
     SELECT COUNT(*)
     INTO v_orphan_airplanes_count
     FROM stg.seats AS s
-    LEFT JOIN stg.airplanes AS a ON s.airplane_code = a.airplane_code
+    LEFT JOIN stg.airplanes AS a
+        ON s.airplane_code = a.airplane_code
+        AND a.batch_id = v_batch_id
     WHERE s.batch_id = v_batch_id
         AND a.airplane_code IS NULL;
 

@@ -67,7 +67,9 @@ BEGIN
     SELECT COUNT(*)
     INTO v_orphan_airports_count
     FROM stg.routes AS r
-    LEFT JOIN stg.airports AS da ON r.departure_airport = da.airport_code
+    LEFT JOIN stg.airports AS da
+        ON r.departure_airport = da.airport_code
+        AND da.batch_id = v_batch_id
     WHERE r.batch_id = v_batch_id
         AND da.airport_code IS NULL;
 
@@ -82,7 +84,9 @@ BEGIN
     SELECT COUNT(*)
     INTO v_orphan_airports_count
     FROM stg.routes AS r
-    LEFT JOIN stg.airports AS aa ON r.arrival_airport = aa.airport_code
+    LEFT JOIN stg.airports AS aa
+        ON r.arrival_airport = aa.airport_code
+        AND aa.batch_id = v_batch_id
     WHERE r.batch_id = v_batch_id
         AND aa.airport_code IS NULL;
 
@@ -97,7 +101,9 @@ BEGIN
     SELECT COUNT(*)
     INTO v_orphan_airplanes_count
     FROM stg.routes AS r
-    LEFT JOIN stg.airplanes AS a ON r.airplane_code = a.airplane_code
+    LEFT JOIN stg.airplanes AS a
+        ON r.airplane_code = a.airplane_code
+        AND a.batch_id = v_batch_id
     WHERE r.batch_id = v_batch_id
         AND a.airplane_code IS NULL;
 

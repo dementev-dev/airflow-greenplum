@@ -32,7 +32,7 @@ WITH (appendonly=true, orientation=row, compresstype=zlib, compresslevel=1)
 -- Ключ распределения: ticket_no
 -- Обоснование: ticket_no — это основной бизнес-ключ для билетов.
 -- Использование ticket_no обеспечивает:
--- 1. Co-location данных boarding_passes и tickets при JOIN по ticket_no
--- 2. Co-location данных boarding_passes и segments при JOIN по ticket_no
--- 3. Равномерное распределение данных по сегментам (ticket_no имеет высокую кардинальность)
+-- 1. Co-location данных boarding_passes и segments при JOIN по ticket_no
+-- 2. Равномерное распределение данных по сегментам (ticket_no имеет высокую кардинальность)
+-- Примечание: stg.tickets распределена по book_ref, поэтому JOIN boarding_passes ↔ tickets по ticket_no может требовать motion.
 DISTRIBUTED BY (ticket_no);

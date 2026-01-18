@@ -34,7 +34,8 @@ BEGIN
     END IF;
 
     -- Проверка на дубликаты составного ключа (route_no, validity)
-    SELECT COUNT(*) - COUNT(DISTINCT route_no || '|' || validity)
+    -- Используем md5 от ROW, чтобы избежать коллизий при склейке строк.
+    SELECT COUNT(*) - COUNT(DISTINCT md5(ROW(route_no, validity)::text))
     INTO v_dup_count
     FROM stg.routes AS r
     WHERE r.batch_id = v_batch_id;

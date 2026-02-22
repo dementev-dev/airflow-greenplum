@@ -1,4 +1,4 @@
-# ODS Layer: эталонный учебный план реализации (v2)
+# ODS Layer: эталонный учебный план реализации (v3)
 
 ## Контекст
 
@@ -117,16 +117,16 @@ DISTRIBUTED BY (airplane_code)
 
 #### `ods.routes`
 ```sql
-route_no            TEXT NOT NULL
-validity            TEXT NOT NULL
-departure_airport   TEXT NOT NULL
-arrival_airport     TEXT NOT NULL
-airplane_code       TEXT NOT NULL
-days_of_week        TEXT
-scheduled_departure_time TIME
-scheduled_duration  INTERVAL
-_load_id            TEXT NOT NULL
-_load_ts            TIMESTAMP NOT NULL DEFAULT now()
+route_no           TEXT NOT NULL
+validity           TEXT NOT NULL
+departure_airport  TEXT NOT NULL
+arrival_airport    TEXT NOT NULL
+airplane_code      TEXT NOT NULL
+days_of_week       TEXT
+departure_time     TIME              -- STG: scheduled_time (TEXT → TIME)
+duration           INTERVAL          -- STG: duration (TEXT → INTERVAL)
+_load_id           TEXT NOT NULL
+_load_ts           TIMESTAMP NOT NULL DEFAULT now()
 DISTRIBUTED BY (route_no)
 ```
 
@@ -163,8 +163,11 @@ is_outbound     BOOLEAN
 event_ts        TIMESTAMP
 _load_id        TEXT NOT NULL
 _load_ts        TIMESTAMP NOT NULL DEFAULT now()
-DISTRIBUTED BY (book_ref)
+DISTRIBUTED BY (ticket_no)
 ```
+
+> В STG `tickets` распределены по `book_ref` для co-location с `bookings` (append-only, lookup не нужен).
+> В ODS нужен UPSERT по бизнес-ключу `ticket_no`, поэтому распределяем по нему — иначе каждый lookup потребует redistribute motion.
 
 #### `ods.flights`
 ```sql
@@ -208,24 +211,99 @@ DISTRIBUTED BY (ticket_no)
 
 Примечание: в учебном варианте не опираемся на физические `PK/FK`-constraint в Greenplum, а проверяем целостность через DQ-скрипты.
 
+### 4.3. Маппинг STG → ODS (колонки с изменениями)
+
+Большинство бизнес-колонок переносятся 1:1 с приведением типа (`TEXT → ...`). Ниже — только те, где происходит **переименование** или нетривиальное преобразование:
+
+| Таблица | STG колонка | ODS колонка | ODS тип | Комментарий |
+|---|---|---|---|---|
+| `airplanes` | `range` | `range_km` | `INTEGER` | Явное указание единиц (naming conv.) |
+| `airplanes` | `speed` | `speed_kmh` | `INTEGER` | Явное указание единиц (naming conv.) |
+| `routes` | `scheduled_time` | `departure_time` | `TIME` | Уточнение смысла |
+| `routes` | `duration` | `duration` | `INTERVAL` | Только cast, без rename |
+| `tickets` | `outbound` | `is_outbound` | `BOOLEAN` | Префикс `is_` для boolean (naming conv.) |
+| `segments` | `price` | `segment_amount` | `NUMERIC(10,2)` | Уточнение: сумма сегмента, не цена билета |
+| `flights` | `flight_id` | `flight_id` | `INTEGER` | Только cast TEXT → INT |
+| `segments` | `flight_id` | `flight_id` | `INTEGER` | Только cast TEXT → INT |
+| `boarding_passes` | `flight_id` | `flight_id` | `INTEGER` | Только cast TEXT → INT |
+| все транзакционные | `src_created_at_ts` | `event_ts` | `TIMESTAMP` | Маппинг legacy → канон |
+| все | `batch_id` | `_load_id` | `TEXT` | Маппинг legacy → канон |
+
+Пример каста с переименованием в SQL (в CTE):
+```sql
+s.range::INTEGER       AS range_km,
+s.speed::INTEGER       AS speed_kmh,
+s.outbound::BOOLEAN    AS is_outbound,
+s.price::NUMERIC(10,2) AS segment_amount
+```
+
 ---
 
 ## 5) Контракт батча для ODS
 
 Чтобы ODS был воспроизводимым, в каждом запуске используем **один фиксированный `stg_batch_id`**.
 
-### 5.1. Источник `stg_batch_id`
+### 5.1. Зачем фиксировать `stg_batch_id`
 
-В `bookings_to_gp_ods`:
-- принимаем `stg_batch_id` из `dag_run.conf`;
-- если не передан — берём последний из `stg.bookings`;
-- логируем, какой `stg_batch_id` выбран.
+На проде ETL-оркестратор всегда явно передаёт downstream-задачам идентификатор батча, который прошёл все проверки. Это гарантирует:
+- **воспроизводимость**: повторный запуск обработает тот же снимок данных;
+- **изоляцию**: ODS не подхватит «сырой» батч, который ещё не прошёл DQ в STG;
+- **отладку**: по `_load_id` в ODS легко найти исходные данные в STG.
 
-### 5.2. Как применяем
+### 5.2. Как resolve `stg_batch_id` в DAG
 
-Во всех `sql/ods/*_load.sql`:
-- читаем STG только с `WHERE batch_id = :stg_batch_id`;
-- пишем в ODS `_load_id = :stg_batch_id`, `_load_ts = now()`.
+В DAG `bookings_to_gp_ods` первым запускается `PythonOperator`, который определяет `stg_batch_id` и кладёт его в XCom:
+
+```python
+import logging
+from airflow.operators.python import PythonOperator
+from airflow.providers.postgres.hooks.postgres import PostgresHook
+
+log = logging.getLogger(__name__)
+
+GREENPLUM_CONN_ID = "greenplum_conn"
+
+def _resolve_stg_batch_id(**context):
+    """Определяем stg_batch_id: из dag_run.conf или последний загруженный в STG."""
+    conf = context["dag_run"].conf or {}
+    stg_batch_id = conf.get("stg_batch_id")
+
+    if not stg_batch_id:
+        hook = PostgresHook(postgres_conn_id=GREENPLUM_CONN_ID)
+        result = hook.get_first("SELECT MAX(batch_id) FROM stg.bookings")
+        stg_batch_id = result[0] if result and result[0] else None
+
+    if not stg_batch_id:
+        raise ValueError(
+            "stg_batch_id не найден: передайте в conf или сначала загрузите STG"
+        )
+
+    log.info("Используем stg_batch_id = %s", stg_batch_id)
+    return stg_batch_id  # автоматически попадёт в XCom как return_value
+
+resolve_batch = PythonOperator(
+    task_id="resolve_stg_batch_id",
+    python_callable=_resolve_stg_batch_id,
+)
+```
+
+### 5.3. Как используем в SQL
+
+Во всех `sql/ods/*_load.sql` и `sql/ods/*_dq.sql` значение `stg_batch_id` подставляется через Jinja-шаблон:
+
+```sql
+WHERE batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
+```
+
+Для читаемости в DAG можно вынести шаблон в константу:
+
+```python
+STG_BATCH_ID = "{{ ti.xcom_pull(task_ids='resolve_stg_batch_id') }}"
+```
+
+В ODS записываем:
+- `_load_id = <stg_batch_id>` — чтобы связать ODS-запись с STG-батчом;
+- `_load_ts = now()` — фактическое время загрузки в ODS.
 
 Это простой и понятный паттерн: **один запуск ODS = один снимок STG-батча**.
 
@@ -233,9 +311,14 @@ DISTRIBUTED BY (ticket_no)
 
 ## 6) SQL-паттерны загрузки (SCD1 / UPSERT)
 
+> **Стиль SQL:** в ODS-скриптах используем CTE (Common Table Expressions) вместо вложенных подзапросов — CTE нагляднее, проще для чтения и отладки.
+
 ### 6.1. Шаблон для справочника (пример `airports_load.sql`)
 
+> **Важно:** CTE действует в рамках одного SQL-statement. UPDATE и INSERT — два отдельных statement, поэтому CTE `src` дублируется в каждом. Это не ошибка, а необходимость синтаксиса SQL.
+
 ```sql
+-- Statement 1: UPDATE существующих записей (SCD1 — перезапись при изменении)
 WITH src AS (
     SELECT
         airport_code,
@@ -245,7 +328,7 @@ WITH src AS (
         coordinates,
         timezone
     FROM stg.airports
-    WHERE batch_id = '{{ params.stg_batch_id }}'::text
+    WHERE batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
 )
 UPDATE ods.airports AS o
 SET airport_name = s.airport_name,
@@ -253,25 +336,40 @@ SET airport_name = s.airport_name,
     country      = s.country,
     coordinates  = s.coordinates,
     timezone     = s.timezone,
-    _load_id     = '{{ params.stg_batch_id }}'::text,
+    _load_id     = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text,
     _load_ts     = now()
 FROM src AS s
 WHERE o.airport_code = s.airport_code
   AND (
-      o.airport_name <> s.airport_name OR
-      o.city         <> s.city OR
-      o.country      <> s.country OR
-      COALESCE(o.coordinates, '') <> COALESCE(s.coordinates, '') OR
-      o.timezone     <> s.timezone
+      -- IS DISTINCT FROM — NULL-safe аналог <>:
+      -- при NULL с одной стороны <> вернёт NULL (не обновит),
+      -- а IS DISTINCT FROM вернёт TRUE (обновит корректно).
+      o.airport_name IS DISTINCT FROM s.airport_name OR
+      o.city         IS DISTINCT FROM s.city OR
+      o.country      IS DISTINCT FROM s.country OR
+      o.coordinates  IS DISTINCT FROM s.coordinates OR
+      o.timezone     IS DISTINCT FROM s.timezone
   );
 
+-- Statement 2: INSERT новых записей
+WITH src AS (
+    SELECT
+        airport_code,
+        airport_name,
+        city,
+        country,
+        coordinates,
+        timezone
+    FROM stg.airports
+    WHERE batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
+)
 INSERT INTO ods.airports (
     airport_code, airport_name, city, country, coordinates, timezone,
     _load_id, _load_ts
 )
 SELECT
     s.airport_code, s.airport_name, s.city, s.country, s.coordinates, s.timezone,
-    '{{ params.stg_batch_id }}'::text, now()
+    '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text, now()
 FROM src s
 WHERE NOT EXISTS (
     SELECT 1
@@ -279,53 +377,81 @@ WHERE NOT EXISTS (
     WHERE o.airport_code = s.airport_code
 );
 
+-- Обновляем статистику для оптимизатора запросов Greenplum
 ANALYZE ods.airports;
 ```
 
 ### 6.2. Шаблон для транзакции (пример `bookings_load.sql`)
 
+В транзакционных таблицах в одном STG-батче может быть несколько записей с одинаковым бизнес-ключом (например, обновления). Дедуплицируем через `ROW_NUMBER()` — стандартный и явный паттерн, часто встречающийся на собеседованиях и в DE-курсах.
+
 ```sql
+-- Statement 1: UPDATE существующих записей
 WITH src AS (
-    SELECT DISTINCT ON (book_ref)
+    SELECT
         book_ref,
         book_date::TIMESTAMP WITH TIME ZONE AS book_date,
         total_amount::NUMERIC(10,2)         AS total_amount,
-        src_created_at_ts                    AS event_ts
+        src_created_at_ts                    AS event_ts,
+        ROW_NUMBER() OVER (
+            PARTITION BY book_ref
+            ORDER BY src_created_at_ts DESC NULLS LAST, load_dttm DESC
+        ) AS rn
     FROM stg.bookings
-    WHERE batch_id = '{{ params.stg_batch_id }}'::text
-    ORDER BY book_ref, src_created_at_ts DESC NULLS LAST, load_dttm DESC
+    WHERE batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
 )
 UPDATE ods.bookings AS o
 SET book_date      = s.book_date,
     total_amount   = s.total_amount,
     event_ts       = s.event_ts,
-    _load_id       = '{{ params.stg_batch_id }}'::text,
+    _load_id       = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text,
     _load_ts       = now()
 FROM src AS s
-WHERE o.book_ref = s.book_ref
+WHERE s.rn = 1
+  AND o.book_ref = s.book_ref
   AND (
-      o.book_date    <> s.book_date OR
-      o.total_amount <> s.total_amount
+      o.book_date    IS DISTINCT FROM s.book_date OR
+      o.total_amount IS DISTINCT FROM s.total_amount
   );
 
+-- Statement 2: INSERT новых записей
+WITH src AS (
+    SELECT
+        book_ref,
+        book_date::TIMESTAMP WITH TIME ZONE AS book_date,
+        total_amount::NUMERIC(10,2)         AS total_amount,
+        src_created_at_ts                    AS event_ts,
+        ROW_NUMBER() OVER (
+            PARTITION BY book_ref
+            ORDER BY src_created_at_ts DESC NULLS LAST, load_dttm DESC
+        ) AS rn
+    FROM stg.bookings
+    WHERE batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
+)
 INSERT INTO ods.bookings (
     book_ref, book_date, total_amount, event_ts,
     _load_id, _load_ts
 )
 SELECT
     s.book_ref, s.book_date, s.total_amount, s.event_ts,
-    '{{ params.stg_batch_id }}'::text, now()
+    '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text, now()
 FROM src s
-WHERE NOT EXISTS (
-    SELECT 1
-    FROM ods.bookings o
-    WHERE o.book_ref = s.book_ref
-);
+WHERE s.rn = 1
+  AND NOT EXISTS (
+      SELECT 1
+      FROM ods.bookings o
+      WHERE o.book_ref = s.book_ref
+  );
 
+-- Обновляем статистику для оптимизатора запросов Greenplum
 ANALYZE ods.bookings;
 ```
 
-### 6.3. Поведение при пустом батче
+### 6.3. Идемпотентность паттерна
+
+Паттерн UPDATE + INSERT WHERE NOT EXISTS — **натурально идемпотентен**: повторный запуск с тем же `stg_batch_id` не создаст дублей и не потеряет данные. UPDATE обновит только если атрибуты изменились, INSERT вставит только если бизнес-ключа нет. Это одно из преимуществ подхода.
+
+### 6.4. Поведение при пустом батче
 
 - для инкрементальных таблиц (`bookings`, `tickets`, `flights`, `segments`) пустой батч допустим;
 - для snapshot-справочников (`airports`, `airplanes`, `routes`, `seats`) пустой батч считаем ошибкой.
@@ -335,21 +461,23 @@ ANALYZE ods.bookings;
 ## 7) DQ-проверки ODS (минимум, но строго)
 
 Каждый DQ-скрипт должен:
-- быть привязан к `stg_batch_id`;
+- быть привязан к `stg_batch_id` (через XCom, как в load-скриптах);
 - делать `RAISE EXCEPTION` при нарушении;
 - давать понятную подсказку в тексте ошибки.
 
 ### 7.1. Обязательные проверки
 
-1. Нет дублей по бизнес-ключу в ODS.
+1. **Нет дублей** по бизнес-ключу в ODS.
 
-2. Все ключи из STG текущего батча присутствуют в ODS.
+2. **Покрытие батча:** все ключи из STG текущего батча присутствуют в ODS.
 
-3. Обязательные поля не `NULL`/не пустые.
+3. **Обязательные поля** не `NULL`/не пустые.
 
-4. Ссылочная целостность в ODS:
+4. **Батч не пустой** для snapshot-справочников (`airports`, `airplanes`, `routes`, `seats`): если STG-батч оказался пустым — это ошибка (источник недоступен или PXF не работает).
+
+5. **Ссылочная целостность** в ODS:
 - `tickets.book_ref -> bookings.book_ref`
-- `flights.route_no -> routes.route_no`
+- `flights.route_no -> routes.route_no` (упрощённая проверка: наличие `route_no`, без учёта `validity`)
 - `segments.ticket_no -> tickets.ticket_no`
 - `segments.flight_id -> flights.flight_id`
 - `boarding_passes (ticket_no, flight_id) -> segments (ticket_no, flight_id)`
@@ -361,7 +489,7 @@ SELECT COUNT(*)
 FROM (
     SELECT DISTINCT book_ref
     FROM stg.bookings
-    WHERE batch_id = '{{ params.stg_batch_id }}'::text
+    WHERE batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
 ) s
 WHERE NOT EXISTS (
     SELECT 1
@@ -375,6 +503,8 @@ WHERE NOT EXISTS (
 ---
 
 ## 8) Структура файлов
+
+Каждый `*_ddl.sql` начинается с `CREATE SCHEMA IF NOT EXISTS ods;` (по аналогии с STG DDL).
 
 ```text
 sql/ods/
@@ -423,25 +553,33 @@ tests/test_dags_smoke.py (+ smoke для 2 новых DAG)
 
 Принцип: у каждой сущности строго `load -> dq`, и только после `dq` разрешаем downstream.
 
+Корневой таск `resolve_stg_batch_id` определяет батч (см. секцию 5.2), после чего две параллельных ветки стартуют одновременно:
+
 ```text
-load_ods_bookings  -> dq_ods_bookings -> load_ods_tickets -> dq_ods_tickets
-
-                    ├-> load_ods_airports  -> dq_ods_airports  ─┐
-                    ├-> load_ods_airplanes -> dq_ods_airplanes ─┼-> load_ods_routes -> dq_ods_routes -> load_ods_flights -> dq_ods_flights
-                    └->                                        └-> load_ods_seats  -> dq_ods_seats
-
-dq_ods_flights + dq_ods_tickets -> load_ods_segments -> dq_ods_segments -> load_ods_boarding_passes -> dq_ods_boarding_passes
-
-[dq_ods_boarding_passes, dq_ods_seats] -> finish_ods_summary
+resolve_stg_batch_id
+  ├-> load_ods_bookings  -> dq_ods_bookings -> load_ods_tickets -> dq_ods_tickets ──────────────────┐
+  ├-> load_ods_airports  -> dq_ods_airports  ─┐                                                     │
+  ├-> load_ods_airplanes -> dq_ods_airplanes ─┼-> load_ods_routes -> dq_ods_routes                  │
+  └->                                        └-> load_ods_seats  -> dq_ods_seats                    │
+                                                                                                     │
+                                                  dq_ods_routes -> load_ods_flights -> dq_ods_flights │
+                                                                                                     │
+                                            dq_ods_flights + dq_ods_tickets -> load_ods_segments -> dq_ods_segments
+                                                                                                     │
+                                                              dq_ods_segments -> load_ods_boarding_passes -> dq_ods_boarding_passes
+                                                                                                     │
+                                                        [dq_ods_boarding_passes, dq_ods_seats] -> finish_ods_summary
 ```
 
-Зависимости:
-- `tickets` после `bookings`;
-- `routes` после `airports` и `airplanes`;
-- `seats` после `airplanes`;
-- `flights` после `routes`;
-- `segments` после `flights` и `tickets`;
-- `boarding_passes` после `segments`.
+Зависимости (по FK):
+- `tickets` после `bookings` (FK: `book_ref`);
+- `routes` после `airports` и `airplanes` (FK: `departure_airport`, `arrival_airport`, `airplane_code`);
+- `seats` после `airplanes` (FK: `airplane_code`);
+- `flights` после `routes` (FK: `route_no`);
+- `segments` после `flights` и `tickets` (FK: `flight_id`, `ticket_no`);
+- `boarding_passes` после `segments` (FK: `ticket_no`, `flight_id`).
+
+> Справочники (`airports`, `airplanes`) и транзакции (`bookings`) не зависят друг от друга в ODS — данные уже в STG. Поэтому они стартуют параллельно после `resolve_stg_batch_id`.
 
 ---
 
@@ -468,7 +606,7 @@ dq_ods_flights + dq_ods_tickets -> load_ods_segments -> dq_ods_segments -> load_
 3. Для тестового `stg_batch_id` ODS-загрузка завершается успешно.
 4. Все DQ-задачи зелёные и реально валят DAG при искусственной ошибке.
 5. В ODS нет дублей по бизнес-ключам.
-6. Нейминг техполей консистентен с учебной статьёй: `_load_id`, `_load_ts`, `valid_from/valid_to` (последние — когда перейдём к SCD2 в DDS).
+6. Нейминг техполей ODS консистентен с учебной статьёй: `_load_id`, `_load_ts`, `event_ts`.
 
 ---
 

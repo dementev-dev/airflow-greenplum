@@ -24,6 +24,25 @@ make ddl-gp                # создать STG-слой и внешние PXF-�
 
 Если стек ранее сносился (`make clean`), шаги 1-3 обязательны.
 
+Перед запуском `bookings_to_gp_stage` обязательно проверьте, что source непустой:
+
+```bash
+# Все значения ниже должны быть > 0
+docker compose exec bookings-db \
+  psql -U bookings -d demo -At -c "SELECT COUNT(*) FROM bookings.bookings;"
+
+docker compose exec bookings-db \
+  psql -U bookings -d demo -At -c "SELECT COUNT(*) FROM bookings.airports_data;"
+
+docker compose exec bookings-db \
+  psql -U bookings -d demo -At -c "SELECT COUNT(*) FROM bookings.airplanes_data;"
+```
+
+Если хотя бы один `COUNT(*) = 0`, **не запускайте DAG**:
+1. Выполните `make bookings-init`.
+2. Повторите проверки `COUNT(*)`.
+3. Если `bookings.bookings` всё ещё пустая, выполните `make bookings-generate-day` и проверьте снова.
+
 ---
 
 ## Уровень 1. Локальные проверки (без Docker)
@@ -341,3 +360,4 @@ generate_bookings_day → load_bookings → check_bookings_dq
 | Greenplum `unhealthy` | PXF не стартовал (долгая инициализация) | Подождать 2-3 минуты, проверить `docker compose ps` |
 | `relation ... does not exist` | Не применён DDL | Выполнить `make ddl-gp` |
 | Пустые таблицы stg | Не выполнен `make bookings-init` | Выполнить `make bookings-init`, затем перезапустить DAG |
+| `check_airports_dq` / `check_airplanes_dq` падают с `..._ext нет строк` | Source-таблицы в `bookings-db` пустые | Проверить `COUNT(*)` в `bookings.bookings`, `bookings.airports_data`, `bookings.airplanes_data`; затем `make bookings-init`/`make bookings-generate-day` |

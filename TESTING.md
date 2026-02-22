@@ -39,6 +39,11 @@
 
 - DAG `bookings_to_gp_stage` (полная проверка цепочки bookings → Greenplum STG):
   - предварительно выполнить один раз: `make bookings-init` (установка демобазы `demo` в контейнере `bookings-db`) и `make ddl-gp` (создаёт STG слой в Greenplum, включая внешние `*_ext` через PXF);
+  - перед Trigger проверить, что в source реально есть данные (все значения должны быть `> 0`):
+    - `docker compose exec bookings-db psql -U bookings -d demo -At -c "SELECT COUNT(*) FROM bookings.bookings;"`
+    - `docker compose exec bookings-db psql -U bookings -d demo -At -c "SELECT COUNT(*) FROM bookings.airports_data;"`
+    - `docker compose exec bookings-db psql -U bookings -d demo -At -c "SELECT COUNT(*) FROM bookings.airplanes_data;"`
+  - если хотя бы один `COUNT(*) = 0`, не запускать DAG: повторить `make bookings-init`; если после этого `bookings.bookings` всё ещё пустая, выполнить `make bookings-generate-day` и снова проверить `COUNT(*)`;
   - важно: DAG `bookings_stg_ddl` **не** создаёт базу `demo` в `bookings-db`; если вы делали `docker compose down -v` / `make clean`, `make bookings-init` обязателен;
   - включить DAG `bookings_to_gp_stage` и запустить `Trigger DAG`;
   - убедиться, что все задачи завершились со статусом Success (включая загрузки справочников/транзакций и DQ);

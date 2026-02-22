@@ -12,6 +12,7 @@
 ## Технические детали (опционально)
 
 - [Как устроен Docker-стенд (образы, Connections, переменные окружения)](stack.md)
+- [Единые конвенции нейминга DWH (служебные поля и SCD)](internal/naming_conventions.md)
 - [PXF в этом проекте (проектная реализация)](internal/pxf_bookings.md)
 - [Дизайн stg для bookings (черновик)](internal/bookings_stg_design.md)
 - [Про время/UTC в bookings (черновик)](internal/bookings_tz.md)

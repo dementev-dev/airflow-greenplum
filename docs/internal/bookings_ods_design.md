@@ -26,6 +26,8 @@ ODS в учебном проекте — это:
 - приведение типов (`TEXT -> TIMESTAMPTZ/NUMERIC/INT/BOOLEAN/...`);
 - дедупликацию внутри батча;
 - `UPSERT` (SCD Type 1): обновляем текущую запись при изменении, вставляем новые.
+- для snapshot-справочников (`airports`, `airplanes`, `routes`, `seats`) синхронизацию ключей:
+  удаляем из ODS записи, которых нет в выбранном `stg_batch_id`.
 
 Не делаем в ODS (в базовом эталоне):
 - SCD Type 2 с периодами действия;
@@ -264,23 +266,47 @@ log = logging.getLogger(__name__)
 GREENPLUM_CONN_ID = "greenplum_conn"
 
 def _resolve_stg_batch_id(**context):
-    """Определяем stg_batch_id: из dag_run.conf или последний загруженный в STG."""
+    """Определяем stg_batch_id: из dag_run.conf или последний согласованный snapshot-батч."""
     conf = context["dag_run"].conf or {}
     stg_batch_id = conf.get("stg_batch_id")
 
     if not stg_batch_id:
-        # Берём batch_id с самым свежим load_dttm (TIMESTAMP, монотонно растёт).
-        # MAX(batch_id) ненадёжен: run_id — строка вида "manual__2024-...",
-        # лексикографическая сортировка не гарантирует хронологический порядок.
+        # Берём batch_id, который присутствует во всех snapshot-таблицах STG:
+        # airports, airplanes, routes, seats. Это защищает от частично успешных запусков.
         hook = PostgresHook(postgres_conn_id=GREENPLUM_CONN_ID)
         result = hook.get_first(
-            "SELECT batch_id FROM stg.bookings ORDER BY load_dttm DESC LIMIT 1"
+            '''
+            WITH candidate_batches AS (
+                SELECT batch_id FROM stg.airports  WHERE batch_id IS NOT NULL GROUP BY batch_id
+                INTERSECT
+                SELECT batch_id FROM stg.airplanes WHERE batch_id IS NOT NULL GROUP BY batch_id
+                INTERSECT
+                SELECT batch_id FROM stg.routes    WHERE batch_id IS NOT NULL GROUP BY batch_id
+                INTERSECT
+                SELECT batch_id FROM stg.seats     WHERE batch_id IS NOT NULL GROUP BY batch_id
+            ),
+            batch_ready AS (
+                SELECT
+                    c.batch_id,
+                    GREATEST(
+                        (SELECT MAX(load_dttm) FROM stg.airports  a WHERE a.batch_id = c.batch_id),
+                        (SELECT MAX(load_dttm) FROM stg.airplanes a WHERE a.batch_id = c.batch_id),
+                        (SELECT MAX(load_dttm) FROM stg.routes    r WHERE r.batch_id = c.batch_id),
+                        (SELECT MAX(load_dttm) FROM stg.seats     s WHERE s.batch_id = c.batch_id)
+                    ) AS ready_dttm
+                FROM candidate_batches c
+            )
+            SELECT batch_id
+            FROM batch_ready
+            ORDER BY ready_dttm DESC
+            LIMIT 1
+            '''
         )
         stg_batch_id = result[0] if result and result[0] else None
 
     if not stg_batch_id:
         raise ValueError(
-            "stg_batch_id не найден: передайте в conf или сначала загрузите STG"
+            "stg_batch_id не найден: передайте в conf или сначала выполните bookings_to_gp_stage"
         )
 
     log.info("Используем stg_batch_id = %s", stg_batch_id)
@@ -382,6 +408,19 @@ WHERE NOT EXISTS (
     WHERE o.airport_code = s.airport_code
 );
 
+-- Statement 3: DELETE ключей, которых нет в snapshot текущего батча
+WITH src_keys AS (
+    SELECT DISTINCT airport_code
+    FROM stg.airports
+    WHERE batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
+)
+DELETE FROM ods.airports o
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM src_keys s
+    WHERE s.airport_code = o.airport_code
+);
+
 -- Обновляем статистику для оптимизатора запросов Greenplum
 ANALYZE ods.airports;
 ```
@@ -454,7 +493,10 @@ ANALYZE ods.bookings;
 
 ### 6.3. Идемпотентность паттерна
 
-Паттерн UPDATE + INSERT WHERE NOT EXISTS — **натурально идемпотентен**: повторный запуск с тем же `stg_batch_id` не создаст дублей и не потеряет данные. UPDATE обновит только если атрибуты изменились, INSERT вставит только если бизнес-ключа нет. Это одно из преимуществ подхода.
+- Для инкрементальных таблиц паттерн `UPDATE + INSERT WHERE NOT EXISTS` — **натурально идемпотентен**:
+  повторный запуск с тем же `stg_batch_id` не создаст дублей и не потеряет данные.
+- Для snapshot-справочников идемпотентность сохраняется паттерном
+  `UPDATE + INSERT + DELETE not in snapshot`: повторный запуск приводит ODS к тому же состоянию.
 
 ### 6.4. Поведение при пустом батче
 
@@ -541,14 +583,14 @@ sql/ods/
 ├── boarding_passes_load.sql
 └── boarding_passes_dq.sql
 
-sql/ddl_gp_ods.sql
+sql/ddl_gp.sql         (+ подключение sql/ods/*_ddl.sql)
 
 airflow/dags/
 ├── bookings_ods_ddl.py
 └── bookings_to_gp_ods.py
 
 docs/bookings_to_gp_ods.md
-Makefile                (+ ddl-gp-ods)
+Makefile                (ddl-gp включает ODS DDL)
 tests/test_dags_smoke.py (+ smoke для 2 новых DAG)
 ```
 
@@ -591,8 +633,8 @@ resolve_stg_batch_id
 ## 10) Порядок реализации
 
 1. Подготовить DDL в `sql/ods/*_ddl.sql`.
-2. Сделать мастер-скрипт `sql/ddl_gp_ods.sql`.
-3. Добавить `Makefile`-таргет `ddl-gp-ods`.
+2. Подключить `sql/ods/*_ddl.sql` в общий `sql/ddl_gp.sql`.
+3. Использовать существующий `Makefile`-таргет `ddl-gp` для STG+ODS.
 4. Создать DAG `bookings_ods_ddl.py`.
 5. Реализовать `sql/ods/*_load.sql` (SCD1 UPSERT).
 6. Реализовать `sql/ods/*_dq.sql`.
@@ -607,7 +649,7 @@ resolve_stg_batch_id
 Готово, если:
 
 1. Оба новых DAG парсятся и проходят smoke-тесты (`make test`).
-2. `make ddl-gp-ods` создаёт объекты без ошибок.
+2. `make ddl-gp` создаёт объекты STG+ODS без ошибок.
 3. Для тестового `stg_batch_id` ODS-загрузка завершается успешно.
 4. Все DQ-задачи зелёные и реально валят DAG при искусственной ошибке.
 5. В ODS нет дублей по бизнес-ключам.
@@ -619,10 +661,10 @@ resolve_stg_batch_id
 
 ```bash
 make up
-make ddl-gp          # создать STG-объекты
-make ddl-gp-ods      # создать ODS-объекты
+make ddl-gp          # создать STG+ODS-объекты
 # Trigger bookings_to_gp_stage (загрузить STG)
-# Получить batch_id: SELECT batch_id FROM stg.bookings ORDER BY load_dttm DESC LIMIT 1;
+# Передать stg_batch_id в conf (рекомендуется) или дать ODS DAG выбрать
+# последний согласованный batch автоматически.
 # Trigger bookings_to_gp_ods с conf: {"stg_batch_id": "<значение>"}
 make gp-psql
 ```

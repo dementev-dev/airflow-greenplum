@@ -57,6 +57,7 @@
 - Есть юнит‑тесты для `helpers/greenplum.py` и smoke‑тесты DAG‑структуры (`tests/test_dags_smoke.py`).
 - Smoke‑тесты DAG автоматически пропускаются, если Airflow не установлен в venv.
 - Для ручного прогона стенда см. `TESTING.md` (пошаговый чек‑лист для студентов).
+- Для программной проверки DAG (без браузера) — см. `docs/agent-dag-testing.md`: CLI, REST API, проверка параллельности, запросы в Greenplum.
 
 ## Pull Requests
 - Conventional Commits: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`. Пример: `feat(dags): load orders to Greenplum`.

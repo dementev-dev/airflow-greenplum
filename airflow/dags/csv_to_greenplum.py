@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import random
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import List
 
@@ -37,11 +37,11 @@ def _create_table() -> None:
 def _generate_csv(rows: int, csv_dir: Path) -> str:
     """Генерирует CSV c заказами с помощью pandas и сохраняет на диск."""
     csv_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     csv_path = csv_dir / f"orders_{timestamp}.csv"
 
     # Генерируем данные в pandas-стиле
-    base_order_id = int(datetime.utcnow().timestamp() * 1_000)
+    base_order_id = int(datetime.now(UTC).timestamp() * 1_000)
 
     # Создаём DataFrame с использованием pandas методов
     df = pd.DataFrame(
@@ -52,7 +52,7 @@ def _generate_csv(rows: int, csv_dir: Path) -> str:
             ),
             # Временные метки с интервалом в 1 секунду в обратном порядке
             "order_ts": pd.date_range(
-                end=datetime.utcnow(), periods=rows, freq="1S"
+                end=datetime.now(UTC), periods=rows, freq="1S"
             ).sort_values(ascending=False),
             # Случайные customer_id от 1 до 1000
             "customer_id": pd.Series(

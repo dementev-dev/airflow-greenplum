@@ -28,17 +28,17 @@ def _load_dag(module_name: str):
 def _assert_direct_edge(dag, upstream_task_id: str, downstream_task_id: str) -> None:
     upstream = dag.get_task(upstream_task_id)
     downstream = dag.get_task(downstream_task_id)
-    assert downstream in upstream.get_direct_relatives(upstream=False), (
-        f"Expected direct edge {upstream_task_id} -> {downstream_task_id}"
-    )
+    assert downstream in upstream.get_direct_relatives(
+        upstream=False
+    ), f"Expected direct edge {upstream_task_id} -> {downstream_task_id}"
 
 
 def _assert_reachable(dag, upstream_task_id: str, downstream_task_id: str) -> None:
     upstream = dag.get_task(upstream_task_id)
     downstream = dag.get_task(downstream_task_id)
-    assert downstream in upstream.get_flat_relatives(upstream=False), (
-        f"Expected {downstream_task_id} to be downstream of {upstream_task_id}"
-    )
+    assert downstream in upstream.get_flat_relatives(
+        upstream=False
+    ), f"Expected {downstream_task_id} to be downstream of {upstream_task_id}"
 
 
 def test_csv_to_greenplum_dag_structure():
@@ -182,5 +182,20 @@ def test_bookings_to_gp_stage_dag_structure():
     # boarding_passes_dq проверяет наличие segments/tickets (STG-история); для первой загрузки segments должны быть до DQ.
     _assert_reachable(dag, "check_segments_dq", "check_boarding_passes_dq")
 
-    # Финальная сводка должна быть в конце графа.
+    # Финальная сводка должна быть в конце графа (обе ветки).
     _assert_reachable(dag, "check_boarding_passes_dq", "finish_summary")
+    _assert_reachable(dag, "check_seats_dq", "finish_summary")
+
+    # Параллельность: airports и airplanes оба downstream от check_tickets_dq,
+    # но НЕ зависят друг от друга (ни прямо, ни транзитивно).
+    _assert_reachable(dag, "check_tickets_dq", "load_airports_to_stg")
+    _assert_reachable(dag, "check_tickets_dq", "load_airplanes_to_stg")
+
+    airports = dag.get_task("load_airports_to_stg")
+    airplanes = dag.get_task("load_airplanes_to_stg")
+    assert airplanes not in airports.get_flat_relatives(
+        upstream=False
+    ), "airports не должен быть upstream для airplanes"
+    assert airports not in airplanes.get_flat_relatives(
+        upstream=False
+    ), "airplanes не должен быть upstream для airports"

@@ -80,7 +80,7 @@ ODS в учебном проекте — это:
 | `ods.boarding_passes` | 1 строка = посадочный на сегмент | `(ticket_no, flight_id)` |
 
 Критично для эталона:
-- `routes` — **составной** ключ `(route_no, validity)`;
+- `routes` — **составной** ключ `(route_no, validity)`: один `route_no` может иметь несколько версий с разными периодами действия. `flights` ссылается только на `route_no` (без `validity`), поэтому при join в DDS нужно будет выбирать подходящую версию маршрута;
 - `boarding_passes` — **составной** ключ `(ticket_no, flight_id)`.
 
 ---
@@ -269,8 +269,13 @@ def _resolve_stg_batch_id(**context):
     stg_batch_id = conf.get("stg_batch_id")
 
     if not stg_batch_id:
+        # Берём batch_id с самым свежим load_dttm (TIMESTAMP, монотонно растёт).
+        # MAX(batch_id) ненадёжен: run_id — строка вида "manual__2024-...",
+        # лексикографическая сортировка не гарантирует хронологический порядок.
         hook = PostgresHook(postgres_conn_id=GREENPLUM_CONN_ID)
-        result = hook.get_first("SELECT MAX(batch_id) FROM stg.bookings")
+        result = hook.get_first(
+            "SELECT batch_id FROM stg.bookings ORDER BY load_dttm DESC LIMIT 1"
+        )
         stg_batch_id = result[0] if result and result[0] else None
 
     if not stg_batch_id:
@@ -477,7 +482,7 @@ ANALYZE ods.bookings;
 
 5. **Ссылочная целостность** в ODS:
 - `tickets.book_ref -> bookings.book_ref`
-- `flights.route_no -> routes.route_no` (упрощённая проверка: наличие `route_no`, без учёта `validity`)
+- `flights.route_no -> routes.route_no` (упрощённая проверка: наличие `route_no` в routes, без учёта конкретной версии `validity`. Это допустимо, потому что в источнике flights ссылается на route_no, а не на конкретную версию маршрута. При downstream join (DDS) нужно будет учитывать период `validity`)
 - `segments.ticket_no -> tickets.ticket_no`
 - `segments.flight_id -> flights.flight_id`
 - `boarding_passes (ticket_no, flight_id) -> segments (ticket_no, flight_id)`
@@ -614,9 +619,10 @@ resolve_stg_batch_id
 
 ```bash
 make up
-make ddl-gp
-# Trigger bookings_to_gp_stage
-# Получить batch_id из stg.bookings (последний)
+make ddl-gp          # создать STG-объекты
+make ddl-gp-ods      # создать ODS-объекты
+# Trigger bookings_to_gp_stage (загрузить STG)
+# Получить batch_id: SELECT batch_id FROM stg.bookings ORDER BY load_dttm DESC LIMIT 1;
 # Trigger bookings_to_gp_ods с conf: {"stg_batch_id": "<значение>"}
 make gp-psql
 ```

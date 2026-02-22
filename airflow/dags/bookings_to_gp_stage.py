@@ -15,6 +15,23 @@ from __future__ import annotations
 - `run_id` используется как метка запуска (в `batch_id`, в логах и DQ).
 
 Важно: для инкрементальных таблиц «пустое окно инкремента» допустимо (это не ошибка).
+
+Граф зависимостей (параллельный там, где данные независимы):
+
+    generate_bookings_day → load_bookings → check_bookings_dq
+        → load_tickets → check_tickets_dq
+            ├─ load_airports → check_airports_dq ─┐
+            │                                      ├─ load_routes → check_routes_dq
+            ├─ load_airplanes → check_airplanes_dq ┤       → load_flights → check_flights_dq
+            │                                      │           → load_segments → check_segments_dq
+            │                                      │               → load_boarding_passes → check_bp_dq ─┐
+            │                                      └─ load_seats → check_seats_dq ──────────────────────┤
+            │                                                                                            ▼
+            └──────────────────────────────────────────────────────────────────────────── finish_summary
+
+airports и airplanes грузятся параллельно (они не зависят друг от друга).
+routes зависит от обоих (DQ проверяет ссылочную целостность на airports и airplanes).
+seats зависит только от airplanes (DQ проверяет airplane_code → airplanes).
 """
 
 from datetime import timedelta
@@ -188,22 +205,30 @@ with DAG(
         python_callable=_finish_summary,
     )
 
-    # Сначала загружаются и проверяются bookings и tickets
+    # === Этап 1. Транзакции: bookings → tickets (последовательно, т.к. tickets зависят от bookings) ===
     generate_bookings_day >> load_bookings_to_stg >> check_row_counts
     check_row_counts >> load_tickets_to_stg >> check_tickets_dq
 
-    # Затем загружаются справочники.
-    # Для простоты (и более понятных логов для новичков) делаем это последовательно.
-    # Если позже понадобится ускорить DAG, эти шаги можно распараллелить, сохранив зависимости.
+    # === Этап 2. Справочники (параллельно, где данные независимы) ===
+    # airports и airplanes не зависят друг от друга — грузим параллельно.
     check_tickets_dq >> load_airports_to_stg >> check_airports_dq
-    check_airports_dq >> load_airplanes_to_stg >> check_airplanes_dq
-    check_airplanes_dq >> load_routes_to_stg >> check_routes_dq
-    check_routes_dq >> load_seats_to_stg >> check_seats_dq
+    check_tickets_dq >> load_airplanes_to_stg >> check_airplanes_dq
 
-    # Затем загружаются транзакции (тоже последовательно, по тем же причинам).
-    check_seats_dq >> load_flights_to_stg >> check_flights_dq
+    # routes зависит от airports И airplanes (DQ проверяет ссылочную целостность).
+    [check_airports_dq, check_airplanes_dq] >> load_routes_to_stg >> check_routes_dq
+
+    # seats зависит только от airplanes (DQ проверяет ссылочную целостность).
+    check_airplanes_dq >> load_seats_to_stg >> check_seats_dq
+
+    # === Этап 3. Транзакции (последовательно, каждая зависит от предыдущей) ===
+    # flights зависят от routes (DQ проверяет ссылочную целостность route_no → routes).
+    check_routes_dq >> load_flights_to_stg >> check_flights_dq
+
+    # segments зависят от flights и tickets (DQ проверяет обе ссылки).
     check_flights_dq >> load_segments_to_stg >> check_segments_dq
+
+    # boarding_passes зависят от segments и tickets (DQ проверяет обе ссылки).
     check_segments_dq >> load_boarding_passes_to_stg >> check_boarding_passes_dq
 
-    # В конце финальный лог
-    check_boarding_passes_dq >> finish_summary
+    # === Финал: ждём завершения ВСЕХ веток ===
+    [check_boarding_passes_dq, check_seats_dq] >> finish_summary

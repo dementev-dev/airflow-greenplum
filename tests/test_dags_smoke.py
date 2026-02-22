@@ -199,3 +199,101 @@ def test_bookings_to_gp_stage_dag_structure():
     assert airports not in airplanes.get_flat_relatives(
         upstream=False
     ), "airplanes не должен быть upstream для airports"
+
+
+def test_bookings_ods_ddl_dag_structure():
+    """Проверка структуры DAG bookings_ods_ddl."""
+    dag = _load_dag("airflow.dags.bookings_ods_ddl")
+
+    expected_tasks = {
+        "apply_ods_airports_ddl",
+        "apply_ods_airplanes_ddl",
+        "apply_ods_routes_ddl",
+        "apply_ods_seats_ddl",
+        "apply_ods_bookings_ddl",
+        "apply_ods_tickets_ddl",
+        "apply_ods_flights_ddl",
+        "apply_ods_segments_ddl",
+        "apply_ods_boarding_passes_ddl",
+    }
+    assert expected_tasks.issubset(dag.task_dict.keys())
+
+    _assert_reachable(dag, "apply_ods_airports_ddl", "apply_ods_airplanes_ddl")
+
+    for task_id in expected_tasks - {"apply_ods_airports_ddl"}:
+        _assert_reachable(dag, "apply_ods_airports_ddl", task_id)
+
+
+def test_bookings_to_gp_ods_dag_structure():
+    """Проверка структуры DAG bookings_to_gp_ods."""
+    dag = _load_dag("airflow.dags.bookings_to_gp_ods")
+
+    expected_tasks = {
+        "resolve_stg_batch_id",
+        "load_ods_bookings",
+        "dq_ods_bookings",
+        "load_ods_tickets",
+        "dq_ods_tickets",
+        "load_ods_airports",
+        "dq_ods_airports",
+        "load_ods_airplanes",
+        "dq_ods_airplanes",
+        "load_ods_routes",
+        "dq_ods_routes",
+        "load_ods_seats",
+        "dq_ods_seats",
+        "load_ods_flights",
+        "dq_ods_flights",
+        "load_ods_segments",
+        "dq_ods_segments",
+        "load_ods_boarding_passes",
+        "dq_ods_boarding_passes",
+        "finish_ods_summary",
+    }
+    assert expected_tasks.issubset(dag.task_dict.keys())
+
+    # Базовая цепочка транзакций.
+    _assert_reachable(dag, "resolve_stg_batch_id", "load_ods_bookings")
+    _assert_reachable(dag, "load_ods_bookings", "dq_ods_bookings")
+    _assert_reachable(dag, "dq_ods_bookings", "load_ods_tickets")
+    _assert_reachable(dag, "load_ods_tickets", "dq_ods_tickets")
+
+    # Инвариант "load -> dq" для каждой таблицы.
+    load_to_dq = [
+        ("load_ods_bookings", "dq_ods_bookings"),
+        ("load_ods_tickets", "dq_ods_tickets"),
+        ("load_ods_airports", "dq_ods_airports"),
+        ("load_ods_airplanes", "dq_ods_airplanes"),
+        ("load_ods_routes", "dq_ods_routes"),
+        ("load_ods_seats", "dq_ods_seats"),
+        ("load_ods_flights", "dq_ods_flights"),
+        ("load_ods_segments", "dq_ods_segments"),
+        ("load_ods_boarding_passes", "dq_ods_boarding_passes"),
+    ]
+    for load_task_id, dq_task_id in load_to_dq:
+        _assert_direct_edge(dag, load_task_id, dq_task_id)
+
+    # Справочники стартуют параллельно и не зависят друг от друга.
+    _assert_reachable(dag, "resolve_stg_batch_id", "load_ods_airports")
+    _assert_reachable(dag, "resolve_stg_batch_id", "load_ods_airplanes")
+    airports = dag.get_task("load_ods_airports")
+    airplanes = dag.get_task("load_ods_airplanes")
+    assert airplanes not in airports.get_flat_relatives(
+        upstream=False
+    ), "airports не должен быть upstream для airplanes"
+    assert airports not in airplanes.get_flat_relatives(
+        upstream=False
+    ), "airplanes не должен быть upstream для airports"
+
+    # Барьеры по данным.
+    _assert_reachable(dag, "dq_ods_airports", "dq_ods_routes")
+    _assert_reachable(dag, "dq_ods_airplanes", "dq_ods_routes")
+    _assert_reachable(dag, "dq_ods_airplanes", "dq_ods_seats")
+    _assert_reachable(dag, "dq_ods_routes", "dq_ods_flights")
+    _assert_reachable(dag, "dq_ods_flights", "dq_ods_segments")
+    _assert_reachable(dag, "dq_ods_tickets", "dq_ods_segments")
+    _assert_reachable(dag, "dq_ods_segments", "dq_ods_boarding_passes")
+
+    # Финальная сводка должна ждать обе ветки.
+    _assert_reachable(dag, "dq_ods_boarding_passes", "finish_ods_summary")
+    _assert_reachable(dag, "dq_ods_seats", "finish_ods_summary")

@@ -37,3 +37,14 @@ FORMAT 'CUSTOM' (formatter='pxfwritable_import');
 \i stg/flights_ddl.sql
 \i stg/segments_ddl.sql
 \i stg/boarding_passes_ddl.sql
+
+-- DDL для ODS-слоя (текущее состояние, SCD1).
+\i ods/airports_ddl.sql
+\i ods/airplanes_ddl.sql
+\i ods/routes_ddl.sql
+\i ods/seats_ddl.sql
+\i ods/bookings_ddl.sql
+\i ods/tickets_ddl.sql
+\i ods/flights_ddl.sql
+\i ods/segments_ddl.sql
+\i ods/boarding_passes_ddl.sql

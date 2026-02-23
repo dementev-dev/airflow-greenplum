@@ -166,7 +166,17 @@ _load_ts    TIMESTAMP NOT NULL DEFAULT now()
 DISTRIBUTED BY (ticket_no)
 ```
 
-FK суррогатные ключи допускают NULL (LEFT JOIN при аномалиях данных). DQ ловит NULL там, где их быть не должно.
+### 3.8. Политика NULL FK в факте
+
+FK суррогатные ключи разделены на три группы:
+
+| Группа | FK | NULL допустим? | Причина |
+|--------|-----|---------------|---------|
+| **Обязательные** | `tariff_sk`, `passenger_sk` | Нет | Данные всегда есть в ODS (segments, tickets). NULL = баг загрузки. |
+| **Зависят от маршрута** | `route_sk`, `departure_airport_sk`, `arrival_airport_sk`, `airplane_sk` | Нет (в норме) | Маршрут должен быть в ODS. NULL = аномалия данных, DQ предупреждает. |
+| **Зависят от расписания** | `calendar_sk` | Допустим (редко) | `scheduled_departure` может быть NULL в ODS. DQ считает и логирует, но не фейлит. |
+
+DQ-проверки явно контролируют каждую группу (см. секцию 6).
 
 ---
 
@@ -276,7 +286,7 @@ ANALYZE dds.dim_airports;
 
 **dim_tariffs** — аналогично, но источник: `SELECT DISTINCT fare_conditions FROM ods.segments WHERE fare_conditions IS NOT NULL AND fare_conditions <> ''`.
 
-**dim_passengers** — аналогично, но с дедупликацией: `ROW_NUMBER() OVER (PARTITION BY passenger_id ORDER BY event_ts DESC NULLS LAST, _load_ts DESC)`, берём `rn = 1`.
+**dim_passengers** — аналогично, но с дедупликацией: `ROW_NUMBER() OVER (PARTITION BY passenger_id ORDER BY event_ts DESC NULLS LAST, _load_ts DESC, ticket_no DESC)`, берём `rn = 1`. Третий ключ `ticket_no DESC` — стабильный tie-breaker при одинаковых timestamp.
 
 ### 5.3. dim_routes — SCD2 с hashdiff
 
@@ -375,65 +385,27 @@ ANALYZE dds.dim_routes;
 ### 5.4. fact_flight_sales — инкрементальный UPSERT
 
 ```sql
--- Statement 1: UPDATE существующих строк факта (если метрики/FK изменились)
-WITH fact_src AS (
-    SELECT
-        seg.ticket_no,
-        seg.flight_id,
-        cal.calendar_sk,
-        dep.airport_sk   AS departure_airport_sk,
-        arr.airport_sk   AS arrival_airport_sk,
-        ap.airplane_sk,
-        tar.tariff_sk,
-        pax.passenger_sk,
-        rte.route_sk,
-        tkt.book_ref,
-        bkg.book_date::DATE AS book_date,
-        bp.seat_no,
-        seg.segment_amount  AS price,
-        (bp.ticket_no IS NOT NULL) AS is_boarded
-    FROM ods.segments AS seg
-    JOIN ods.tickets  AS tkt ON tkt.ticket_no = seg.ticket_no
-    JOIN ods.bookings AS bkg ON bkg.book_ref  = tkt.book_ref
-    JOIN ods.flights  AS flt ON flt.flight_id = seg.flight_id
-    LEFT JOIN dds.dim_calendar   AS cal ON cal.date_actual = flt.scheduled_departure::DATE
-    LEFT JOIN dds.dim_routes     AS rte
-        ON rte.route_bk = flt.route_no AND rte.valid_to IS NULL
-    LEFT JOIN dds.dim_airports   AS dep ON dep.airport_bk = rte.departure_airport
-    LEFT JOIN dds.dim_airports   AS arr ON arr.airport_bk = rte.arrival_airport
-    LEFT JOIN dds.dim_airplanes  AS ap  ON ap.airplane_bk = rte.airplane_code
-    LEFT JOIN dds.dim_tariffs    AS tar ON tar.fare_conditions = seg.fare_conditions
-    LEFT JOIN dds.dim_passengers AS pax ON pax.passenger_bk = tkt.passenger_id
-    LEFT JOIN ods.boarding_passes AS bp
-        ON bp.ticket_no = seg.ticket_no AND bp.flight_id = seg.flight_id
-)
+-- Statement 1: UPDATE существующих строк факта.
+-- ВАЖНО: обновляем ТОЛЬКО мутабельные поля (is_boarded, seat_no, price).
+-- Dimension SK (route_sk, airport_sk, airplane_sk и т.д.) НЕ перезаписываем —
+-- они зафиксированы на момент INSERT и отражают историческое состояние.
 UPDATE dds.fact_flight_sales AS f
-SET calendar_sk          = s.calendar_sk,
-    departure_airport_sk = s.departure_airport_sk,
-    arrival_airport_sk   = s.arrival_airport_sk,
-    airplane_sk          = s.airplane_sk,
-    tariff_sk            = s.tariff_sk,
-    passenger_sk         = s.passenger_sk,
-    route_sk             = s.route_sk,
-    book_ref             = s.book_ref,
-    book_date            = s.book_date,
-    seat_no              = s.seat_no,
-    price                = s.price,
-    is_boarded           = s.is_boarded,
-    _load_id             = '{{ run_id }}',
-    _load_ts             = now()
-FROM fact_src AS s
-WHERE f.ticket_no = s.ticket_no
-  AND f.flight_id = s.flight_id
-  AND (f.is_boarded             IS DISTINCT FROM s.is_boarded
-    OR f.price                  IS DISTINCT FROM s.price
-    OR f.seat_no                IS DISTINCT FROM s.seat_no
-    OR f.route_sk               IS DISTINCT FROM s.route_sk
-    OR f.departure_airport_sk   IS DISTINCT FROM s.departure_airport_sk
-    OR f.arrival_airport_sk     IS DISTINCT FROM s.arrival_airport_sk
-    OR f.airplane_sk            IS DISTINCT FROM s.airplane_sk);
+SET seat_no    = bp.seat_no,
+    price      = seg.segment_amount,
+    is_boarded = (bp.ticket_no IS NOT NULL),
+    _load_id   = '{{ run_id }}',
+    _load_ts   = now()
+FROM ods.segments AS seg
+LEFT JOIN ods.boarding_passes AS bp
+    ON bp.ticket_no = seg.ticket_no AND bp.flight_id = seg.flight_id
+WHERE f.ticket_no = seg.ticket_no
+  AND f.flight_id = seg.flight_id
+  AND (f.is_boarded IS DISTINCT FROM (bp.ticket_no IS NOT NULL)
+    OR f.price      IS DISTINCT FROM seg.segment_amount
+    OR f.seat_no    IS DISTINCT FROM bp.seat_no);
 
--- Statement 2: INSERT новых строк факта
+-- Statement 2: INSERT новых строк факта.
+-- Dimension SK фиксируются на момент вставки (point-in-time для SCD2 routes).
 WITH fact_src AS (
     SELECT
         seg.ticket_no,
@@ -454,9 +426,12 @@ WITH fact_src AS (
     JOIN ods.tickets  AS tkt ON tkt.ticket_no = seg.ticket_no
     JOIN ods.bookings AS bkg ON bkg.book_ref  = tkt.book_ref
     JOIN ods.flights  AS flt ON flt.flight_id = seg.flight_id
+    -- SCD2 point-in-time: версия маршрута, актуальная на дату вылета
+    LEFT JOIN dds.dim_routes AS rte
+        ON rte.route_bk = flt.route_no
+        AND flt.scheduled_departure::DATE >= rte.valid_from
+        AND (rte.valid_to IS NULL OR flt.scheduled_departure::DATE < rte.valid_to)
     LEFT JOIN dds.dim_calendar   AS cal ON cal.date_actual = flt.scheduled_departure::DATE
-    LEFT JOIN dds.dim_routes     AS rte
-        ON rte.route_bk = flt.route_no AND rte.valid_to IS NULL
     LEFT JOIN dds.dim_airports   AS dep ON dep.airport_bk = rte.departure_airport
     LEFT JOIN dds.dim_airports   AS arr ON arr.airport_bk = rte.arrival_airport
     LEFT JOIN dds.dim_airplanes  AS ap  ON ap.airplane_bk = rte.airplane_code
@@ -486,21 +461,27 @@ WHERE NOT EXISTS (
 ANALYZE dds.fact_flight_sales;
 ```
 
-### 5.5. Point-in-time lookup для SCD2 dim_routes
+### 5.5. Модель историчности факта
 
-Текущая реализация использует `rte.valid_to IS NULL` (текущая версия маршрута).
-Для полного point-in-time lookup (определение версии маршрута на момент вылета):
+Dimension SK фиксируются **при INSERT** и не перезаписываются:
+- `route_sk` — версия маршрута на дату `scheduled_departure` (point-in-time SCD2 lookup);
+- `departure_airport_sk`, `arrival_airport_sk`, `airplane_sk` — из той же версии маршрута;
+- `calendar_sk`, `tariff_sk`, `passenger_sk` — из текущих SCD1-измерений на момент INSERT.
 
-```sql
-LEFT JOIN dds.dim_routes AS rte
-    ON rte.route_bk = flt.route_no
-    AND flt.scheduled_departure::DATE >= rte.valid_from
-    AND (rte.valid_to IS NULL OR flt.scheduled_departure::DATE < rte.valid_to)
-```
+UPDATE факта обновляет только **мутабельные поля**: `is_boarded`, `seat_no`, `price`
+(появился посадочный, изменилась цена). Это гарантирует, что аналитика по историческим
+периодам использует правильные версии измерений.
 
-Это усложнение оставляем как задачу на будущее — в текущей реализации берём текущую версию.
+### 5.6. Политика backfill/reprocess
 
-### 5.6. Идемпотентность паттернов
+- **Повторный запуск** с теми же данными ODS — безопасен (идемпотентно).
+- **Повторный запуск после изменения маршрутов в ODS**: dim_routes создаст новую SCD2-версию;
+  уже вставленные строки факта сохранят старый `route_sk` (историчность).
+  Новые строки факта получат актуальный `route_sk` через point-in-time lookup.
+- **Полная пересборка факта**: если нужна — `TRUNCATE dds.fact_flight_sales` и повторный
+  запуск DAG. Все SK будут пересчитаны через point-in-time lookup.
+
+### 5.7. Идемпотентность паттернов
 
 - **dim_calendar**: `WHERE NOT EXISTS` — повторный запуск не создаёт дублей.
 - **SCD1 измерения**: `UPDATE + INSERT WHERE NOT EXISTS` — натурально идемпотентно (как в ODS).
@@ -531,15 +512,18 @@ LEFT JOIN dds.dim_routes AS rte
 1. Не более одной текущей версии на `route_bk` (`WHERE valid_to IS NULL` — уникальность)
 2. `hashdiff` не NULL/пустой
 3. `valid_from` не NULL
-4. Покрытие: все `route_no` из ODS имеют хотя бы одну версию в DDS
+4. Корректность интервалов: `valid_from < valid_to` для всех закрытых версий
+5. Нет перекрытий версий: для одного `route_bk` интервалы `[valid_from, valid_to)` не пересекаются
+6. Покрытие: все `route_no` из ODS имеют хотя бы одну версию в DDS
 
 **fact_flight_sales:**
 1. Таблица не пуста
 2. Нет дублей по зерну `(ticket_no, flight_id)`
 3. Количество строк = `COUNT(*)` из `ods.segments`
-4. `passenger_sk IS NULL` = 0 (не должно быть)
-5. `tariff_sk IS NULL` = 0 (не должно быть)
-6. Обязательные поля: `book_ref`, `ticket_no`, `flight_id`, `is_boarded` не NULL
+4. **Обязательные FK**: `passenger_sk IS NULL` = 0, `tariff_sk IS NULL` = 0
+5. **FK маршрута**: `route_sk IS NULL` — допустимо при аномалиях, считаем и логируем (`RAISE NOTICE`); фейлим если > 1% строк
+6. **Calendar**: `calendar_sk IS NULL` — допустимо если `scheduled_departure IS NULL` в ODS; считаем и логируем (`RAISE NOTICE`); фейлим если > 1% строк
+7. Обязательные поля: `book_ref`, `ticket_no`, `flight_id`, `is_boarded` не NULL
 
 ### 6.2. Пример DQ для dim_routes (SCD2)
 
@@ -563,6 +547,16 @@ BEGIN
     IF v_dup_sk <> 0 THEN
         RAISE EXCEPTION
             'DQ FAILED: в dds.dim_routes найдены дубликаты route_sk: %', v_dup_sk;
+    END IF;
+
+    -- SCD2: корректность интервалов (valid_from < valid_to для закрытых версий)
+    SELECT COUNT(*) INTO v_null_count
+    FROM dds.dim_routes
+    WHERE valid_to IS NOT NULL AND valid_from >= valid_to;
+    IF v_null_count <> 0 THEN
+        RAISE EXCEPTION
+            'DQ FAILED: в dds.dim_routes найдены версии с valid_from >= valid_to: %',
+            v_null_count;
     END IF;
 
     -- SCD2: не более одной текущей версии на route_bk
@@ -668,6 +662,38 @@ BEGIN
     IF v_null_tariff <> 0 THEN
         RAISE EXCEPTION
             'DQ FAILED: в fact_flight_sales строки без tariff_sk: %', v_null_tariff;
+    END IF;
+
+    -- FK маршрута: route_sk (допустимо при аномалиях, фейлим если > 1%)
+    DECLARE v_null_route BIGINT;
+    SELECT COUNT(*) INTO v_null_route
+    FROM dds.fact_flight_sales WHERE route_sk IS NULL;
+    IF v_null_route > 0 THEN
+        IF v_null_route * 100 / v_row_count > 1 THEN
+            RAISE EXCEPTION
+                'DQ FAILED: в fact_flight_sales слишком много строк без route_sk: % (>1%%)',
+                v_null_route;
+        ELSE
+            RAISE NOTICE
+                'DQ WARNING: в fact_flight_sales строк без route_sk: % (<=1%%, допустимо)',
+                v_null_route;
+        END IF;
+    END IF;
+
+    -- Calendar: calendar_sk (допустимо если scheduled_departure IS NULL)
+    DECLARE v_null_calendar BIGINT;
+    SELECT COUNT(*) INTO v_null_calendar
+    FROM dds.fact_flight_sales WHERE calendar_sk IS NULL;
+    IF v_null_calendar > 0 THEN
+        IF v_null_calendar * 100 / v_row_count > 1 THEN
+            RAISE EXCEPTION
+                'DQ FAILED: в fact_flight_sales слишком много строк без calendar_sk: % (>1%%)',
+                v_null_calendar;
+        ELSE
+            RAISE NOTICE
+                'DQ WARNING: в fact_flight_sales строк без calendar_sk: % (<=1%%, допустимо)',
+                v_null_calendar;
+        END IF;
     END IF;
 
     -- Обязательные поля

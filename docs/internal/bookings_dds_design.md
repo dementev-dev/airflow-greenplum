@@ -328,6 +328,27 @@ WHERE s.rn = 1
   AND d.valid_to IS NULL              -- только текущая версия
   AND d.hashdiff <> s.hashdiff;       -- атрибуты изменились
 
+-- Statement 1.1: Закрыть "исчезнувшие" маршруты
+-- (есть в текущем срезе DDS, но отсутствуют в текущем состоянии ODS).
+WITH src AS (
+    SELECT
+        route_no,
+        ROW_NUMBER() OVER (PARTITION BY route_no ORDER BY validity DESC) AS rn
+    FROM ods.routes
+)
+UPDATE dds.dim_routes AS d
+SET valid_to   = CURRENT_DATE,
+    updated_at = now(),
+    _load_id   = '{{ run_id }}',
+    _load_ts   = now()
+WHERE d.valid_to IS NULL
+  AND NOT EXISTS (
+      SELECT 1
+      FROM src AS s
+      WHERE s.rn = 1
+        AND s.route_no = d.route_bk
+  );
+
 -- Statement 2: Вставить новые версии (для изменённых и совсем новых route_no)
 WITH src AS (
     SELECT
@@ -367,7 +388,15 @@ SELECT
     s.departure_time,
     s.duration,
     s.hashdiff,
-    CURRENT_DATE,     -- valid_from = сегодня
+    -- valid_from: для совсем новых route_no — sentinel '1900-01-01'
+    -- (чтобы point-in-time lookup покрыл все исторические рейсы);
+    -- для обновлённых (уже были в DDS, но hashdiff изменился) — CURRENT_DATE.
+    CASE
+        WHEN EXISTS (
+            SELECT 1 FROM dds.dim_routes d2 WHERE d2.route_bk = s.route_no
+        ) THEN CURRENT_DATE
+        ELSE '1900-01-01'::DATE
+    END AS valid_from,
     NULL,             -- valid_to = NULL (текущая версия)
     now(), now(), '{{ run_id }}', now()
 FROM src AS s
@@ -381,6 +410,10 @@ WHERE s.rn = 1
 
 ANALYZE dds.dim_routes;
 ```
+
+Примечание: `valid_from`/`valid_to` имеют дневную гранулярность (`DATE`).
+Если маршрут меняется несколько раз в один день, допускается закрытая версия с
+`valid_from = valid_to` (нулевой интервал), чтобы не терять факт изменения.
 
 ### 5.4. fact_flight_sales — инкрементальный UPSERT
 
@@ -485,7 +518,7 @@ UPDATE факта обновляет только **мутабельные по�
 
 - **dim_calendar**: `WHERE NOT EXISTS` — повторный запуск не создаёт дублей.
 - **SCD1 измерения**: `UPDATE + INSERT WHERE NOT EXISTS` — натурально идемпотентно (как в ODS).
-- **SCD2 dim_routes**: `UPDATE WHERE hashdiff <>` + `INSERT WHERE NOT EXISTS (bk + valid_to IS NULL + hashdiff =)` — повторный запуск с теми же данными ODS не создаёт дублей и не закрывает версии повторно.
+- **SCD2 dim_routes**: `UPDATE changed` + `UPDATE missing` + `INSERT WHERE NOT EXISTS (bk + valid_to IS NULL + hashdiff =)` — повторный запуск с теми же данными ODS не создаёт дублей и не закрывает версии повторно.
 - **fact_flight_sales**: `UPDATE + INSERT WHERE NOT EXISTS` — идемпотентно по зерну.
 
 ---
@@ -507,21 +540,23 @@ UPDATE факта обновляет только **мутабельные по�
 1. Не менее 1000 строк
 2. Нет дублей по `calendar_sk` и `date_actual`
 3. Обязательные поля не NULL
+4. Покрывает диапазон дат из `ods.flights.scheduled_departure` (для NOT NULL)
 
 **dim_routes (SCD2 специфика):**
 1. Не более одной текущей версии на `route_bk` (`WHERE valid_to IS NULL` — уникальность)
 2. `hashdiff` не NULL/пустой
 3. `valid_from` не NULL
-4. Корректность интервалов: `valid_from < valid_to` для всех закрытых версий
+4. Корректность интервалов: `valid_from <= valid_to` для всех закрытых версий (DATE-гранулярность)
 5. Нет перекрытий версий: для одного `route_bk` интервалы `[valid_from, valid_to)` не пересекаются
 6. Покрытие: все `route_no` из ODS имеют хотя бы одну версию в DDS
+7. Текущий срез DDS консистентен с ODS: `route_bk` с `valid_to IS NULL` есть в `ods.routes`
 
 **fact_flight_sales:**
 1. Таблица не пуста
 2. Нет дублей по зерну `(ticket_no, flight_id)`
 3. Количество строк = `COUNT(*)` из `ods.segments`
 4. **Обязательные FK**: `passenger_sk IS NULL` = 0, `tariff_sk IS NULL` = 0
-5. **FK маршрута**: `route_sk IS NULL` — допустимо при аномалиях, считаем и логируем (`RAISE NOTICE`); фейлим если > 1% строк
+5. **FK маршрута**: NULL в любом из `route_sk`, `departure_airport_sk`, `arrival_airport_sk`, `airplane_sk` — допустимо при аномалиях, считаем и логируем (`RAISE NOTICE`); фейлим если > 1% строк
 6. **Calendar**: `calendar_sk IS NULL` — допустимо если `scheduled_departure IS NULL` в ODS; считаем и логируем (`RAISE NOTICE`); фейлим если > 1% строк
 7. Обязательные поля: `book_ref`, `ticket_no`, `flight_id`, `is_boarded` не NULL
 
@@ -533,7 +568,9 @@ DECLARE
     v_row_count BIGINT;
     v_dup_sk BIGINT;
     v_dup_current BIGINT;
+    v_overlap_count BIGINT;
     v_missing_count BIGINT;
+    v_orphan_current BIGINT;
     v_null_count BIGINT;
 BEGIN
     -- Таблица не пуста
@@ -549,14 +586,31 @@ BEGIN
             'DQ FAILED: в dds.dim_routes найдены дубликаты route_sk: %', v_dup_sk;
     END IF;
 
-    -- SCD2: корректность интервалов (valid_from < valid_to для закрытых версий)
+    -- SCD2: корректность интервалов (valid_from <= valid_to для закрытых версий)
     SELECT COUNT(*) INTO v_null_count
     FROM dds.dim_routes
-    WHERE valid_to IS NOT NULL AND valid_from >= valid_to;
+    WHERE valid_to IS NOT NULL AND valid_from > valid_to;
     IF v_null_count <> 0 THEN
         RAISE EXCEPTION
-            'DQ FAILED: в dds.dim_routes найдены версии с valid_from >= valid_to: %',
+            'DQ FAILED: в dds.dim_routes найдены версии с valid_from > valid_to: %',
             v_null_count;
+    END IF;
+
+    -- SCD2: нет перекрытий интервалов для одного route_bk
+    SELECT COUNT(*) INTO v_overlap_count
+    FROM (
+        SELECT 1
+        FROM dds.dim_routes d1
+        JOIN dds.dim_routes d2
+            ON d1.route_bk = d2.route_bk
+            AND d1.route_sk < d2.route_sk
+            AND d1.valid_from < COALESCE(d2.valid_to, DATE '9999-12-31')
+            AND d2.valid_from < COALESCE(d1.valid_to, DATE '9999-12-31')
+    ) AS overlaps;
+    IF v_overlap_count <> 0 THEN
+        RAISE EXCEPTION
+            'DQ FAILED: в dds.dim_routes найдены перекрытия SCD2-интервалов: %',
+            v_overlap_count;
     END IF;
 
     -- SCD2: не более одной текущей версии на route_bk
@@ -583,6 +637,24 @@ BEGIN
     IF v_missing_count <> 0 THEN
         RAISE EXCEPTION
             'DQ FAILED: в dds.dim_routes отсутствуют маршруты из ODS: %', v_missing_count;
+    END IF;
+
+    -- SCD2: current-срез DDS не содержит route_bk, которых нет в ODS
+    SELECT COUNT(*) INTO v_orphan_current
+    FROM (
+        SELECT DISTINCT route_bk
+        FROM dds.dim_routes
+        WHERE valid_to IS NULL
+    ) AS d
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM ods.routes AS o
+        WHERE o.route_no = d.route_bk
+    );
+    IF v_orphan_current <> 0 THEN
+        RAISE EXCEPTION
+            'DQ FAILED: в current-срезе dds.dim_routes есть route_bk вне ODS: %',
+            v_orphan_current;
     END IF;
 
     -- Обязательные поля
@@ -618,6 +690,8 @@ DECLARE
     v_dup_count BIGINT;
     v_null_passenger BIGINT;
     v_null_tariff BIGINT;
+    v_null_route_related BIGINT;
+    v_null_calendar BIGINT;
     v_null_required BIGINT;
 BEGIN
     -- Таблица не пуста
@@ -664,28 +738,30 @@ BEGIN
             'DQ FAILED: в fact_flight_sales строки без tariff_sk: %', v_null_tariff;
     END IF;
 
-    -- FK маршрута: route_sk (допустимо при аномалиях, фейлим если > 1%)
-    DECLARE v_null_route BIGINT;
-    SELECT COUNT(*) INTO v_null_route
-    FROM dds.fact_flight_sales WHERE route_sk IS NULL;
-    IF v_null_route > 0 THEN
-        IF v_null_route * 100 / v_row_count > 1 THEN
+    -- FK маршрута: route-related группа (допустимо при аномалиях, фейлим если > 1%)
+    SELECT COUNT(*) INTO v_null_route_related
+    FROM dds.fact_flight_sales
+    WHERE route_sk IS NULL
+        OR departure_airport_sk IS NULL
+        OR arrival_airport_sk IS NULL
+        OR airplane_sk IS NULL;
+    IF v_null_route_related > 0 THEN
+        IF v_null_route_related * 100.0 / NULLIF(v_row_count, 0) > 1.0 THEN
             RAISE EXCEPTION
-                'DQ FAILED: в fact_flight_sales слишком много строк без route_sk: % (>1%%)',
-                v_null_route;
+                'DQ FAILED: в fact_flight_sales слишком много строк с NULL в route-related FK: % (>1%%)',
+                v_null_route_related;
         ELSE
             RAISE NOTICE
-                'DQ WARNING: в fact_flight_sales строк без route_sk: % (<=1%%, допустимо)',
-                v_null_route;
+                'DQ WARNING: в fact_flight_sales строк с NULL в route-related FK: % (<=1%%, допустимо)',
+                v_null_route_related;
         END IF;
     END IF;
 
     -- Calendar: calendar_sk (допустимо если scheduled_departure IS NULL)
-    DECLARE v_null_calendar BIGINT;
     SELECT COUNT(*) INTO v_null_calendar
     FROM dds.fact_flight_sales WHERE calendar_sk IS NULL;
     IF v_null_calendar > 0 THEN
-        IF v_null_calendar * 100 / v_row_count > 1 THEN
+        IF v_null_calendar * 100.0 / NULLIF(v_row_count, 0) > 1.0 THEN
             RAISE EXCEPTION
                 'DQ FAILED: в fact_flight_sales слишком много строк без calendar_sk: % (>1%%)',
                 v_null_calendar;
@@ -882,7 +958,7 @@ load_dds_fact_flight_sales >> dq_dds_fact_flight_sales >> finish_dds_summary
 | SCD1 UPSERT SQL | `sql/ods/airports_load.sql`, `sql/ods/bookings_load.sql` |
 | DQ SQL (PL/pgSQL) | `sql/ods/airports_dq.sql`, `sql/ods/segments_dq.sql` |
 | Smoke-тесты | `tests/test_dags_smoke.py` (тесты ODS DAG) |
-| Подключение DDL | `sql/ddl_gp.sql` (секция ODS `\i` директивы) |
+| Подключение DDL | `sql/ddl_gp.sql` (секция DDS `\i` директивы) |
 
 ---
 
@@ -892,7 +968,7 @@ load_dds_fact_flight_sales >> dq_dds_fact_flight_sales >> finish_dds_summary
 2. `make ddl-gp` создаёт STG+ODS+DDS без ошибок
 3. DAG `bookings_to_gp_dds` завершается успешно после ODS
 4. Все DQ-задачи зелёные
-5. В DDS нет дублей по SK и BK
+5. В DDS нет дублей по SK; для SCD1 нет дублей по BK, для SCD2 не более одной current-версии BK
 6. `fact_flight_sales` содержит столько строк, сколько в `ods.segments`
 7. Нейминг консистентен: `_bk`, `_sk`, `valid_from`/`valid_to`, `hashdiff`, `_load_id`, `_load_ts`, `created_at`/`updated_at`
 8. `make fmt` / `make lint` проходят
@@ -983,5 +1059,5 @@ ORDER BY r.route_bk, r.valid_from;
 ## 15) Что будет следующим шагом
 
 - Data Mart (витрина) поверх DDS
-- Point-in-time lookup для `dim_routes` в факте (`BETWEEN valid_from AND valid_to`)
+- Unknown-member стратегия (`*_sk = 0`) для late-arriving dimensions
 - `dim_calendar.is_holiday` (если появится источник)

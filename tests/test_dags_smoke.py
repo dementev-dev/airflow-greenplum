@@ -297,3 +297,88 @@ def test_bookings_to_gp_ods_dag_structure():
     # Финальная сводка должна ждать обе ветки.
     _assert_reachable(dag, "dq_ods_boarding_passes", "finish_ods_summary")
     _assert_reachable(dag, "dq_ods_seats", "finish_ods_summary")
+
+
+def test_bookings_dds_ddl_dag_structure():
+    """Проверка структуры DAG bookings_dds_ddl."""
+    dag = _load_dag("airflow.dags.bookings_dds_ddl")
+
+    expected_tasks = {
+        "apply_dds_dim_calendar_ddl",
+        "apply_dds_dim_airports_ddl",
+        "apply_dds_dim_airplanes_ddl",
+        "apply_dds_dim_tariffs_ddl",
+        "apply_dds_dim_passengers_ddl",
+        "apply_dds_dim_routes_ddl",
+        "apply_dds_fact_flight_sales_ddl",
+    }
+    assert expected_tasks.issubset(dag.task_dict.keys())
+
+    _assert_reachable(dag, "apply_dds_dim_calendar_ddl", "apply_dds_dim_airports_ddl")
+
+    for task_id in expected_tasks - {"apply_dds_dim_calendar_ddl"}:
+        _assert_reachable(dag, "apply_dds_dim_calendar_ddl", task_id)
+
+
+def test_bookings_to_gp_dds_dag_structure():
+    """Проверка структуры DAG bookings_to_gp_dds."""
+    dag = _load_dag("airflow.dags.bookings_to_gp_dds")
+
+    expected_tasks = {
+        "load_dds_dim_calendar",
+        "dq_dds_dim_calendar",
+        "load_dds_dim_airports",
+        "dq_dds_dim_airports",
+        "load_dds_dim_airplanes",
+        "dq_dds_dim_airplanes",
+        "load_dds_dim_tariffs",
+        "dq_dds_dim_tariffs",
+        "load_dds_dim_passengers",
+        "dq_dds_dim_passengers",
+        "load_dds_dim_routes",
+        "dq_dds_dim_routes",
+        "load_dds_fact_flight_sales",
+        "dq_dds_fact_flight_sales",
+        "finish_dds_summary",
+    }
+    assert expected_tasks.issubset(dag.task_dict.keys())
+
+    load_to_dq = [
+        ("load_dds_dim_calendar", "dq_dds_dim_calendar"),
+        ("load_dds_dim_airports", "dq_dds_dim_airports"),
+        ("load_dds_dim_airplanes", "dq_dds_dim_airplanes"),
+        ("load_dds_dim_tariffs", "dq_dds_dim_tariffs"),
+        ("load_dds_dim_passengers", "dq_dds_dim_passengers"),
+        ("load_dds_dim_routes", "dq_dds_dim_routes"),
+        ("load_dds_fact_flight_sales", "dq_dds_fact_flight_sales"),
+    ]
+    for load_task_id, dq_task_id in load_to_dq:
+        _assert_direct_edge(dag, load_task_id, dq_task_id)
+
+    # После calendar все остальные измерения должны быть reachable.
+    _assert_reachable(dag, "dq_dds_dim_calendar", "load_dds_dim_airports")
+    _assert_reachable(dag, "dq_dds_dim_calendar", "load_dds_dim_airplanes")
+    _assert_reachable(dag, "dq_dds_dim_calendar", "load_dds_dim_tariffs")
+    _assert_reachable(dag, "dq_dds_dim_calendar", "load_dds_dim_passengers")
+    _assert_reachable(dag, "dq_dds_dim_calendar", "load_dds_dim_routes")
+
+    # Параллельность: airports и airplanes не должны зависеть друг от друга.
+    airports = dag.get_task("load_dds_dim_airports")
+    airplanes = dag.get_task("load_dds_dim_airplanes")
+    assert airplanes not in airports.get_flat_relatives(
+        upstream=False
+    ), "dds airports не должен быть upstream для airplanes"
+    assert airports not in airplanes.get_flat_relatives(
+        upstream=False
+    ), "dds airplanes не должен быть upstream для airports"
+
+    # Факт должен стартовать только после всех измерений.
+    _assert_reachable(dag, "dq_dds_dim_calendar", "load_dds_fact_flight_sales")
+    _assert_reachable(dag, "dq_dds_dim_airports", "load_dds_fact_flight_sales")
+    _assert_reachable(dag, "dq_dds_dim_airplanes", "load_dds_fact_flight_sales")
+    _assert_reachable(dag, "dq_dds_dim_tariffs", "load_dds_fact_flight_sales")
+    _assert_reachable(dag, "dq_dds_dim_passengers", "load_dds_fact_flight_sales")
+    _assert_reachable(dag, "dq_dds_dim_routes", "load_dds_fact_flight_sales")
+
+    # Финальная сводка должна ждать DQ факта.
+    _assert_reachable(dag, "dq_dds_fact_flight_sales", "finish_dds_summary")

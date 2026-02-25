@@ -1,6 +1,6 @@
 # Схема БД DWH (Bookings → Greenplum)
 
-> **Статус:** Проект в разработке. Реализованы STG и ODS (по 9 таблиц). DDS зафиксирован как дизайн и готовится к реализации.
+> **Статус:** Проект в разработке. Реализованы STG, ODS и DDS (bookings).
 
 ## Обзор
 
@@ -32,7 +32,7 @@
 | **Source** | ✅ Готово | Демо-БД bookings (Postgres) |
 | **STG** | ✅ Готово | 9 из 9 таблиц (bookings, tickets, airports, airplanes, routes, seats, flights, segments, boarding_passes) |
 | **ODS** | ✅ Готово | 9 из 9 таблиц + DAG `bookings_ods_ddl` и `bookings_to_gp_ods` |
-| **DDS** | ⚙️ В проектировании | Подготовлен дизайн `docs/internal/bookings_dds_design.md`, реализация запланирована |
+| **DDS** | ✅ Готово | 6 измерений + 1 факт + DAG `bookings_dds_ddl` и `bookings_to_gp_dds` |
 
 ### Архитектура слоёв
 
@@ -59,7 +59,7 @@
 - **Хранение**: Heap или AO-CO (Append-Only Column-oriented) для аналитических запросов
 - **Структура**: Измерения (Dimensions) + Факты (Facts)
 - **Ключи**: Суррогатные ключи (SK) для измерений, FK в фактах
-- **Текущий статус**: Зафиксирован детальный дизайн (см. `docs/internal/bookings_dds_design.md`)
+- **Текущий статус**: Реализован (6 измерений, 1 факт, SQL DQ, DAG загрузки)
 
 ### Измерения DDS (Dimensions)
 
@@ -419,6 +419,7 @@ graph LR
 - [`docs/internal/bookings_stg_design.md`](bookings_stg_design.md) — Детальный дизайн STG слоя для bookings
 - [`docs/internal/bookings_ods_design.md`](bookings_ods_design.md) — Детальный дизайн ODS слоя (SCD1, batch contract, DQ)
 - [`docs/internal/bookings_dds_design.md`](bookings_dds_design.md) — План реализации DDS слоя (Star Schema, SCD2 для routes)
+- [`docs/bookings_to_gp_dds.md`](../bookings_to_gp_dds.md) — Запуск и проверка DAG `bookings_to_gp_dds`
 - [`docs/internal/bookings_stg_code_review.md`](bookings_stg_code_review.md) — Ревью решения и рекомендации по улучшению
 - [`docs/internal/bookings_tz.md`](bookings_tz.md) — Работа с часовыми поясами в источнике
 - [`docs/internal/pxf_bookings.md`](pxf_bookings.md) — Настройка PXF для чтения из bookings-db
@@ -430,6 +431,7 @@ graph LR
 
 | Дата | Версия | Описание изменений |
 |------|--------|-------------------|
+| 2026-02-25 | 2.2 | Реализован DDS: добавлены `sql/dds/*` (DDL/LOAD/DQ), DAG `bookings_dds_ddl`, DAG `bookings_to_gp_dds`, обновлены smoke-тесты и документация. |
 | 2026-02-23 | 2.1 | Актуализирован статус: STG+ODS реализованы. Обновлены DDS-объекты (`dds.dim_*`, `dds.fact_flight_sales`), добавлен `dds.dim_routes` (SCD2), исправлены диаграмма и TODO. |
 | 2025-01-17 | 2.0 | Удалён слой DQ для упрощения учебного стенда. Добавлены спецификации для LLM и обучающие материалы для студентов. Добавлен глоссарий терминов. |
 | 2025-01-17 | 1.1 | Исправлены названия таблиц (`aircrafts_data` → `airplanes_data`, `ticket_flights` → `segments`), удалено `dim.bookings`, добавлены суррогатные ключи, добавлен слой DQ, исправлены связи |
@@ -441,6 +443,6 @@ graph LR
 
 - [x] Реализовать STG слой полностью (все 9 таблиц)
 - [x] Реализовать ODS слой
-- [ ] Реализовать DDS слой (измерения и факт)
+- [x] Реализовать DDS слой (измерения и факт)
 - [x] Создать DAG для загрузки ODS
-- [ ] Создать DAG для загрузки DDS
+- [x] Создать DAG для загрузки DDS

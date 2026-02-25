@@ -9,6 +9,7 @@
 - [План тестирования и проверки](../TESTING.md)
 - [Главный учебный DAG: bookings → stg](bookings_to_gp_stage.md)
 - [Учебный DAG: stg -> ods](bookings_to_gp_ods.md)
+- [Учебный DAG: ods -> dds](bookings_to_gp_dds.md)
 
 ## Технические детали (опционально)
 
@@ -17,4 +18,5 @@
 - [PXF в этом проекте (проектная реализация)](internal/pxf_bookings.md)
 - [Дизайн stg для bookings (черновик)](internal/bookings_stg_design.md)
 - [Дизайн ods для bookings (черновик)](internal/bookings_ods_design.md)
+- [Дизайн dds для bookings (черновик)](internal/bookings_dds_design.md)
 - [Про время/UTC в bookings (черновик)](internal/bookings_tz.md)

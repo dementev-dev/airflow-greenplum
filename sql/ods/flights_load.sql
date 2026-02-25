@@ -1,22 +1,79 @@
 -- Загрузка ODS по flights: SCD1 (UPDATE изменившихся + INSERT новых).
 
 -- Statement 1: UPDATE существующих строк.
-WITH src AS (
+WITH segment_flights AS (
+    -- В segments текущего batch могут быть flight_id не только из stg.flights этого batch.
+    -- Поэтому заранее собираем список flight_id из segments текущего batch.
+    SELECT DISTINCT
+        NULLIF(s.flight_id, '')::INTEGER AS flight_id
+    FROM stg.segments AS s
+    WHERE s.batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
+        AND s.flight_id IS NOT NULL
+        AND s.flight_id <> ''
+),
+stg_flights_typed AS (
     SELECT
-        NULLIF(s.flight_id, '')::INTEGER                       AS flight_id,
+        NULLIF(s.flight_id, '')::INTEGER                            AS flight_id,
         s.route_no,
         s.status,
         NULLIF(s.scheduled_departure, '')::TIMESTAMP WITH TIME ZONE AS scheduled_departure,
         NULLIF(s.scheduled_arrival, '')::TIMESTAMP WITH TIME ZONE   AS scheduled_arrival,
         NULLIF(s.actual_departure, '')::TIMESTAMP WITH TIME ZONE    AS actual_departure,
         NULLIF(s.actual_arrival, '')::TIMESTAMP WITH TIME ZONE      AS actual_arrival,
-        s.src_created_at_ts                                           AS event_ts,
-        ROW_NUMBER() OVER (
-            PARTITION BY s.flight_id
-            ORDER BY s.src_created_at_ts DESC NULLS LAST, s.load_dttm DESC
-        ) AS rn
+        s.src_created_at_ts                                          AS event_ts,
+        s.load_dttm,
+        s.batch_id
     FROM stg.flights AS s
-    WHERE s.batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
+    WHERE s.flight_id IS NOT NULL
+        AND s.flight_id <> ''
+),
+src_union AS (
+    -- 1) Рейсы из текущего batch.
+    SELECT
+        f.flight_id,
+        f.route_no,
+        f.status,
+        f.scheduled_departure,
+        f.scheduled_arrival,
+        f.actual_departure,
+        f.actual_arrival,
+        f.event_ts,
+        f.load_dttm
+    FROM stg_flights_typed AS f
+    WHERE f.batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
+
+    UNION ALL
+
+    -- 2) Добираем из истории STG рейсы, на которые ссылаются segments текущего batch.
+    SELECT
+        f.flight_id,
+        f.route_no,
+        f.status,
+        f.scheduled_departure,
+        f.scheduled_arrival,
+        f.actual_departure,
+        f.actual_arrival,
+        f.event_ts,
+        f.load_dttm
+    FROM stg_flights_typed AS f
+    JOIN segment_flights AS sf
+        ON sf.flight_id = f.flight_id
+),
+src AS (
+    SELECT
+        u.flight_id,
+        u.route_no,
+        u.status,
+        u.scheduled_departure,
+        u.scheduled_arrival,
+        u.actual_departure,
+        u.actual_arrival,
+        u.event_ts,
+        ROW_NUMBER() OVER (
+            PARTITION BY u.flight_id
+            ORDER BY u.event_ts DESC NULLS LAST, u.load_dttm DESC
+        ) AS rn
+    FROM src_union AS u
 )
 UPDATE ods.flights AS o
 SET route_no            = s.route_no,
@@ -42,22 +99,75 @@ WHERE s.rn = 1
     );
 
 -- Statement 2: INSERT новых строк.
-WITH src AS (
+WITH segment_flights AS (
+    SELECT DISTINCT
+        NULLIF(s.flight_id, '')::INTEGER AS flight_id
+    FROM stg.segments AS s
+    WHERE s.batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
+        AND s.flight_id IS NOT NULL
+        AND s.flight_id <> ''
+),
+stg_flights_typed AS (
     SELECT
-        NULLIF(s.flight_id, '')::INTEGER                       AS flight_id,
+        NULLIF(s.flight_id, '')::INTEGER                            AS flight_id,
         s.route_no,
         s.status,
         NULLIF(s.scheduled_departure, '')::TIMESTAMP WITH TIME ZONE AS scheduled_departure,
         NULLIF(s.scheduled_arrival, '')::TIMESTAMP WITH TIME ZONE   AS scheduled_arrival,
         NULLIF(s.actual_departure, '')::TIMESTAMP WITH TIME ZONE    AS actual_departure,
         NULLIF(s.actual_arrival, '')::TIMESTAMP WITH TIME ZONE      AS actual_arrival,
-        s.src_created_at_ts                                           AS event_ts,
-        ROW_NUMBER() OVER (
-            PARTITION BY s.flight_id
-            ORDER BY s.src_created_at_ts DESC NULLS LAST, s.load_dttm DESC
-        ) AS rn
+        s.src_created_at_ts                                          AS event_ts,
+        s.load_dttm,
+        s.batch_id
     FROM stg.flights AS s
-    WHERE s.batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
+    WHERE s.flight_id IS NOT NULL
+        AND s.flight_id <> ''
+),
+src_union AS (
+    SELECT
+        f.flight_id,
+        f.route_no,
+        f.status,
+        f.scheduled_departure,
+        f.scheduled_arrival,
+        f.actual_departure,
+        f.actual_arrival,
+        f.event_ts,
+        f.load_dttm
+    FROM stg_flights_typed AS f
+    WHERE f.batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
+
+    UNION ALL
+
+    SELECT
+        f.flight_id,
+        f.route_no,
+        f.status,
+        f.scheduled_departure,
+        f.scheduled_arrival,
+        f.actual_departure,
+        f.actual_arrival,
+        f.event_ts,
+        f.load_dttm
+    FROM stg_flights_typed AS f
+    JOIN segment_flights AS sf
+        ON sf.flight_id = f.flight_id
+),
+src AS (
+    SELECT
+        u.flight_id,
+        u.route_no,
+        u.status,
+        u.scheduled_departure,
+        u.scheduled_arrival,
+        u.actual_departure,
+        u.actual_arrival,
+        u.event_ts,
+        ROW_NUMBER() OVER (
+            PARTITION BY u.flight_id
+            ORDER BY u.event_ts DESC NULLS LAST, u.load_dttm DESC
+        ) AS rn
+    FROM src_union AS u
 )
 INSERT INTO ods.flights (
     flight_id,

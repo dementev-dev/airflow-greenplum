@@ -38,7 +38,7 @@
    - Проверить, что все 5 задач Success и логи содержат `Проверка пройдена`.
 
 - DAG `bookings_to_gp_stage` (полная проверка цепочки bookings → Greenplum STG):
-  - предварительно выполнить один раз: `make bookings-init` (установка демобазы `demo` в контейнере `bookings-db`) и `make ddl-gp` (создаёт STG слой в Greenplum, включая внешние `*_ext` через PXF);
+  - предварительно выполнить один раз: `make bookings-init` (установка демобазы `demo` в контейнере `bookings-db`) и `make ddl-gp` (создаёт STG/ODS/DDS слои в Greenplum, включая внешние `*_ext` через PXF);
   - перед Trigger проверить, что в source реально есть данные (все значения должны быть `> 0`):
     - `docker compose exec bookings-db psql -U bookings -d demo -At -c "SELECT COUNT(*) FROM bookings.bookings;"`
     - `docker compose exec bookings-db psql -U bookings -d demo -At -c "SELECT COUNT(*) FROM bookings.airports_data;"`
@@ -90,6 +90,6 @@
 - При необходимости сохранить данные: скопировать CSV из `data/` и сделать дампы до `make clean`.
 
 ## Текущий статус (пример успешного прогона)
-- `uv run pytest -q` — 11 passed, 2 smoke-теста DAG пропущены (Airflow не установлен в venv).
+- `uv run pytest -q` — 14 passed, 9 smoke-тестов DAG пропущены (Airflow не установлен в venv).
 - `make lint` — проходит (DAG‑файлы отформатированы black/isort).
 - Docker-стенд не запускался в рамках этой сессии; ожидается, что инструкции выше обеспечат полноценную проверку.

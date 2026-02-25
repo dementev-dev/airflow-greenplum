@@ -48,3 +48,12 @@ FORMAT 'CUSTOM' (formatter='pxfwritable_import');
 \i ods/flights_ddl.sql
 \i ods/segments_ddl.sql
 \i ods/boarding_passes_ddl.sql
+
+-- DDL для DDS-слоя (Star Schema, SCD1 + SCD2).
+\i dds/dim_calendar_ddl.sql
+\i dds/dim_airports_ddl.sql
+\i dds/dim_airplanes_ddl.sql
+\i dds/dim_tariffs_ddl.sql
+\i dds/dim_passengers_ddl.sql
+\i dds/dim_routes_ddl.sql
+\i dds/fact_flight_sales_ddl.sql

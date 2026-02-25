@@ -36,3 +36,15 @@ def test_ods_batch_resolver_uses_consistent_snapshot_batches() -> None:
 
     assert "INTERSECT" in dag_code
     assert "candidate_batches" in dag_code
+
+
+def test_flights_load_covers_segment_flight_ids_from_stg_history() -> None:
+    """
+    Загрузка flights должна подтягивать рейсы из истории STG,
+    если на них ссылаются segments текущего батча.
+    """
+    sql = _read("sql/ods/flights_load.sql")
+
+    assert "segment_flights" in sql
+    assert "FROM stg.segments AS s" in sql
+    assert "JOIN segment_flights AS sf" in sql

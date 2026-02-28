@@ -98,8 +98,8 @@ def test_snapshot_airports_contract_upsert_delete_and_dq() -> None:
                 airport_code, airport_name, city, country, coordinates, timezone,
                 src_created_at_ts, load_dttm, batch_id
             ) VALUES
-                ('AAA', 'Airport A', 'City A', 'Country A', '(0,0)', 'UTC', now(), now(), 'batch_1'),
-                ('BBB', 'Airport B', 'City B', 'Country B', '(1,1)', 'UTC', now(), now(), 'batch_1');
+                ('AAA', '{{"en": "Airport A", "ru": "Аэропорт A"}}', '{{"en": "City A", "ru": "Город A"}}', '{{"en": "Country A", "ru": "Страна A"}}', '(0,0)', 'UTC', now(), now(), 'batch_1'),
+                ('BBB', '{{"en": "Airport B", "ru": "Аэропорт B"}}', '{{"en": "City B", "ru": "Город B"}}', '{{"en": "Country B", "ru": "Страна B"}}', '(1,1)', 'UTC', now(), now(), 'batch_1');
             """
         )
 
@@ -120,8 +120,8 @@ def test_snapshot_airports_contract_upsert_delete_and_dq() -> None:
                 airport_code, airport_name, city, country, coordinates, timezone,
                 src_created_at_ts, load_dttm, batch_id
             ) VALUES
-                ('AAA', 'Airport A v2', 'City A', 'Country A', '(0,0)', 'UTC', now(), now(), 'batch_2'),
-                ('CCC', 'Airport C', 'City C', 'Country C', '(2,2)', 'UTC', now(), now(), 'batch_2');
+                ('AAA', '{{"en": "Airport A v2", "ru": "Аэропорт A v2"}}', '{{"en": "City A", "ru": "Город A"}}', '{{"en": "Country A", "ru": "Страна A"}}', '(0,0)', 'UTC', now(), now(), 'batch_2'),
+                ('CCC', '{{"en": "Airport C", "ru": "Аэропорт C"}}', '{{"en": "City C", "ru": "Город C"}}', '{{"en": "Country C", "ru": "Страна C"}}', '(2,2)', 'UTC', now(), now(), 'batch_2');
             """
         )
 
@@ -136,10 +136,11 @@ def test_snapshot_airports_contract_upsert_delete_and_dq() -> None:
         ).strip()
         assert codes_batch_2 == "AAA,CCC"
 
+        # ODS теперь содержит русские названия (извлечены из JSON)
         airport_a_name = _psql(
             f"SELECT airport_name FROM {ods_table} WHERE airport_code = 'AAA';"
         ).strip()
-        assert airport_a_name == "Airport A v2"
+        assert airport_a_name == "Аэропорт A v2"
 
         _psql(
             _render_airports_sql(

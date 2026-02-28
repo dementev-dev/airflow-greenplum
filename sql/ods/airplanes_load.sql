@@ -1,10 +1,13 @@
 -- Загрузка ODS по airplanes: SCD1 (UPDATE изменившихся + INSERT новых).
 
 -- Statement 1: UPDATE существующих строк.
+-- Нормализация JSON: извлекаем русское название модели из поля с мультиязычностью.
+-- Почему: источник хранит переводы как {"en": "...", "ru": "..."},
+-- в ODS оставляем только один язык для упрощения downstream-логики.
 WITH src AS (
     SELECT
         s.airplane_code,
-        s.model,
+        s.model::json->>'ru' AS model,
         NULLIF(s.range, '')::INTEGER AS range_km,
         NULLIF(s.speed, '')::INTEGER AS speed_kmh,
         ROW_NUMBER() OVER (
@@ -30,10 +33,11 @@ WHERE s.rn = 1
     );
 
 -- Statement 2: INSERT новых строк.
+-- Нормализация JSON: извлекаем русское название модели из поля с мультиязычностью.
 WITH src AS (
     SELECT
         s.airplane_code,
-        s.model,
+        s.model::json->>'ru' AS model,
         NULLIF(s.range, '')::INTEGER AS range_km,
         NULLIF(s.speed, '')::INTEGER AS speed_kmh,
         ROW_NUMBER() OVER (

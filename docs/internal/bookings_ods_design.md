@@ -96,9 +96,9 @@ ODS в учебном проекте — это:
 #### `ods.airports`
 ```sql
 airport_code  TEXT NOT NULL
-airport_name  TEXT NOT NULL
-city          TEXT NOT NULL
-country       TEXT NOT NULL
+airport_name  TEXT NOT NULL  -- русское название, извлечено из JSON (поле 'ru')
+city          TEXT NOT NULL  -- русское название, извлечено из JSON (поле 'ru')
+country       TEXT NOT NULL  -- русское название, извлечено из JSON (поле 'ru')
 coordinates   TEXT
 timezone      TEXT NOT NULL
 _load_id      TEXT NOT NULL
@@ -106,16 +106,27 @@ _load_ts      TIMESTAMP NOT NULL DEFAULT now()
 DISTRIBUTED BY (airport_code)
 ```
 
+> **Примечание о нормализации JSON**: Источник (`bookings.airports_data`) хранит
+> мультиязычные поля (`airport_name`, `city`, `country`) как JSON-объекты вида
+> `{"en": "...", "ru": "..."}`. На уровне ODS выполняется нормализация:
+> извлекается только русский вариант (`->>'ru'`). Это упрощает downstream-логику
+> (DDS/DM не нужно знать о внутренней структуре JSON) и соответствует принципу
+> "типизированные данные" на уровне ODS.
+
 #### `ods.airplanes`
 ```sql
 airplane_code TEXT NOT NULL
-model         TEXT NOT NULL
+model         TEXT NOT NULL  -- русское название модели, извлечено из JSON (поле 'ru')
 range_km      INTEGER
 speed_kmh     INTEGER
 _load_id      TEXT NOT NULL
 _load_ts      TIMESTAMP NOT NULL DEFAULT now()
 DISTRIBUTED BY (airplane_code)
 ```
+
+> **Примечание о нормализации JSON**: Источник (`bookings.aircrafts_data`) хранит
+> поле `model` как JSON-объект `{"en": "...", "ru": "..."}`. На уровне ODS
+> извлекается только русский вариант (`->>'ru'`) для консистентности с `airports`.
 
 #### `ods.routes`
 ```sql

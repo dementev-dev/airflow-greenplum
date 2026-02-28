@@ -1,12 +1,15 @@
 -- Загрузка ODS по airports: SCD1 (UPDATE изменившихся + INSERT новых).
 
 -- Statement 1: UPDATE существующих строк.
+-- Нормализация JSON: извлекаем русские названия из полей с мультиязычностью.
+-- Почему: источник хранит переводы как {"en": "...", "ru": "..."},
+-- в ODS оставляем только один язык для упрощения downstream-логики.
 WITH src AS (
     SELECT
         s.airport_code,
-        s.airport_name,
-        s.city,
-        s.country,
+        s.airport_name::json->>'ru' AS airport_name,
+        s.city::json->>'ru' AS city,
+        s.country::json->>'ru' AS country,
         s.coordinates,
         s.timezone,
         ROW_NUMBER() OVER (
@@ -36,12 +39,13 @@ WHERE s.rn = 1
     );
 
 -- Statement 2: INSERT новых строк.
+-- Нормализация JSON: извлекаем русские названия из полей с мультиязычностью.
 WITH src AS (
     SELECT
         s.airport_code,
-        s.airport_name,
-        s.city,
-        s.country,
+        s.airport_name::json->>'ru' AS airport_name,
+        s.city::json->>'ru' AS city,
+        s.country::json->>'ru' AS country,
         s.coordinates,
         s.timezone,
         ROW_NUMBER() OVER (

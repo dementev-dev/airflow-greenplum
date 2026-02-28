@@ -2,7 +2,8 @@
 --
 -- Паттерны для студентов:
 -- - Использование TEMP TABLE: агрегация считается только ОДИН раз (канон для MPP)
--- - Инкрементальность: мы читаем факты ТОЛЬКО за день запуска {{ ds }}, избегая Full Scan
+-- - Инкрементальность (Batch-driven): мы читаем факты ТОЛЬКО за те дни, которые были затронуты
+--   в текущем батче загрузки (по `_load_id`), что решает проблему late-arriving facts.
 -- - Денормализация: города и названия тарифов тащим в витрину
 -- - UPSERT: UPDATE изменившихся + INSERT новых (нужен heap для UPDATE)
 -- - IS DISTINCT FROM для корректного сравнения NULL
@@ -50,7 +51,13 @@ JOIN dds.dim_airports AS arr
     ON arr.airport_sk = f.arrival_airport_sk
 JOIN dds.dim_tariffs AS tar
     ON tar.tariff_sk = f.tariff_sk
-WHERE cal.date_actual = '{{ ds }}'::date  -- ИНКРЕМЕНТАЛЬНЫЙ ФИЛЬТР: читаем только нужный день!
+WHERE cal.date_actual IN (
+    -- ИНКРЕМЕНТАЛЬНЫЙ ФИЛЬТР: Выбираем только те даты, факты за которые обновились в текущем запуске
+    SELECT DISTINCT cal_sq.date_actual
+    FROM dds.fact_flight_sales AS f_sq
+    JOIN dds.dim_calendar AS cal_sq ON f_sq.calendar_sk = cal_sq.calendar_sk
+    WHERE f_sq._load_id = '{{ run_id }}'
+)
 GROUP BY
     cal.date_actual,
     dep.airport_sk, dep.city, dep.airport_bk,

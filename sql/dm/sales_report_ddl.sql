@@ -7,6 +7,15 @@
 -- - Денормализация измерений (города, аэропорты, тарифы) для удобства аналитики
 -- - Служебные поля календаря (day_of_week, day_name, is_weekend)
 -- - Heap-таблица с UPDATE (нужен для UPSERT)
+--
+-- ВНИМАНИЕ (Антипаттерн распределения):
+-- Никогда не распределяйте таблицы по дате (DISTRIBUTED BY flight_date) в MPP-системах!
+-- 1. Load Skew: При инкрементальной загрузке весь батч за один день запишется на ОДИН сегмент,
+--    а остальные будут простаивать. Кластер превратится в одиночный сервер.
+-- 2. Processing Skew: Запросы аналитиков за конкретный день будут читаться только с одного сегмента.
+--
+-- ПРАВИЛЬНЫЙ ВЫБОР: Распределение по полям с высокой кардинальностью (направления).
+-- В нашем случае это комбинация departure_airport_sk и arrival_airport_sk.
 
 CREATE SCHEMA IF NOT EXISTS dm;
 
@@ -44,7 +53,7 @@ CREATE TABLE IF NOT EXISTS dm.sales_report (
     _load_id               TEXT NOT NULL,
     _load_ts               TIMESTAMP NOT NULL DEFAULT now()
 )
-DISTRIBUTED BY (flight_date);
+DISTRIBUTED BY (departure_airport_sk, arrival_airport_sk);
 
 -- Комментарии для документирования
 COMMENT ON TABLE dm.sales_report IS

@@ -14,6 +14,11 @@ BEGIN
         RAISE EXCEPTION 'Таблица bookings.bookings не найдена. Сначала выполните make bookings-init.';
     END IF;
 
+    -- В учебном стенде поддерживается только jobs=1, иначе генерация нестабильна.
+    IF v_jobs <> 1 THEN
+        RAISE EXCEPTION 'Поддерживается только bookings.jobs=1. Текущее значение: %. Установите BOOKINGS_JOBS=1 и выполните make bookings-init.', v_jobs;
+    END IF;
+
     -- Ищем последнюю сгенерированную дату
     SELECT max(book_date) INTO v_max_book_date FROM bookings.bookings;
 

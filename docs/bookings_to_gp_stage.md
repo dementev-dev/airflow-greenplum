@@ -25,6 +25,8 @@ make up
 make bookings-init
 ```
 
+Важно: генератор `bookings` в этом стенде поддерживается только в режиме `BOOKINGS_JOBS=1`.
+
 3) В Greenplum созданы `stg.bookings_ext` и `stg.bookings` (выберите один вариант):
 
 - учебный вариант: запустить DAG `bookings_stg_ddl` в Airflow UI;

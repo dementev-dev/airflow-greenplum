@@ -18,6 +18,7 @@
 - `engine.sql`: два изменения в `engine_jobs1_sync.patch`:
   - `busy()` игнорирует свой `pid`, чтобы не считать собственное подключение занятым;
   - `continue()` при `jobs=1` вызывает `process_queue` синхронно (без `dblink`), иначе генерация обрывается при выходе из `psql` и данных не появляется.
+- Режим эксплуатации в этом стенде: только `jobs=1` (`BOOKINGS_JOBS=1`).
 - Патчи применяются автоматически в `make bookings-init`. Если что-то пошло не так, их можно накатить вручную:
   ```
   patch -d bookings/demodb -p1 --forward < bookings/patches/install_drop_if_exists.patch
@@ -36,6 +37,6 @@
     SELECT date_trunc('day', max(book_date)) + interval '1 day'
     INTO v_next_day
     FROM bookings.bookings;
-    CALL continue(v_next_day);           -- или CALL continue(v_next_day, 4)
+    CALL continue(v_next_day, 1);
   END $$;
   ```

@@ -8,7 +8,7 @@ BOOKINGS_START_DATE ?= 2017-01-01
 BOOKINGS_INIT_DAYS ?= 1
 
 .PHONY: up stop down clean airflow-init logs gp-psql ddl-gp \
-	bookings-clone-demodb bookings-init bookings-psql bookings-generate-day \
+	bookings-check-jobs bookings-clone-demodb bookings-init bookings-psql bookings-generate-day \
 	dev-setup dev-sync dev-lock test lint fmt clean-venv build
 SHELL := /bin/bash
 
@@ -61,7 +61,13 @@ bookings-clone-demodb:
 		fi; \
 	fi
 
-bookings-init: bookings-clone-demodb
+bookings-check-jobs:
+	@if [ "$(BOOKINGS_JOBS)" != "1" ]; then \
+		echo "Поддерживается только BOOKINGS_JOBS=1. Измените .env и повторите команду." >&2; \
+		exit 1; \
+	fi
+
+bookings-init: bookings-check-jobs bookings-clone-demodb
 	docker compose -f docker-compose.yml up -d bookings-db
 	docker compose -f docker-compose.yml exec bookings-db bash -lc '\
 		until PGPASSWORD="$$POSTGRES_PASSWORD" pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -h localhost; do \
@@ -88,7 +94,7 @@ bookings-init: bookings-clone-demodb
 bookings-psql:
 	docker compose -f docker-compose.yml exec bookings-db bash -lc 'PGPASSWORD="$$POSTGRES_PASSWORD" psql -U "$$POSTGRES_USER" -d demo'
 
-bookings-generate-day:
+bookings-generate-day: bookings-check-jobs
 	docker compose -f docker-compose.yml up -d bookings-db
 	docker compose -f docker-compose.yml exec bookings-db bash -lc '\
 		until PGPASSWORD="$$POSTGRES_PASSWORD" pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -h localhost; do \

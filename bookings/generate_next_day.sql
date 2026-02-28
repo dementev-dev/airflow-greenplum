@@ -35,9 +35,6 @@ BEGIN
     END IF;
 
     -- Ждём завершения фоновых джобов генератора, чтобы данные успели записаться
-    -- Сбрасываем application_name, чтобы busy() не находил сам себя при синхронном вызове (jobs=1)
-    -- Примечание: generate()/continue() делают COMMIT внутри себя, поэтому мы уже в новой транзакции
-    SET LOCAL application_name = 'psql';
     WHILE busy() LOOP
         PERFORM pg_sleep(1);
     END LOOP;

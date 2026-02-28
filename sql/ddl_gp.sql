@@ -57,3 +57,6 @@ FORMAT 'CUSTOM' (formatter='pxfwritable_import');
 \i dds/dim_passengers_ddl.sql
 \i dds/dim_routes_ddl.sql
 \i dds/fact_flight_sales_ddl.sql
+
+-- DDL для DM-слоя (Data Mart).
+\i dm/sales_report_ddl.sql

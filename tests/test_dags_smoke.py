@@ -382,3 +382,36 @@ def test_bookings_to_gp_dds_dag_structure():
 
     # Финальная сводка должна ждать DQ факта.
     _assert_reachable(dag, "dq_dds_fact_flight_sales", "finish_dds_summary")
+
+
+def test_bookings_dm_ddl_dag_structure():
+    """Проверка структуры DAG bookings_dm_ddl."""
+    dag = _load_dag("airflow.dags.bookings_dm_ddl")
+
+    expected_tasks = {
+        "apply_dm_sales_report_ddl",
+    }
+    assert expected_tasks.issubset(dag.task_dict.keys())
+
+    # На данном этапе только одна витрина
+    # В будущем: линейная цепочка из 5 задач
+
+
+def test_bookings_to_gp_dm_dag_structure():
+    """Проверка структуры DAG bookings_to_gp_dm."""
+    dag = _load_dag("airflow.dags.bookings_to_gp_dm")
+
+    expected_tasks = {
+        "start_dm",
+        "load_dm_sales_report",
+        "dq_dm_sales_report",
+        "finish_dm_summary",
+    }
+    assert expected_tasks.issubset(dag.task_dict.keys())
+
+    # Проверяем зависимости load -> dq
+    _assert_direct_edge(dag, "load_dm_sales_report", "dq_dm_sales_report")
+
+    # Проверяем, что start -> load -> dq -> finish
+    _assert_reachable(dag, "start_dm", "load_dm_sales_report")
+    _assert_reachable(dag, "dq_dm_sales_report", "finish_dm_summary")

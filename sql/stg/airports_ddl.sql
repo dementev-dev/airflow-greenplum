@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS stg.airports (
     load_dttm         TIMESTAMP NOT NULL DEFAULT now(),
     batch_id          TEXT
 )
-WITH (appendonly=true, orientation=row, compresstype=zlib, compresslevel=1)
+WITH (appendonly=true, orientation=row, compresstype=zstd, compresslevel=1)
 -- Ключ распределения: airport_code
 -- Обоснование: airport_code — это уникальный идентификатор аэропорта.
 -- Использование airport_code обеспечивает:

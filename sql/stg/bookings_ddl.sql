@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS stg.bookings (
     load_dttm         TIMESTAMP NOT NULL DEFAULT now(),
     batch_id          TEXT NOT NULL
 )
-WITH (appendonly=true, orientation=row, compresstype=zlib, compresslevel=1)
+WITH (appendonly=true, orientation=row, compresstype=zstd, compresslevel=1)
 -- Ключ распределения: book_ref
 -- Обоснование: book_ref — это уникальный идентификатор бронирования.
 -- Использование book_ref обеспечивает:

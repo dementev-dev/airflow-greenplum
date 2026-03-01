@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS stg.flights (
     load_dttm            TIMESTAMP NOT NULL DEFAULT now(),
     batch_id             TEXT
 )
-WITH (appendonly=true, orientation=row, compresstype=zlib, compresslevel=1)
+WITH (appendonly=true, orientation=row, compresstype=zstd, compresslevel=1)
 -- Ключ распределения: flight_id
 -- Обоснование: flight_id — это уникальный идентификатор рейса.
 -- Использование flight_id обеспечивает:

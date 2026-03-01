@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS stg.airplanes (
     load_dttm         TIMESTAMP NOT NULL DEFAULT now(),
     batch_id          TEXT
 )
-WITH (appendonly=true, orientation=row, compresstype=zlib, compresslevel=1)
+WITH (appendonly=true, orientation=row, compresstype=zstd, compresslevel=1)
 -- Ключ распределения: airplane_code
 -- Обоснование: airplane_code — это уникальный идентификатор самолёта.
 -- Использование airplane_code обеспечивает:

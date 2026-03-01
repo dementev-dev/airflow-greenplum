@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS stg.tickets (
     load_dttm       TIMESTAMP NOT NULL DEFAULT now(), -- время загрузки в Greenplum
     batch_id        TEXT                -- идентификатор батча (из Airflow run_id)
 )
-WITH (appendonly=true, orientation=row, compresstype=zlib, compresslevel=1)
+WITH (appendonly=true, orientation=row, compresstype=zstd, compresslevel=1)
 DISTRIBUTED BY (book_ref);             -- распределение по ключу связи с bookings
 ```
 
@@ -123,7 +123,7 @@ CREATE TABLE IF NOT EXISTS stg.tickets (
     load_dttm          TIMESTAMP NOT NULL DEFAULT now(),
     batch_id           TEXT
 )
-WITH (appendonly=true, orientation=row, compresstype=zlib, compresslevel=1)
+WITH (appendonly=true, orientation=row, compresstype=zstd, compresslevel=1)
 -- Распределяем по book_ref, чтобы джойны tickets → bookings по book_ref были без motion.
 DISTRIBUTED BY (book_ref);
 

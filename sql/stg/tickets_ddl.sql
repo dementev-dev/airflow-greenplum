@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS stg.tickets (
     load_dttm          TIMESTAMP NOT NULL DEFAULT now(),
     batch_id           TEXT
 )
-WITH (appendonly=true, orientation=row, compresstype=zlib, compresslevel=1)
+WITH (appendonly=true, orientation=row, compresstype=zstd, compresslevel=1)
 -- Ключ распределения: book_ref
 -- Обоснование: book_ref — это основной бизнес-ключ для бронирований.
 -- Использование book_ref обеспечивает:

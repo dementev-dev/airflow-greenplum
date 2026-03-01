@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS stg.routes (
     load_dttm         TIMESTAMP NOT NULL DEFAULT now(),
     batch_id          TEXT
 )
-WITH (appendonly=true, orientation=row, compresstype=zlib, compresslevel=1)
+WITH (appendonly=true, orientation=row, compresstype=zstd, compresslevel=1)
 -- Ключ распределения: route_no
 -- Обоснование: route_no — бизнес-идентификатор маршрута и часто используется в фильтрах/джойнах.
 -- Использование route_no обеспечивает:

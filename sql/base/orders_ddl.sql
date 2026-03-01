@@ -7,5 +7,5 @@ CREATE TABLE IF NOT EXISTS public.orders (
     customer_id BIGINT NOT NULL,
     amount      NUMERIC(12,2) NOT NULL
 )
-WITH (appendonly=true, orientation=row, compresstype=zlib, compresslevel=1)
+WITH (appendonly=true, orientation=row, compresstype=zstd, compresslevel=1)
 DISTRIBUTED BY (order_id);

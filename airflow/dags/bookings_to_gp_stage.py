@@ -68,7 +68,7 @@ def _finish_summary() -> None:
 
 with DAG(
     dag_id="bookings_to_gp_stage",
-    start_date=pendulum.datetime(2024, 1, 1, tz="UTC"),
+    start_date=pendulum.datetime(2017, 1, 1, tz="UTC"),
     schedule=None,
     catchup=False,
     max_active_runs=1,

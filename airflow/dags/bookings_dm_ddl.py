@@ -24,7 +24,7 @@ default_args = {"owner": "airflow", "retries": 1, "retry_delay": timedelta(secon
 
 with DAG(
     dag_id="bookings_dm_ddl",
-    start_date=pendulum.datetime(2024, 1, 1, tz="UTC"),
+    start_date=pendulum.datetime(2017, 1, 1, tz="UTC"),
     schedule=None,
     catchup=False,
     template_searchpath="/sql",

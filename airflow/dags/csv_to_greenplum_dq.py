@@ -52,7 +52,7 @@ default_args = {"owner": "airflow", "retries": 1, "retry_delay": timedelta(secon
 
 with DAG(
     dag_id="csv_to_greenplum_dq",
-    start_date=datetime(2024, 1, 1),
+    start_date=datetime(2017, 1, 1),
     schedule=None,
     catchup=False,
     default_args=default_args,

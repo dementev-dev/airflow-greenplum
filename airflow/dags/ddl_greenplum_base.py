@@ -17,7 +17,7 @@ default_args = {"owner": "airflow", "retries": 1, "retry_delay": timedelta(secon
 
 with DAG(
     dag_id="orders_base_ddl",
-    start_date=datetime(2024, 1, 1),
+    start_date=datetime(2017, 1, 1),
     schedule=None,
     catchup=False,
     template_searchpath="/sql",

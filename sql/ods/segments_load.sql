@@ -13,7 +13,7 @@ WITH src AS (
             ORDER BY s.src_created_at_ts DESC NULLS LAST, s.load_dttm DESC
         ) AS rn
     FROM stg.segments AS s
-    WHERE s.batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
+    WHERE s.load_dttm > (SELECT COALESCE(MAX(_load_ts), '1900-01-01 00:00:00'::TIMESTAMP) FROM ods.segments)
 )
 UPDATE ods.segments AS o
 SET fare_conditions = s.fare_conditions,
@@ -44,7 +44,7 @@ WITH src AS (
             ORDER BY s.src_created_at_ts DESC NULLS LAST, s.load_dttm DESC
         ) AS rn
     FROM stg.segments AS s
-    WHERE s.batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
+    WHERE s.load_dttm > (SELECT COALESCE(MAX(_load_ts), '1900-01-01 00:00:00'::TIMESTAMP) FROM ods.segments)
 )
 INSERT INTO ods.segments (
     ticket_no,
@@ -61,7 +61,7 @@ SELECT
     s.fare_conditions,
     s.segment_amount,
     s.event_ts,
-    '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text,
+    s.batch_id,
     now()
 FROM src AS s
 WHERE s.rn = 1

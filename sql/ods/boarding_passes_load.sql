@@ -14,7 +14,7 @@ WITH src AS (
             ORDER BY s.src_created_at_ts DESC NULLS LAST, s.load_dttm DESC
         ) AS rn
     FROM stg.boarding_passes AS s
-    WHERE s.batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
+    WHERE s.load_dttm > (SELECT COALESCE(MAX(_load_ts), '1900-01-01 00:00:00'::TIMESTAMP) FROM ods.boarding_passes)
 )
 UPDATE ods.boarding_passes AS o
 SET seat_no       = s.seat_no,
@@ -48,7 +48,7 @@ WITH src AS (
             ORDER BY s.src_created_at_ts DESC NULLS LAST, s.load_dttm DESC
         ) AS rn
     FROM stg.boarding_passes AS s
-    WHERE s.batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
+    WHERE s.load_dttm > (SELECT COALESCE(MAX(_load_ts), '1900-01-01 00:00:00'::TIMESTAMP) FROM ods.boarding_passes)
 )
 INSERT INTO ods.boarding_passes (
     ticket_no,
@@ -67,7 +67,7 @@ SELECT
     s.boarding_no,
     s.boarding_time,
     s.event_ts,
-    '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text,
+    s.batch_id,
     now()
 FROM src AS s
 WHERE s.rn = 1

@@ -7,7 +7,7 @@ WITH segment_flights AS (
     SELECT DISTINCT
         NULLIF(s.flight_id, '')::INTEGER AS flight_id
     FROM stg.segments AS s
-    WHERE s.batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
+    WHERE s.load_dttm > (SELECT COALESCE(MAX(_load_ts), '1900-01-01 00:00:00'::TIMESTAMP) FROM ods.segments)
         AND s.flight_id IS NOT NULL
         AND s.flight_id <> ''
 ),
@@ -40,7 +40,7 @@ src_union AS (
         f.event_ts,
         f.load_dttm
     FROM stg_flights_typed AS f
-    WHERE f.batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
+    WHERE f.load_dttm > (SELECT COALESCE(MAX(_load_ts), '1900-01-01 00:00:00'::TIMESTAMP) FROM ods.flights)
 
     UNION ALL
 
@@ -103,7 +103,7 @@ WITH segment_flights AS (
     SELECT DISTINCT
         NULLIF(s.flight_id, '')::INTEGER AS flight_id
     FROM stg.segments AS s
-    WHERE s.batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
+    WHERE s.load_dttm > (SELECT COALESCE(MAX(_load_ts), '1900-01-01 00:00:00'::TIMESTAMP) FROM ods.segments)
         AND s.flight_id IS NOT NULL
         AND s.flight_id <> ''
 ),
@@ -135,7 +135,7 @@ src_union AS (
         f.event_ts,
         f.load_dttm
     FROM stg_flights_typed AS f
-    WHERE f.batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
+    WHERE f.load_dttm > (SELECT COALESCE(MAX(_load_ts), '1900-01-01 00:00:00'::TIMESTAMP) FROM ods.flights)
 
     UNION ALL
 
@@ -190,7 +190,7 @@ SELECT
     s.actual_departure,
     s.actual_arrival,
     s.event_ts,
-    '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text,
+    s.batch_id,
     now()
 FROM src AS s
 WHERE s.rn = 1

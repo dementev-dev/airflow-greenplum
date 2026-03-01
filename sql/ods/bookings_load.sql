@@ -7,18 +7,19 @@ WITH src AS (
         NULLIF(s.book_date, '')::TIMESTAMP WITH TIME ZONE AS book_date,
         NULLIF(s.total_amount, '')::NUMERIC(10,2)         AS total_amount,
         s.src_created_at_ts                                AS event_ts,
+        s.batch_id,
         ROW_NUMBER() OVER (
             PARTITION BY s.book_ref
             ORDER BY s.src_created_at_ts DESC NULLS LAST, s.load_dttm DESC
         ) AS rn
     FROM stg.bookings AS s
-    WHERE s.batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
+    WHERE s.load_dttm > (SELECT COALESCE(MAX(_load_ts), '1900-01-01 00:00:00'::TIMESTAMP) FROM ods.bookings)
 )
 UPDATE ods.bookings AS o
 SET book_date    = s.book_date,
     total_amount = s.total_amount,
     event_ts     = s.event_ts,
-    _load_id     = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text,
+    _load_id     = s.batch_id,
     _load_ts     = now()
 FROM src AS s
 WHERE s.rn = 1
@@ -36,12 +37,13 @@ WITH src AS (
         NULLIF(s.book_date, '')::TIMESTAMP WITH TIME ZONE AS book_date,
         NULLIF(s.total_amount, '')::NUMERIC(10,2)         AS total_amount,
         s.src_created_at_ts                                AS event_ts,
+        s.batch_id,
         ROW_NUMBER() OVER (
             PARTITION BY s.book_ref
             ORDER BY s.src_created_at_ts DESC NULLS LAST, s.load_dttm DESC
         ) AS rn
     FROM stg.bookings AS s
-    WHERE s.batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
+    WHERE s.load_dttm > (SELECT COALESCE(MAX(_load_ts), '1900-01-01 00:00:00'::TIMESTAMP) FROM ods.bookings)
 )
 INSERT INTO ods.bookings (
     book_ref,
@@ -56,7 +58,7 @@ SELECT
     s.book_date,
     s.total_amount,
     s.event_ts,
-    '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text,
+    s.batch_id,
     now()
 FROM src AS s
 WHERE s.rn = 1

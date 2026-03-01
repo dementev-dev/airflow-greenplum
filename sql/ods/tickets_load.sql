@@ -14,7 +14,7 @@ WITH src AS (
             ORDER BY s.src_created_at_ts DESC NULLS LAST, s.load_dttm DESC
         ) AS rn
     FROM stg.tickets AS s
-    WHERE s.batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
+    WHERE s.load_dttm > (SELECT COALESCE(MAX(_load_ts), '1900-01-01 00:00:00'::TIMESTAMP) FROM ods.tickets)
 )
 UPDATE ods.tickets AS o
 SET book_ref       = s.book_ref,
@@ -49,7 +49,7 @@ WITH src AS (
             ORDER BY s.src_created_at_ts DESC NULLS LAST, s.load_dttm DESC
         ) AS rn
     FROM stg.tickets AS s
-    WHERE s.batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
+    WHERE s.load_dttm > (SELECT COALESCE(MAX(_load_ts), '1900-01-01 00:00:00'::TIMESTAMP) FROM ods.tickets)
 )
 INSERT INTO ods.tickets (
     ticket_no,
@@ -68,7 +68,7 @@ SELECT
     s.passenger_name,
     s.is_outbound,
     s.event_ts,
-    '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text,
+    s.batch_id,
     now()
 FROM src AS s
 WHERE s.rn = 1

@@ -7,6 +7,10 @@ WITH src AS (
     WHERE s.fare_conditions IS NOT NULL
         AND s.fare_conditions <> ''
 ),
+-- Учебный комментарий: Генерация SK через MAX() + ROW_NUMBER()
+-- Этот подход работает безопасно только потому, что Airflow запускает
+-- джобы загрузки для одной таблицы строго последовательно (concurrency=1).
+-- При параллельной загрузке возникнет состояние гонки (race condition) и возможны дубли SK.
 max_sk AS (
     SELECT COALESCE(MAX(tariff_sk), 0) AS v
     FROM dds.dim_tariffs

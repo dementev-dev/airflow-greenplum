@@ -21,6 +21,10 @@ WHERE d.airport_bk = s.airport_code
     );
 
 -- Statement 2: INSERT новых записей (MAX(sk) + ROW_NUMBER()).
+-- Учебный комментарий: Генерация SK через MAX() + ROW_NUMBER()
+-- Этот подход работает безопасно только потому, что Airflow запускает
+-- джобы загрузки для одной таблицы строго последовательно (concurrency=1).
+-- При параллельной загрузке возникнет состояние гонки (race condition) и возможны дубли SK.
 WITH max_sk AS (
     SELECT COALESCE(MAX(airport_sk), 0) AS v
     FROM dds.dim_airports

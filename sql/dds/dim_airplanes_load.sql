@@ -55,6 +55,10 @@ src AS (
     LEFT JOIN seats_agg AS sa
         ON sa.airplane_code = a.airplane_code
 ),
+-- Учебный комментарий: Генерация SK через MAX() + ROW_NUMBER()
+-- Этот подход работает безопасно только потому, что Airflow запускает
+-- джобы загрузки для одной таблицы строго последовательно (concurrency=1).
+-- При параллельной загрузке возникнет состояние гонки (race condition) и возможны дубли SK.
 max_sk AS (
     SELECT COALESCE(MAX(airplane_sk), 0) AS v
     FROM dds.dim_airplanes

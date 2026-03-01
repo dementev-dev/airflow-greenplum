@@ -74,6 +74,10 @@ WITH src AS (
     FROM ods.routes
 ),
 max_sk AS (
+    -- Учебный комментарий: Генерация SK через MAX() + ROW_NUMBER()
+    -- Этот подход работает безопасно только потому, что Airflow запускает
+    -- джобы загрузки для одной таблицы строго последовательно (concurrency=1).
+    -- При параллельной загрузке возникнет состояние гонки (race condition) и возможны дубли SK.
     SELECT COALESCE(MAX(route_sk), 0) AS v
     FROM dds.dim_routes
 )

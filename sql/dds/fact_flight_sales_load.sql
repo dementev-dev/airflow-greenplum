@@ -45,6 +45,11 @@ WITH fact_src AS (
         ON bkg.book_ref = tkt.book_ref
     JOIN ods.flights AS flt
         ON flt.flight_id = seg.flight_id
+    -- Учебный комментарий: Late-arriving dimensions (Опаздывающие измерения)
+    -- Мы используем LEFT JOIN, так как факт (рейс/билет) может прийти раньше,
+    -- чем справочник (пассажир/маршрут) обновится в DDS.
+    -- В результате SK будет NULL. В более сложных пайплайнах такие факты
+    -- либо обогащаются dummy-значениями (-1, "Неизвестно"), либо откладываются.
     LEFT JOIN dds.dim_routes AS rte
         ON rte.route_bk = flt.route_no
         AND flt.scheduled_departure::DATE >= rte.valid_from

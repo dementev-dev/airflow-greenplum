@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+"""
+LEGACY: Вспомогательные функции для прямого подключения к Greenplum через psycopg2.
+Внимание: этот модуль оставлен только для поддержки базового CSV-пайплайна.
+В новых DAG (ODS/DDS/DM) используйте встроенный в Airflow PostgresOperator
+и штатные механизмы XCom.
+"""
+
 import logging
 import os
 from typing import List, Sequence, Tuple

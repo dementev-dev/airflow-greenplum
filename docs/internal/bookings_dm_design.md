@@ -178,7 +178,7 @@ FROM traffic GROUP BY ...
 
 **Загрузка**: Инкрементальный UPSERT по HWM (`_load_ts`). Из дельты фактов определяем затронутые `(traffic_date, airport_sk)`, пересчитываем агрегаты только для них.
 
-**Хранение**: `DISTRIBUTED BY (traffic_date)`, heap
+**Хранение**: `DISTRIBUTED BY (airport_sk)`, heap
 
 **Учит**: HWM-инкрементальность, TEMP TABLE для однократной агрегации, dual-role dimension join (UNION ALL), conditional aggregation (CASE WHEN + SUM), паттерн "unpivot → aggregate"
 

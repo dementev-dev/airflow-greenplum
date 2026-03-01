@@ -7,8 +7,10 @@
 -- 4. Обязательные поля не NULL
 --
 -- ВАЖНО (Паттерн Data Quality):
--- Проверки выполняются ИНКРЕМЕНТАЛЬНО. Мы находим все даты, измененные текущим батчем,
--- и валидируем витрину только для этих дат.
+-- Проверки выполняются ИНКРЕМЕНТАЛЬНО. Мы спрашиваем саму витрину, какие даты
+-- были обновлены текущим запуском DAG-а (по _load_id = run_id), и валидируем
+-- только эти даты. Это корректно, потому что на шаге load мы записали
+-- текущий run_id DM-DAG-а в обновлённые строки витрины.
 
 DO $$
 DECLARE
@@ -18,16 +20,17 @@ DECLARE
     v_invalid_boarding BIGINT;
     v_null_required BIGINT;
 BEGIN
-    -- Создаем временную таблицу с датами, которые мы затронули в этом батче.
+    -- Создаем временную таблицу с датами, которые МЫ обновили в этом запуске DAG-а.
+    -- Спрашиваем саму витрину (не DDS!), потому что на шаге load мы записали
+    -- _load_id = '{{ run_id }}' текущего DM-DAG-а в обновлённые строки.
     CREATE TEMP TABLE tmp_dq_affected_dates ON COMMIT DROP AS
-    SELECT DISTINCT cal.date_actual
-    FROM dds.fact_flight_sales AS f
-    JOIN dds.dim_calendar AS cal ON f.calendar_sk = cal.calendar_sk
-    WHERE f._load_id = '{{ run_id }}';
+    SELECT DISTINCT flight_date AS date_actual
+    FROM dm.sales_report
+    WHERE _load_id = '{{ run_id }}';
 
-    -- Если батч пуст (нет новых или измененных фактов), нам нечего валидировать.
+    -- Если батч пуст (ничего не обновлялось), нам нечего валидировать.
     IF NOT EXISTS (SELECT 1 FROM tmp_dq_affected_dates) THEN
-        RAISE NOTICE 'DQ PASSED: Источник не содержит новых данных для витрины в батче %.', '{{ run_id }}';
+        RAISE NOTICE 'DQ PASSED: Витрина не обновлялась в этом запуске (%). Новых данных в DDS нет.', '{{ run_id }}';
         RETURN;
     END IF;
 

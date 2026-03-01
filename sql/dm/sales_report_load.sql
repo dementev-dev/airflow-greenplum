@@ -2,13 +2,15 @@
 --
 -- Паттерны для студентов:
 -- - Использование TEMP TABLE: агрегация считается только ОДИН раз (канон для MPP)
--- - Инкрементальность (Batch-driven): мы читаем факты ТОЛЬКО за те дни, которые были затронуты
---   в текущем батче загрузки (по `_load_id`), что решает проблему late-arriving facts.
+-- - Инкрементальность (HWM — High-Water Mark): витрина сравнивает свой MAX(_load_ts)
+--   с _load_ts фактов в DDS и пересчитывает агрегаты только для затронутых дат.
+--   Это делает конвейер самовосстанавливающимся: если DAG не запускался несколько дней,
+--   при следующем запуске витрина автоматически «догонит» всю накопленную дельту.
 -- - Денормализация: города и названия тарифов тащим в витрину
 -- - UPSERT: UPDATE изменившихся + INSERT новых (нужен heap для UPDATE)
 -- - IS DISTINCT FROM для корректного сравнения NULL
 
--- Шаг 1: Считаем агрегаты для дельты (текущего батча) и кладем во временную таблицу.
+-- Шаг 1: Считаем агрегаты для дельты (новых данных с момента последнего обновления витрины).
 -- ON COMMIT DROP гарантирует, что таблица исчезнет после завершения транзакции (Airflow сессии).
 CREATE TEMP TABLE tmp_sales_report_delta ON COMMIT DROP AS
 SELECT
@@ -52,11 +54,17 @@ JOIN dds.dim_airports AS arr
 JOIN dds.dim_tariffs AS tar
     ON tar.tariff_sk = f.tariff_sk
 WHERE cal.date_actual IN (
-    -- ИНКРЕМЕНТАЛЬНЫЙ ФИЛЬТР: Выбираем только те даты, факты за которые обновились в текущем запуске
+    -- ИНКРЕМЕНТАЛЬНЫЙ ФИЛЬТР (HWM — High-Water Mark):
+    -- Ищем даты полётов, в которых появились новые или изменённые факты
+    -- с момента последнего обновления витрины (MAX(_load_ts) в dm.sales_report).
+    -- Если витрина пуста — '1900-01-01' заберёт всю историю (первичная загрузка).
     SELECT DISTINCT cal_sq.date_actual
     FROM dds.fact_flight_sales AS f_sq
     JOIN dds.dim_calendar AS cal_sq ON f_sq.calendar_sk = cal_sq.calendar_sk
-    WHERE f_sq._load_id = '{{ run_id }}'
+    WHERE f_sq._load_ts > (
+        SELECT COALESCE(MAX(_load_ts), '1900-01-01'::TIMESTAMP)
+        FROM dm.sales_report
+    )
 )
 GROUP BY
     cal.date_actual,

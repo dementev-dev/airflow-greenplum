@@ -49,12 +49,12 @@ created_at, updated_at, _load_id, _load_ts
 
 **Источники**: `fact_flight_sales` JOIN `dim_calendar`, `dim_airports` (x2), `dim_tariffs`
 
-**Загрузка**: Batch-driven инкрементальный UPSERT (UPDATE изменившихся + INSERT новых по ключу).
-*Архитектурный нюанс:* Вместо жесткой фильтрации по дате запуска Airflow (`{{ ds }}`), витрина динамически определяет, какие исторические даты были затронуты в текущем загружаемом батче фактов (по `_load_id`), и пересчитывает агрегаты только для этих дат. Это решает проблему "опоздавших данных" (late-arriving facts).
+**Загрузка**: Инкрементальный UPSERT по High-Water Mark (`_load_ts`).
+*Архитектурный нюанс (HWM-паттерн):* Витрина сравнивает свой `MAX(_load_ts)` с `_load_ts` фактов в DDS и пересчитывает агрегаты только для затронутых дат. Это делает конвейер самовосстанавливающимся: если DAG не запускался несколько дней, при следующем запуске витрина автоматически «догонит» всю накопленную дельту. При этом `_load_id` и `_load_ts` самой витрины фиксируют текущий DM-DAG run_id — для аудита и DQ-проверок.
 
 **Хранение**: `DISTRIBUTED BY (flight_date)`, heap (нужен UPDATE)
 
-**Учит**: Batch-driven инкрементальность, ограничение радиуса обновления, денормализация измерений, GROUP BY + агрегация, UPSERT по составному ключу, IS DISTINCT FROM
+**Учит**: HWM-инкрементальность через `_load_ts`, TEMP TABLE для однократной агрегации (канон MPP), ограничение радиуса обновления, денормализация измерений, GROUP BY + агрегация, UPSERT по составному ключу, IS DISTINCT FROM
 
 ---
 
@@ -123,11 +123,11 @@ created_at, updated_at, _load_id, _load_ts
 
 **Источники**: `fact_flight_sales` JOIN `dim_passengers`, `dim_tariffs`, `dim_calendar`
 
-**Загрузка**: UPSERT (664K пассажиров — full rebuild дорогой)
+**Загрузка**: Инкрементальный UPSERT по HWM (`_load_ts`). Из дельты фактов определяем затронутых `passenger_sk`, пересчитываем агрегаты только для них. (664K пассажиров — full rebuild дорогой.)
 
 **Хранение**: `DISTRIBUTED BY (passenger_sk)`, heap
 
-**Учит**: DISTINCT ON / ROW_NUMBER для "самого частого", COUNT(DISTINCT) по нескольким полям, RFM-подобные метрики, UPSERT на большой таблице
+**Учит**: HWM-инкрементальность, TEMP TABLE для однократной агрегации, DISTINCT ON / ROW_NUMBER для "самого частого", COUNT(DISTINCT) по нескольким полям, RFM-подобные метрики, UPSERT на большой таблице
 
 ---
 
@@ -176,11 +176,11 @@ SELECT airport_sk, date_actual,
 FROM traffic GROUP BY ...
 ```
 
-**Загрузка**: UPSERT по (traffic_date, airport_sk)
+**Загрузка**: Инкрементальный UPSERT по HWM (`_load_ts`). Из дельты фактов определяем затронутые `(traffic_date, airport_sk)`, пересчитываем агрегаты только для них.
 
 **Хранение**: `DISTRIBUTED BY (traffic_date)`, heap
 
-**Учит**: dual-role dimension join (UNION ALL), conditional aggregation (CASE WHEN + SUM), паттерн "unpivot → aggregate"
+**Учит**: HWM-инкрементальность, TEMP TABLE для однократной агрегации, dual-role dimension join (UNION ALL), conditional aggregation (CASE WHEN + SUM), паттерн "unpivot → aggregate"
 
 ---
 
@@ -213,11 +213,11 @@ created_at, updated_at, _load_id, _load_ts
 
 **Источники**: `fact_flight_sales` JOIN `dim_calendar`, `dim_airplanes`
 
-**Загрузка**: UPSERT по (year_actual, month_actual, airplane_sk)
+**Загрузка**: Инкрементальный UPSERT по HWM (`_load_ts`). Из дельты фактов определяем затронутые `(year_actual, month_actual, airplane_sk)`, пересчитываем агрегаты только для них.
 
 **Хранение**: `DISTRIBUTED BY (year_actual)`, heap
 
-**Учит**: двухуровневая агрегация (сначала по рейсу для load factor, потом по месяцу), NULLIF для деления, COUNT(DISTINCT) на нескольких полях, executive-дашборд
+**Учит**: HWM-инкрементальность, TEMP TABLE для однократной агрегации, двухуровневая агрегация (сначала по рейсу для load factor, потом по месяцу), NULLIF для деления, COUNT(DISTINCT) на нескольких полях, executive-дашборд
 
 ---
 
@@ -314,6 +314,62 @@ start_dm ──>>     load_dm_passenger_loyalty   → dq_dm_passenger_loyalty   
 
 ---
 
+## Общий паттерн загрузки UPSERT-витрин (TEMP TABLE + HWM)
+
+Все инкрементальные витрины (кроме `route_performance` — full rebuild) строятся по единому скелету:
+
+```sql
+-- Шаг 1: Агрегация дельты во временную таблицу.
+-- Тяжёлый SELECT с JOIN-ами выполняется ОДИН раз — канон для MPP (Greenplum).
+-- Без TEMP TABLE пришлось бы дублировать тот же SELECT в UPDATE и INSERT,
+-- что означает двойной скан таблицы фактов.
+CREATE TEMP TABLE tmp_<mart>_delta ON COMMIT DROP AS
+SELECT
+    <grain_columns>,
+    <denormalized_attributes>,
+    <aggregate_metrics>
+FROM dds.fact_flight_sales AS f
+JOIN ...
+WHERE <grain_date_or_key> IN (
+    -- HWM-фильтр: берём только зёрна, затронутые новыми фактами
+    SELECT DISTINCT <grain_column>
+    FROM dds.fact_flight_sales AS f_sq
+    JOIN ...
+    WHERE f_sq._load_ts > (
+        SELECT COALESCE(MAX(_load_ts), '1900-01-01'::TIMESTAMP)
+        FROM dm.<mart>
+    )
+)
+GROUP BY <grain_columns>, <denormalized_attributes>;
+
+-- Шаг 2: UPDATE существующих строк (только если что-то изменилось).
+UPDATE dm.<mart> AS tgt
+SET <metrics> = src.<metrics>,
+    updated_at = now(),
+    _load_id   = '{{ run_id }}',
+    _load_ts   = now()
+FROM tmp_<mart>_delta AS src
+WHERE tgt.<grain> = src.<grain>
+  AND (<columns> IS DISTINCT FROM ...);
+
+-- Шаг 3: INSERT новых строк.
+INSERT INTO dm.<mart> (...)
+SELECT ... FROM tmp_<mart>_delta AS src
+WHERE NOT EXISTS (
+    SELECT 1 FROM dm.<mart> AS tgt
+    WHERE tgt.<grain> = src.<grain>
+);
+```
+
+**Применимость по витринам:**
+- `sales_report` — TEMP TABLE + HWM UPSERT (эталон, уже реализован)
+- `passenger_loyalty` — TEMP TABLE + HWM UPSERT (затронутые `passenger_sk`)
+- `airport_traffic` — TEMP TABLE + HWM UPSERT (затронутые `(traffic_date, airport_sk)`)
+- `monthly_overview` — TEMP TABLE + HWM UPSERT (затронутые `(year_actual, month_actual, airplane_sk)`)
+- `route_performance` — **не использует** (full rebuild: TRUNCATE + INSERT, один проход)
+
+---
+
 ## DQ-проверки (общий паттерн для всех витрин)
 
 PL/pgSQL `DO $$` блоки (как в DDS):
@@ -332,6 +388,7 @@ PL/pgSQL `DO $$` блоки (как в DDS):
 | ETL DAG (PostgresOperator, зависимости) | `airflow/dags/bookings_to_gp_dds.py` |
 | DDL DAG (линейная цепочка) | `airflow/dags/bookings_dds_ddl.py` |
 | UPSERT SQL (UPDATE + INSERT + CTE) | `sql/dds/fact_flight_sales_load.sql` |
+| HWM-инкремент (UPSERT по _load_ts) | `sql/dm/sales_report_load.sql` |
 | DQ PL/pgSQL (RAISE EXCEPTION/NOTICE) | `sql/dds/fact_flight_sales_dq.sql` |
 | DDL (CREATE TABLE IF NOT EXISTS) | `sql/dds/dim_airports_ddl.sql` |
 | Smoke-тесты DAG | `tests/test_dags_smoke.py` |

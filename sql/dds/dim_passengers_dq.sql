@@ -41,14 +41,14 @@ BEGIN
             v_dup_sk;
     END IF;
 
-    -- Нет дублей по BK.
-    SELECT COUNT(*) - COUNT(DISTINCT passenger_bk)
+    -- Нет дублей по BK (ID).
+    SELECT COUNT(*) - COUNT(DISTINCT passenger_id)
     INTO v_dup_bk
     FROM dds.dim_passengers;
 
     IF v_dup_bk <> 0 THEN
         RAISE EXCEPTION
-            'DQ FAILED: в dds.dim_passengers найдены дубликаты passenger_bk: %',
+            'DQ FAILED: в dds.dim_passengers найдены дубликаты passenger_id: %',
             v_dup_bk;
     END IF;
 
@@ -64,7 +64,7 @@ BEGIN
     WHERE NOT EXISTS (
         SELECT 1
         FROM dds.dim_passengers AS d
-        WHERE d.passenger_bk = s.passenger_id
+        WHERE d.passenger_id = s.passenger_id
     );
 
     IF v_missing_bk <> 0 THEN
@@ -78,8 +78,8 @@ BEGIN
     INTO v_null_count
     FROM dds.dim_passengers
     WHERE passenger_sk IS NULL
-        OR passenger_bk IS NULL
-        OR passenger_bk = ''
+        OR passenger_id IS NULL
+        OR passenger_id = ''
         OR passenger_name IS NULL
         OR passenger_name = ''
         OR created_at IS NULL

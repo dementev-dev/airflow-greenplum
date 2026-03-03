@@ -10,13 +10,13 @@ def _read(path: str) -> str:
     return (PROJECT_ROOT / path).read_text(encoding="utf-8")
 
 
-def test_snapshot_load_scripts_sync_deleted_keys() -> None:
-    """Snapshot-таблицы в ODS должны удалять ключи, отсутствующие в текущем батче."""
+def test_snapshot_load_scripts_use_truncate() -> None:
+    """Snapshot-таблицы в ODS должны использовать паттерн полной перезагрузки (TRUNCATE)."""
     for entity in SNAPSHOT_ENTITIES:
         sql = _read(f"sql/ods/{entity}_load.sql")
-        assert f"DELETE FROM ods.{entity} AS o" in sql
-        assert "WITH src_keys AS (" in sql
-        assert "WHERE NOT EXISTS (" in sql
+        assert f"TRUNCATE TABLE ods.{entity};" in sql
+        assert f"INSERT INTO ods.{entity} (" in sql
+        assert "WHERE s.rn = 1;" in sql
 
 
 def test_snapshot_dq_checks_extra_keys() -> None:

@@ -2,6 +2,9 @@
 
 CREATE SCHEMA IF NOT EXISTS ods;
 
+-- Тип таблицы: Heap (стандартная).
+-- Обоснование: Необходим row-level UPDATE для реализации UPSERT/SCD1.
+-- Использование Append-Only при частых обновлениях приводит к раздуванию (bloat) таблицы.
 CREATE TABLE IF NOT EXISTS ods.flights (
     flight_id           INTEGER NOT NULL,
     route_no            TEXT NOT NULL,
@@ -14,4 +17,7 @@ CREATE TABLE IF NOT EXISTS ods.flights (
     _load_id            TEXT NOT NULL,
     _load_ts            TIMESTAMP NOT NULL DEFAULT now()
 )
+WITH (appendonly=false)
 DISTRIBUTED BY (flight_id);
+
+COMMENT ON TABLE ods.flights IS 'Рейсы (ODS).';

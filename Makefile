@@ -9,7 +9,7 @@ BOOKINGS_INIT_DAYS ?= 1
 
 .PHONY: up stop down clean airflow-init logs gp-psql ddl-gp \
 	bookings-check-jobs bookings-clone-demodb bookings-init bookings-psql bookings-generate-day \
-	dev-setup dev-sync dev-lock test lint fmt clean-venv build
+	dev-setup dev-sync dev-lock test lint fmt clean-venv build e2e-smoke e2e-etl
 SHELL := /bin/bash
 
 up:
@@ -136,3 +136,7 @@ clean-venv:
 
 e2e-smoke:
 	./scripts/e2e_smoke.sh
+
+e2e-etl:
+	./scripts/e2e_etl.sh
+

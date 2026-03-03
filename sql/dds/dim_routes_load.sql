@@ -1,44 +1,40 @@
 -- Загрузка DDS dim_routes: SCD2 с hashdiff.
 
+-- Учебный комментарий: Используем TEMP TABLE для подготовки дельты.
+-- Это избавляет от дублирования логики hashdiff в UPDATE и INSERT блоках.
+CREATE TEMP TABLE tmp_routes_src ON COMMIT DROP AS
+SELECT
+    route_no,
+    departure_airport,
+    arrival_airport,
+    airplane_code,
+    days_of_week,
+    departure_time,
+    duration,
+    md5(
+        COALESCE(departure_airport, '') || '|' ||
+        COALESCE(arrival_airport, '') || '|' ||
+        COALESCE(airplane_code, '') || '|' ||
+        COALESCE(days_of_week::TEXT, '') || '|' ||
+        COALESCE(departure_time::TEXT, '') || '|' ||
+        COALESCE(duration::TEXT, '')
+    ) AS hashdiff,
+    ROW_NUMBER() OVER (PARTITION BY route_no ORDER BY validity DESC) AS rn
+FROM ods.routes;
+
 -- Statement 1: Закрыть устаревшие версии (valid_to = текущая дата).
-WITH src AS (
-    SELECT
-        route_no,
-        departure_airport,
-        arrival_airport,
-        airplane_code,
-        days_of_week,
-        departure_time,
-        duration,
-        md5(
-            COALESCE(departure_airport, '') || '|' ||
-            COALESCE(arrival_airport, '') || '|' ||
-            COALESCE(airplane_code, '') || '|' ||
-            COALESCE(days_of_week, '') || '|' ||
-            COALESCE(departure_time::TEXT, '') || '|' ||
-            COALESCE(duration::TEXT, '')
-        ) AS hashdiff,
-        ROW_NUMBER() OVER (PARTITION BY route_no ORDER BY validity DESC) AS rn
-    FROM ods.routes
-)
 UPDATE dds.dim_routes AS d
 SET valid_to   = CURRENT_DATE,
     updated_at = now(),
     _load_id   = '{{ run_id }}',
     _load_ts   = now()
-FROM src AS s
+FROM tmp_routes_src AS s
 WHERE s.rn = 1
     AND d.route_bk = s.route_no
     AND d.valid_to IS NULL
     AND d.hashdiff <> s.hashdiff;
 
 -- Statement 1.1: Закрыть "исчезнувшие" маршруты.
-WITH src AS (
-    SELECT
-        route_no,
-        ROW_NUMBER() OVER (PARTITION BY route_no ORDER BY validity DESC) AS rn
-    FROM ods.routes
-)
 UPDATE dds.dim_routes AS d
 SET valid_to   = CURRENT_DATE,
     updated_at = now(),
@@ -47,37 +43,16 @@ SET valid_to   = CURRENT_DATE,
 WHERE d.valid_to IS NULL
     AND NOT EXISTS (
         SELECT 1
-        FROM src AS s
+        FROM tmp_routes_src AS s
         WHERE s.rn = 1
             AND s.route_no = d.route_bk
     );
 
 -- Statement 2: Вставить новые версии (для изменённых и новых route_no).
-WITH src AS (
-    SELECT
-        route_no,
-        departure_airport,
-        arrival_airport,
-        airplane_code,
-        days_of_week,
-        departure_time,
-        duration,
-        md5(
-            COALESCE(departure_airport, '') || '|' ||
-            COALESCE(arrival_airport, '') || '|' ||
-            COALESCE(airplane_code, '') || '|' ||
-            COALESCE(days_of_week, '') || '|' ||
-            COALESCE(departure_time::TEXT, '') || '|' ||
-            COALESCE(duration::TEXT, '')
-        ) AS hashdiff,
-        ROW_NUMBER() OVER (PARTITION BY route_no ORDER BY validity DESC) AS rn
-    FROM ods.routes
-),
-max_sk AS (
+WITH max_sk AS (
     -- Учебный комментарий: Генерация SK через MAX() + ROW_NUMBER()
     -- Этот подход работает безопасно только потому, что Airflow запускает
     -- джобы загрузки для одной таблицы строго последовательно (concurrency=1).
-    -- При параллельной загрузке возникнет состояние гонки (race condition) и возможны дубли SK.
     SELECT COALESCE(MAX(route_sk), 0) AS v
     FROM dds.dim_routes
 )
@@ -121,7 +96,7 @@ SELECT
     now(),
     '{{ run_id }}',
     now()
-FROM src AS s
+FROM tmp_routes_src AS s
 WHERE s.rn = 1
     AND NOT EXISTS (
         SELECT 1

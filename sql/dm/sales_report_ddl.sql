@@ -6,7 +6,6 @@
 -- Паттерны для студентов:
 -- - Денормализация измерений (города, аэропорты, тарифы) для удобства аналитики
 -- - Служебные поля календаря (day_of_week, day_name, is_weekend)
--- - Heap-таблица с UPDATE (нужен для UPSERT)
 --
 -- ВНИМАНИЕ (Антипаттерн распределения):
 -- Никогда не распределяйте таблицы по дате (DISTRIBUTED BY flight_date) в MPP-системах!
@@ -19,6 +18,9 @@
 
 CREATE SCHEMA IF NOT EXISTS dm;
 
+-- Тип таблицы: Heap (стандартная).
+-- Обоснование: Необходим row-level UPDATE для реализации инкрементального UPSERT по HWM.
+-- Использование Append-Only при частых обновлениях приводит к раздуванию (bloat) таблицы.
 CREATE TABLE IF NOT EXISTS dm.sales_report (
     -- Ключ (зерно витрины)
     flight_date            DATE NOT NULL,
@@ -53,11 +55,11 @@ CREATE TABLE IF NOT EXISTS dm.sales_report (
     _load_id               TEXT NOT NULL,
     _load_ts               TIMESTAMP NOT NULL DEFAULT now()
 )
+WITH (appendonly=false)
 DISTRIBUTED BY (departure_airport_sk, arrival_airport_sk);
 
 -- Комментарии для документирования
-COMMENT ON TABLE dm.sales_report IS
-    'Витрина продаж: выручка, билеты и boarding rate по направлениям/тарифам/дням';
+COMMENT ON TABLE dm.sales_report IS 'Витрина продаж: выручка, билеты и boarding rate по направлениям/тарифам/дням.';
 
 COMMENT ON COLUMN dm.sales_report.boarding_rate IS
     'Доля пассажиров, прошедших посадку (passengers_boarded / tickets_sold)';

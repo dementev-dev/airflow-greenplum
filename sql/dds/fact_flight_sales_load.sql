@@ -4,7 +4,7 @@
 -- Обновляем только мутабельные поля; SK измерений не перезаписываем.
 UPDATE dds.fact_flight_sales AS f
 SET seat_no    = bp.seat_no,
-    price      = seg.segment_amount,
+    price      = seg.amount,
     is_boarded = (bp.ticket_no IS NOT NULL),
     _load_id   = '{{ run_id }}',
     _load_ts   = now()
@@ -16,7 +16,7 @@ WHERE f.ticket_no = seg.ticket_no
     AND f.flight_id = seg.flight_id
     AND (
         f.is_boarded IS DISTINCT FROM (bp.ticket_no IS NOT NULL)
-        OR f.price IS DISTINCT FROM seg.segment_amount
+        OR f.price IS DISTINCT FROM seg.amount
         OR f.seat_no IS DISTINCT FROM bp.seat_no
     );
 
@@ -36,7 +36,7 @@ WITH fact_src AS (
         tkt.book_ref,
         bkg.book_date::DATE AS book_date,
         bp.seat_no,
-        seg.segment_amount AS price,
+        seg.amount AS price,
         (bp.ticket_no IS NOT NULL) AS is_boarded
     FROM ods.segments AS seg
     JOIN ods.tickets AS tkt
@@ -48,8 +48,6 @@ WITH fact_src AS (
     -- Учебный комментарий: Late-arriving dimensions (Опаздывающие измерения)
     -- Мы используем LEFT JOIN, так как факт (рейс/билет) может прийти раньше,
     -- чем справочник (пассажир/маршрут) обновится в DDS.
-    -- В результате SK будет NULL. В более сложных пайплайнах такие факты
-    -- либо обогащаются dummy-значениями (-1, "Неизвестно"), либо откладываются.
     LEFT JOIN dds.dim_routes AS rte
         ON rte.route_bk = flt.route_no
         AND flt.scheduled_departure::DATE >= rte.valid_from
@@ -65,7 +63,7 @@ WITH fact_src AS (
     LEFT JOIN dds.dim_tariffs AS tar
         ON tar.fare_conditions = seg.fare_conditions
     LEFT JOIN dds.dim_passengers AS pax
-        ON pax.passenger_bk = tkt.passenger_id
+        ON pax.passenger_id = tkt.passenger_id
     LEFT JOIN ods.boarding_passes AS bp
         ON bp.ticket_no = seg.ticket_no
         AND bp.flight_id = seg.flight_id

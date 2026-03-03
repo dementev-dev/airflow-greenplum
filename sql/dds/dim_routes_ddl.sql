@@ -2,6 +2,9 @@
 
 CREATE SCHEMA IF NOT EXISTS dds;
 
+-- Тип таблицы: Heap (стандартная).
+-- Обоснование: Необходим row-level UPDATE для реализации SCD2 (закрытие версий).
+-- Использование Append-Only при частых обновлениях приводит к раздуванию (bloat) таблицы.
 CREATE TABLE IF NOT EXISTS dds.dim_routes (
     route_sk          INTEGER NOT NULL,
     route_bk          TEXT NOT NULL,
@@ -19,4 +22,7 @@ CREATE TABLE IF NOT EXISTS dds.dim_routes (
     _load_id          TEXT NOT NULL,
     _load_ts          TIMESTAMP NOT NULL DEFAULT now()
 )
+WITH (appendonly=false)
 DISTRIBUTED BY (route_sk);
+
+COMMENT ON TABLE dds.dim_routes IS 'Измерение маршрутов (DDS).';

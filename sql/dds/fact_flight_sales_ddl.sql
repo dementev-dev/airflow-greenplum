@@ -6,6 +6,10 @@ CREATE SCHEMA IF NOT EXISTS dds;
 -- В классическом DWH (Кимбалл) таблица фактов идентифицируется набором её 
 -- измерений или дегенеративных ключей (в нашем случае: ticket_no + flight_id).
 -- Добавление отдельного ID только тратит место и не несёт аналитической ценности.
+
+-- Тип таблицы: Heap (стандартная).
+-- Обоснование: Необходим row-level UPDATE для обновления статусов (is_boarded).
+-- Использование Append-Only при частых обновлениях приводит к раздуванию (bloat) таблицы.
 CREATE TABLE IF NOT EXISTS dds.fact_flight_sales (
     calendar_sk          INTEGER,
     departure_airport_sk INTEGER,
@@ -24,4 +28,7 @@ CREATE TABLE IF NOT EXISTS dds.fact_flight_sales (
     _load_id             TEXT NOT NULL,
     _load_ts             TIMESTAMP NOT NULL DEFAULT now()
 )
+WITH (appendonly=false)
 DISTRIBUTED BY (ticket_no);
+
+COMMENT ON TABLE dds.fact_flight_sales IS 'Факт продаж билетов (DDS).';

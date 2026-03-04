@@ -93,12 +93,23 @@ trigger_and_wait "bookings_to_gp_dds"
 trigger_and_wait "bookings_to_gp_dm"
 
 warn "=== Верификация данных ==="
-# Выполняем простые проверки строк, чтобы убедиться, что данные дошли до витрины
+# Выполняем проверки строк и бизнес-логики, чтобы убедиться, что все витрины DM-слоя заполнены
 docker compose -f docker-compose.yml exec greenplum bash -c "su - gpadmin -c \"psql -d gp_dwh -c \\\"
 SELECT 'STG bookings' as layer, COUNT(*) FROM stg.bookings UNION ALL
 SELECT 'ODS bookings', COUNT(*) FROM ods.bookings UNION ALL
 SELECT 'DDS fact', COUNT(*) FROM dds.fact_flight_sales UNION ALL
-SELECT 'DM report', COUNT(*) FROM dm.sales_report;
+SELECT 'DM sales_report', COUNT(*) FROM dm.sales_report UNION ALL
+SELECT 'DM route_performance', COUNT(*) FROM dm.route_performance UNION ALL
+SELECT 'DM passenger_loyalty', COUNT(*) FROM dm.passenger_loyalty UNION ALL
+SELECT 'DM airport_traffic', COUNT(*) FROM dm.airport_traffic UNION ALL
+SELECT 'DM monthly_overview', COUNT(*) FROM dm.monthly_overview;
+
+-- Дополнительная проверка бизнес-логики (load factor не должен быть NULL и должен быть в пределах разумного)
+SELECT 
+    'Check LF' as check, 
+    COUNT(*) as total_rows,
+    SUM(CASE WHEN avg_load_factor IS NOT NULL AND avg_load_factor >= 0 THEN 1 ELSE 0 END) as valid_lf
+FROM dm.monthly_overview;
 \\\"\""
 
 warn "E2E ETL тест успешно завершен!"

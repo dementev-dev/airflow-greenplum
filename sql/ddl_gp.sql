@@ -60,3 +60,7 @@ FORMAT 'CUSTOM' (formatter='pxfwritable_import');
 
 -- DDL для DM-слоя (Data Mart).
 \i dm/sales_report_ddl.sql
+\i dm/route_performance_ddl.sql
+\i dm/passenger_loyalty_ddl.sql
+\i dm/airport_traffic_ddl.sql
+\i dm/monthly_overview_ddl.sql

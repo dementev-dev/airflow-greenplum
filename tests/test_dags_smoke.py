@@ -390,11 +390,18 @@ def test_bookings_dm_ddl_dag_structure():
 
     expected_tasks = {
         "apply_dm_sales_report_ddl",
+        "apply_dm_route_performance_ddl",
+        "apply_dm_passenger_loyalty_ddl",
+        "apply_dm_airport_traffic_ddl",
+        "apply_dm_monthly_overview_ddl",
     }
     assert expected_tasks.issubset(dag.task_dict.keys())
 
-    # На данном этапе только одна витрина
-    # В будущем: линейная цепочка из 5 задач
+    # Проверяем линейную цепочку
+    _assert_direct_edge(dag, "apply_dm_sales_report_ddl", "apply_dm_route_performance_ddl")
+    _assert_direct_edge(dag, "apply_dm_route_performance_ddl", "apply_dm_passenger_loyalty_ddl")
+    _assert_direct_edge(dag, "apply_dm_passenger_loyalty_ddl", "apply_dm_airport_traffic_ddl")
+    _assert_direct_edge(dag, "apply_dm_airport_traffic_ddl", "apply_dm_monthly_overview_ddl")
 
 
 def test_bookings_to_gp_dm_dag_structure():
@@ -405,13 +412,30 @@ def test_bookings_to_gp_dm_dag_structure():
         "start_dm",
         "load_dm_sales_report",
         "dq_dm_sales_report",
+        "load_dm_route_performance",
+        "dq_dm_route_performance",
+        "load_dm_passenger_loyalty",
+        "dq_dm_passenger_loyalty",
+        "load_dm_airport_traffic",
+        "dq_dm_airport_traffic",
+        "load_dm_monthly_overview",
+        "dq_dm_monthly_overview",
         "finish_dm_summary",
     }
     assert expected_tasks.issubset(dag.task_dict.keys())
 
-    # Проверяем зависимости load -> dq
-    _assert_direct_edge(dag, "load_dm_sales_report", "dq_dm_sales_report")
+    marts = [
+        "sales_report",
+        "route_performance",
+        "passenger_loyalty",
+        "airport_traffic",
+        "monthly_overview",
+    ]
 
-    # Проверяем, что start -> load -> dq -> finish
-    _assert_reachable(dag, "start_dm", "load_dm_sales_report")
-    _assert_reachable(dag, "dq_dm_sales_report", "finish_dm_summary")
+    for mart in marts:
+        # load -> dq
+        _assert_direct_edge(dag, f"load_dm_{mart}", f"dq_dm_{mart}")
+        # start -> load
+        _assert_reachable(dag, "start_dm", f"load_dm_{mart}")
+        # dq -> finish
+        _assert_reachable(dag, f"dq_dm_{mart}", "finish_dm_summary")

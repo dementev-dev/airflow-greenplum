@@ -7,7 +7,7 @@ from __future__ import annotations
 Создаёт 5 DM-витрин: sales_report, route_performance, passenger_loyalty,
 airport_traffic, monthly_overview.
 
-На данном этапе реализованы витрины: sales_report, route_performance, passenger_loyalty.
+На данном этапе реализованы витрины: sales_report, route_performance, passenger_loyalty, airport_traffic.
 Остальные витрины будут добавлены в последующих этапах.
 """
 
@@ -53,9 +53,15 @@ with DAG(
         sql="dm/passenger_loyalty_ddl.sql",
     )
 
-    # Заглушки для будущих витрин (будут реализованы в этапах 4-5)
-    # apply_dm_airport_traffic_ddl = PostgresOperator(...)
+    # Витрина: Пассажиропоток аэропортов (Этап 4)
+    apply_dm_airport_traffic_ddl = PostgresOperator(
+        task_id="apply_dm_airport_traffic_ddl",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="dm/airport_traffic_ddl.sql",
+    )
+
+    # Заглушки для будущих витрин (будут реализованы в этапе 5)
     # apply_dm_monthly_overview_ddl = PostgresOperator(...)
 
     # Линейная цепочка
-    apply_dm_sales_report_ddl >> apply_dm_route_performance_ddl >> apply_dm_passenger_loyalty_ddl
+    apply_dm_sales_report_ddl >> apply_dm_route_performance_ddl >> apply_dm_passenger_loyalty_ddl >> apply_dm_airport_traffic_ddl

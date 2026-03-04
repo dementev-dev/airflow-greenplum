@@ -9,7 +9,7 @@ from __future__ import annotations
 - все витрины загружаются параллельно (не зависят друг от друга);
 - sales_report использует UPSERT (heap-таблица), route_performance — Full Rebuild (AO Column).
 
-На данном этапе реализованы витрины: sales_report, route_performance, passenger_loyalty.
+На данном этапе реализованы витрины: sales_report, route_performance, passenger_loyalty, airport_traffic.
 Остальные витрины будут добавлены в последующих этапах.
 """
 
@@ -94,9 +94,20 @@ with DAG(
         sql="dm/passenger_loyalty_dq.sql",
     )
 
-    # === Заглушки для будущих витрин (будут реализованы в этапах 4-5) ===
-    # load_dm_airport_traffic = PostgresOperator(...)
-    # dq_dm_airport_traffic = PostgresOperator(...)
+    # === Витрина: Пассажиропоток аэропортов (Этап 4) ===
+    load_dm_airport_traffic = PostgresOperator(
+        task_id="load_dm_airport_traffic",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="dm/airport_traffic_load.sql",
+    )
+
+    dq_dm_airport_traffic = PostgresOperator(
+        task_id="dq_dm_airport_traffic",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="dm/airport_traffic_dq.sql",
+    )
+
+    # === Заглушки для будущих витрин (будут реализованы в этапе 5) ===
     # load_dm_monthly_overview = PostgresOperator(...)
     # dq_dm_monthly_overview = PostgresOperator(...)
 
@@ -110,10 +121,12 @@ with DAG(
     start_dm >> [
         load_dm_sales_report,
         load_dm_route_performance,
-        load_dm_passenger_loyalty
+        load_dm_passenger_loyalty,
+        load_dm_airport_traffic
     ]
 
     # Связываем dq с finish
     load_dm_sales_report >> dq_dm_sales_report >> finish_dm_summary
     load_dm_route_performance >> dq_dm_route_performance >> finish_dm_summary
     load_dm_passenger_loyalty >> dq_dm_passenger_loyalty >> finish_dm_summary
+    load_dm_airport_traffic >> dq_dm_airport_traffic >> finish_dm_summary

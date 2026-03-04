@@ -7,9 +7,9 @@ from __future__ import annotations
 - DM читает из DDS (Star Schema);
 - для каждой витрины выполняем пару задач load -> dq;
 - все витрины загружаются параллельно (не зависят друг от друга);
-- sales_report использует UPSERT (heap-таблица с UPDATE).
+- sales_report использует UPSERT (heap-таблица), route_performance — Full Rebuild (AO Column).
 
-На данном этапе реализована только эталонная витрина sales_report.
+На данном этапе реализованы витрины: sales_report, route_performance.
 Остальные витрины будут добавлены в последующих этапах.
 """
 
@@ -68,9 +68,20 @@ with DAG(
         sql="dm/sales_report_dq.sql",
     )
 
-    # === Заглушки для будущих витрин (будут реализованы в этапах 2-5) ===
-    # load_dm_route_performance = PostgresOperator(...)
-    # dq_dm_route_performance = PostgresOperator(...)
+    # === Витрина: Эффективность маршрутов (Этап 2) ===
+    load_dm_route_performance = PostgresOperator(
+        task_id="load_dm_route_performance",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="dm/route_performance_load.sql",
+    )
+
+    dq_dm_route_performance = PostgresOperator(
+        task_id="dq_dm_route_performance",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="dm/route_performance_dq.sql",
+    )
+
+    # === Заглушки для будущих витрин (будут реализованы в этапах 3-5) ===
     # load_dm_passenger_loyalty = PostgresOperator(...)
     # dq_dm_passenger_loyalty = PostgresOperator(...)
     # load_dm_airport_traffic = PostgresOperator(...)
@@ -85,5 +96,11 @@ with DAG(
     )
 
     # Зависимости: параллельные ветки load -> dq
-    # В будущем: start_dm >> [load_sales >> dq_sales, load_route >> dq_route, ...] >> finish
-    start_dm >> load_dm_sales_report >> dq_dm_sales_report >> finish_dm_summary
+    start_dm >> [
+        load_dm_sales_report,
+        load_dm_route_performance
+    ]
+
+    # Связываем dq с finish
+    load_dm_sales_report >> dq_dm_sales_report >> finish_dm_summary
+    load_dm_route_performance >> dq_dm_route_performance >> finish_dm_summary

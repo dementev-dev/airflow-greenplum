@@ -62,6 +62,10 @@ INSERT INTO dds.dim_routes (
     departure_airport,
     arrival_airport,
     airplane_code,
+    departure_city,
+    arrival_city,
+    airplane_model,
+    total_seats,
     days_of_week,
     departure_time,
     duration,
@@ -79,6 +83,10 @@ SELECT
     s.departure_airport,
     s.arrival_airport,
     s.airplane_code,
+    dep.city,
+    arr.city,
+    air.model,
+    air.total_seats,
     s.days_of_week,
     s.departure_time,
     s.duration,
@@ -97,6 +105,9 @@ SELECT
     '{{ run_id }}',
     now()
 FROM tmp_routes_src AS s
+LEFT JOIN dds.dim_airports AS dep ON s.departure_airport = dep.airport_bk
+LEFT JOIN dds.dim_airports AS arr ON s.arrival_airport = arr.airport_bk
+LEFT JOIN dds.dim_airplanes AS air ON s.airplane_code = air.airplane_bk
 WHERE s.rn = 1
     AND NOT EXISTS (
         SELECT 1
@@ -106,4 +117,28 @@ WHERE s.rn = 1
             AND d.hashdiff = s.hashdiff
     );
 
+-- Фаза 3: Обновление денормализованных атрибутов (refresh).
+-- Нужна для SCD1-изменений в dim_airports/dim_airplanes (напр. переименование города).
+-- Обновляем все версии (и текущие, и исторические), т.к. измерения SCD1.
+-- При этом мы не перезаписываем _load_id и _load_ts, чтобы не размывать lineage версий.
+UPDATE dds.dim_routes AS d
+SET departure_city = dep.city,
+    arrival_city   = arr.city,
+    airplane_model = air.model,
+    total_seats    = air.total_seats,
+    updated_at     = now()
+FROM dds.dim_airports AS dep,
+     dds.dim_airports AS arr,
+     dds.dim_airplanes AS air
+WHERE dep.airport_bk = d.departure_airport
+    AND arr.airport_bk = d.arrival_airport
+    AND air.airplane_bk = d.airplane_code
+    AND (
+        d.departure_city IS DISTINCT FROM dep.city
+        OR d.arrival_city IS DISTINCT FROM arr.city
+        OR d.airplane_model IS DISTINCT FROM air.model
+        OR d.total_seats IS DISTINCT FROM air.total_seats
+    );
+
 ANALYZE dds.dim_routes;
+

@@ -29,7 +29,8 @@ JOIN dds.dim_routes r ON f.route_sk = r.route_sk
 JOIN dds.dim_calendar cal ON f.calendar_sk = cal.calendar_sk
 GROUP BY r.route_bk;
 
--- Шаг 3: Объединяем агрегаты с АКТУАЛЬНЫМИ атрибутами маршрута, аэропортов и самолетов.
+-- Шаг 3: Объединяем агрегаты с АКТУАЛЬНЫМИ атрибутами маршрута.
+-- Учебный комментарий: Благодаря денормализации dim_routes — один JOIN вместо четырёх.
 INSERT INTO dm.route_performance (
     route_bk,
     route_sk,
@@ -54,13 +55,13 @@ INSERT INTO dm.route_performance (
 SELECT
     m.route_bk,
     r_curr.route_sk,
-    dep.airport_bk AS departure_airport_bk,
-    dep.city AS departure_city,
-    arr.airport_bk AS arrival_airport_bk,
-    arr.city AS arrival_city,
-    air.airplane_bk,
-    air.model AS airplane_model,
-    air.total_seats,
+    r_curr.departure_airport AS departure_airport_bk,
+    r_curr.departure_city,
+    r_curr.arrival_airport AS arrival_airport_bk,
+    r_curr.arrival_city,
+    r_curr.airplane_code AS airplane_bk,
+    r_curr.airplane_model,
+    r_curr.total_seats,
     m.total_flights,
     m.total_tickets,
     m.total_boarded,
@@ -70,14 +71,11 @@ SELECT
     m.avg_boarding_rate::NUMERIC(5,4),
     -- Load Factor: общее кол-во посадок / (кол-во рейсов * мест в самолете)
     ROUND(
-        m.total_boarded::NUMERIC / NULLIF(m.total_flights * air.total_seats, 0),
+        m.total_boarded::NUMERIC / NULLIF(m.total_flights * r_curr.total_seats, 0),
         4
     ) AS avg_load_factor,
     m.first_flight_date,
     m.last_flight_date,
     '{{ run_id }}' AS _load_id
 FROM tmp_route_metrics m
-JOIN dds.dim_routes r_curr ON m.route_bk = r_curr.route_bk AND r_curr.valid_to IS NULL
-JOIN dds.dim_airports dep ON r_curr.departure_airport = dep.airport_bk
-JOIN dds.dim_airports arr ON r_curr.arrival_airport = arr.airport_bk
-JOIN dds.dim_airplanes air ON r_curr.airplane_code = air.airplane_bk;
+JOIN dds.dim_routes r_curr ON m.route_bk = r_curr.route_bk AND r_curr.valid_to IS NULL;

@@ -128,6 +128,13 @@ BEGIN
         OR arrival_airport = ''
         OR airplane_code IS NULL
         OR airplane_code = ''
+        OR departure_city IS NULL
+        OR departure_city = ''
+        OR arrival_city IS NULL
+        OR arrival_city = ''
+        OR airplane_model IS NULL
+        OR airplane_model = ''
+        OR total_seats IS NULL
         OR hashdiff IS NULL
         OR hashdiff = ''
         OR valid_from IS NULL
@@ -146,4 +153,5 @@ BEGIN
     RAISE NOTICE
         'DQ PASSED: dds.dim_routes ок, строк=% (версий)',
         v_row_count;
+
 END $$;

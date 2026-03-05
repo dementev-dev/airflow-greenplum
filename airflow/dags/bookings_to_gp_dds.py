@@ -142,11 +142,14 @@ with DAG(
         load_dds_dim_airplanes,
         load_dds_dim_tariffs,
         load_dds_dim_passengers,
-        load_dds_dim_routes,
     ]
+
+    # dim_routes зависит от airports и airplanes (денормализация).
+    [dq_dds_dim_airports, dq_dds_dim_airplanes] >> load_dds_dim_routes
 
     load_dds_dim_airports >> dq_dds_dim_airports
     load_dds_dim_airplanes >> dq_dds_dim_airplanes
+
     load_dds_dim_tariffs >> dq_dds_dim_tariffs
     load_dds_dim_passengers >> dq_dds_dim_passengers
     load_dds_dim_routes >> dq_dds_dim_routes

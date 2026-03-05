@@ -53,7 +53,7 @@
 
 - [x] Добавить в образ Airflow установку `psql`, чтобы тестировать загрузку CSV из CLI внутри контейнера (без root и дополнительных зависимостей на хосте).
 
-- [ ] Денормализовать `dds.dim_routes` (добавить departure_city, arrival_city, airplane_model, total_seats):
+- [x] Денормализовать `dds.dim_routes` (добавить departure_city, arrival_city, airplane_model, total_seats):
   - привести измерение в соответствие с принципом Кимбалла («самодостаточное измерение»);
   - упростить `dm.route_performance` с 4-JOIN до 1-JOIN;
   - обновить DAG-зависимости: airports+airplanes DQ → routes load;

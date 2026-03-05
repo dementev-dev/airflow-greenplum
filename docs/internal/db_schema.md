@@ -70,7 +70,7 @@
 | `dds.dim_airplanes` | `airplane_code` (`airplane_bk`) | `airplane_sk` | `model`, `range_km`, `speed_kmh`, `total_seats` |
 | `dds.dim_tariffs` | `fare_conditions` | `tariff_sk` | `fare_conditions` |
 | `dds.dim_passengers` | `passenger_id` (`passenger_bk`) | `passenger_sk` | `passenger_name` (SCD1) |
-| `dds.dim_routes` | `route_no` (`route_bk`) | `route_sk` | `departure_airport`, `arrival_airport`, `airplane_code`, `hashdiff`, `valid_from`, `valid_to` (SCD2) |
+| `dds.dim_routes` | `route_no` (`route_bk`) | `route_sk` | `departure_airport`, `arrival_airport`, `airplane_code`, `departure_city` (денормализовано), `arrival_city` (денормализовано), `airplane_model` (денормализовано), `total_seats` (денормализовано), `hashdiff`, `valid_from`, `valid_to` (SCD2) |
 
 ### Факт DDS (Fact)
 
@@ -325,6 +325,8 @@ graph LR
     
     ODS_Tickets -->|Extract Unique| DIM_Passengers
     ODS_Routes -->|SCD2 with hashdiff| DIM_Routes
+    DIM_Airports -.->|Enrich cities| DIM_Routes
+    DIM_Airplanes -.->|Enrich model and seats| DIM_Routes
 
     %% Fact assembly (Main process + route point-in-time)
     ODS_Segments -->|Main Stream| FACT_Sales

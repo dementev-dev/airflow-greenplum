@@ -372,6 +372,10 @@ def test_bookings_to_gp_dds_dag_structure():
         upstream=False
     ), "dds airplanes не должен быть upstream для airports"
 
+    # dim_routes зависит от airports и airplanes (денормализация).
+    _assert_reachable(dag, "dq_dds_dim_airports", "load_dds_dim_routes")
+    _assert_reachable(dag, "dq_dds_dim_airplanes", "load_dds_dim_routes")
+
     # Факт должен стартовать только после всех измерений.
     _assert_reachable(dag, "dq_dds_dim_calendar", "load_dds_fact_flight_sales")
     _assert_reachable(dag, "dq_dds_dim_airports", "load_dds_fact_flight_sales")

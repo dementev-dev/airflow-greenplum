@@ -54,7 +54,7 @@ make gp-psql
 PXF (Platform Extension Framework) — компонент Greenplum для работы с внешними источниками.
 В этом стенде PXF используется для чтения таблицы `bookings.bookings` из Postgres прямо из Greenplum
 через внешнюю таблицу `stg.bookings_ext`. Поэтому загрузка в `stg.bookings` выглядит как обычный
-`INSERT ... SELECT` без промежуточных CSV.
+`INSERT ... SELECT` без промежуточных файлов.
 
 ## Greenplum + PXF: свой образ
 

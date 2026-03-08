@@ -22,7 +22,6 @@
 - **Greenplum** (single‑node для обучения; внешний порт по умолчанию `5435`)
 - **bookings-db** (Postgres с демо‑БД `demo`; внешний порт по умолчанию `5434`)
 - **PXF** как “транспорт” между Postgres и Greenplum (уже настроен в образе)
-- Побочный пример: загрузка данных через **pandas/CSV** (`csv_to_greenplum`)
 
 ## Требования
 
@@ -103,12 +102,6 @@ SELECT COUNT(*) FROM dds.fact_flight_sales;
 - `bookings_to_gp_ods` — загружает данные из STG в ODS (SCD1 UPSERT) и выполняет DQ‑проверки.
 - `bookings_dds_ddl` — создаёт/обновляет DDS-таблицы (`dim_*`, `fact_flight_sales`) по домену bookings.
 - `bookings_to_gp_dds` — загружает данные из ODS в DDS (SCD1/SCD2 + факт) и выполняет DQ‑проверки.
-
-Вспомогательные (побочный трек с CSV):
-
-- `orders_base_ddl` — создаёт таблицу `public.orders` для CSV‑пайплайна;
-- `csv_to_greenplum` — pandas → CSV → Greenplum (пример загрузки без источника‑БД);
-- `csv_to_greenplum_dq` — проверки качества данных для `public.orders`.
 
 ## Полезные команды
 

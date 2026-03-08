@@ -16,11 +16,11 @@
 
 **Инструмент:** Sonnet / Gemini / ChatGPT — механическая работа, перенос файлов.
 
-- [ ] Перенести в [airflow-manual](https://github.com/dementev-dev/airflow-manual):
+- [x] Перенести в [airflow-manual](https://github.com/dementev-dev/airflow-manual):
   `csv_to_greenplum.py`, `csv_to_greenplum_dq.py`, `ddl_greenplum_base.py`,
   `helpers/greenplum.py`, `sql/base/orders_ddl.sql`, связанные тесты
-- [ ] Убрать CSV-зависимости из docker-compose / .env (`CSV_DIR`, `CSV_ROWS`)
-- [ ] Обновить README (убрать упоминания CSV-пайплайна)
+- [x] Убрать CSV-зависимости из docker-compose / .env (`CSV_DIR`, `CSV_ROWS`)
+- [x] Обновить README (убрать упоминания CSV-пайплайна)
 
 ### Этап 1.5. Полировка эталона
 

@@ -41,53 +41,6 @@ def _assert_reachable(dag, upstream_task_id: str, downstream_task_id: str) -> No
     ), f"Expected {downstream_task_id} to be downstream of {upstream_task_id}"
 
 
-def test_csv_to_greenplum_dag_structure():
-    dag = _load_dag("airflow.dags.csv_to_greenplum")
-
-    # tasks
-    expected_tasks = {
-        "create_orders_table",
-        "generate_csv",
-        "preview_csv",
-        "load_csv_to_greenplum",
-    }
-    assert expected_tasks.issubset(dag.task_dict.keys())
-
-    # linear dependencies
-    t1 = dag.get_task("create_orders_table")
-    t2 = dag.get_task("generate_csv")
-    t3 = dag.get_task("preview_csv")
-    t4 = dag.get_task("load_csv_to_greenplum")
-
-    assert t2 in t1.get_direct_relatives(upstream=False)
-    assert t3 in t2.get_direct_relatives(upstream=False)
-    assert t4 in t3.get_direct_relatives(upstream=False)
-
-
-def test_csv_to_greenplum_dq_dag_structure():
-    dag = _load_dag("airflow.dags.csv_to_greenplum_dq")
-
-    expected_tasks = {
-        "check_orders_table_exists",
-        "check_orders_schema",
-        "check_orders_has_rows",
-        "check_order_duplicates",
-        "data_quality_summary",
-    }
-    assert expected_tasks.issubset(dag.task_dict.keys())
-
-    e = dag.get_task("check_orders_table_exists")
-    s = dag.get_task("check_orders_schema")
-    h = dag.get_task("check_orders_has_rows")
-    d = dag.get_task("check_order_duplicates")
-    q = dag.get_task("data_quality_summary")
-
-    assert s in e.get_direct_relatives(upstream=False)
-    assert h in s.get_direct_relatives(upstream=False)
-    assert d in h.get_direct_relatives(upstream=False)
-    assert q in d.get_direct_relatives(upstream=False)
-
-
 def test_bookings_stg_ddl_dag_structure():
     """Проверка структуры DAG bookings_stg_ddl."""
     dag = _load_dag("airflow.dags.bookings_stg_ddl")

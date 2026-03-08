@@ -55,14 +55,3 @@ def _ensure_stub_module(full_name: str) -> ModuleType:
             module = sys.modules[path]
     assert isinstance(module, ModuleType)
     return module
-
-
-def patch_postgres_hook(monkeypatch, hook_cls: Type) -> None:
-    """
-    Patch PostgresHook so that helpers.greenplum can be exercised without real Airflow.
-    """
-    try:
-        module = importlib.import_module("airflow.providers.postgres.hooks.postgres")
-    except ModuleNotFoundError:
-        module = _ensure_stub_module("airflow.providers.postgres.hooks.postgres")
-    monkeypatch.setattr(module, "PostgresHook", hook_cls, raising=False)

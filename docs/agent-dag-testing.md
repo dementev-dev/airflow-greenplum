@@ -27,7 +27,7 @@ make test
 
 Для тестирования загрузки данных запустите измененный DAG через REST API (базовый URL `http://localhost:8080/api/v1`, креды взять из `.venv`).
 
-**Шаг 2.1. Снять DAG с паузы (если он новый):**
+**Шаг 2.1. Снять DAG с паузы (при старте стенда все DAG'и на паузе — этот шаг обязателен!):**
 ```bash
 curl -s -X PATCH "http://localhost:8080/api/v1/dags/<dag_id>" \
   -u admin:admin -H "Content-Type: application/json" -d '{"is_paused": false}'

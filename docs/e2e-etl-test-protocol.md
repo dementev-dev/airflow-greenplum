@@ -3,7 +3,8 @@
 Этот документ описывает процедуру полной проверки цепочки ETL: `STG -> ODS -> DDS -> DM`.
 Цель теста — убедиться в корректности инкрементальной загрузки, работы паттерна `Temporary Table` и механизмов `HWM`.
 
-**Основной метод взаимодействия — Airflow UI + REST API.** Запускать пайплайны удобнее всего через веб-интерфейс, а вот отлаживать упавшие задачи (читать логи, очищать статус) полезно уметь через REST API. Это приближает опыт к реальной боевой эксплуатации.
+**Управление DAG'ами — только через Airflow UI или REST API.**
+Не используйте CLI-команды внутри контейнера (`docker exec ... airflow dags ...`) — они могут молча не сработать (например, `unpause` не снимает паузу). REST API работает надёжно и приближает опыт к реальной боевой эксплуатации.
 
 ---
 
@@ -48,19 +49,22 @@ make dwh-truncate
 4. `bookings_dm_ddl`
 
 ### Запуск пайплайна (Day 1)
-После успешного создания таблиц, запустите DAG загрузки для `bookings_to_gp_stage`. 
-Откройте **Airflow UI** (`http://localhost:8080`), **снимите DAG с паузы** (переключатель слева от названия) и нажмите кнопку **▶ Play -> Trigger DAG**.
-*(Airflow автоматически сгенерирует `logical_date` и `run_id`, например `manual__2026-03-03T10:00:00+00:00`)*.
+После успешного создания таблиц, запустите DAG загрузки `bookings_to_gp_stage`.
 
-Либо сделайте то же самое через API (без указания даты). **Важно:** при старте стенда все DAG-и находятся на паузе. Чтобы планировщик начал выполнять запущенный вами DAG, его нужно предварительно "разморозить" (unpause):
+**Через UI:** откройте http://localhost:8080, **снимите DAG с паузы** (переключатель слева от названия) и нажмите **▶ Play -> Trigger DAG**.
+
+**Через REST API (рекомендуется для автоматизации и агентов):**
+
+**Важно:** при старте стенда все DAG-и находятся на паузе. Каждый DAG перед первым запуском нужно «разморозить» (unpause), иначе запуск зависнет в статусе `queued`. Для каждого DAG требуется два шага: **1) unpause, 2) trigger**.
+
 ```bash
-# Снятие с паузы
+# 1. Снятие с паузы (обязательно перед первым запуском!)
 curl -s -X PATCH "http://localhost:8080/api/v1/dags/bookings_to_gp_stage" \
 --user "${AIRFLOW_USER}:${AIRFLOW_PASSWORD}" \
 -H "Content-Type: application/json" \
 -d '{"is_paused": false}'
 
-# Запуск
+# 2. Запуск
 curl -s -X POST "http://localhost:8080/api/v1/dags/bookings_to_gp_stage/dagRuns" \
 --user "${AIRFLOW_USER}:${AIRFLOW_PASSWORD}" \
 -H "Content-Type: application/json" \
@@ -68,10 +72,34 @@ curl -s -X POST "http://localhost:8080/api/v1/dags/bookings_to_gp_stage/dagRuns"
 ```
 
 ### Проверка статуса
-Следите за графом выполнения в UI. Как только DAG перейдет в статус `success`, поочередно запускайте следующие слои:
+Дождитесь, пока DAG перейдет в статус `success` (следите в UI или опрашивайте через API):
+```bash
+curl -s "http://localhost:8080/api/v1/dags/bookings_to_gp_stage/dagRuns?order_by=-execution_date&limit=1" \
+--user "${AIRFLOW_USER}:${AIRFLOW_PASSWORD}" | python3 -c "import sys,json; print(json.load(sys.stdin)['dag_runs'][0]['state'])"
+```
+
+### Запуск остальных слоёв
+Поочерёдно запускайте каждый следующий слой **по той же схеме: unpause + trigger** (замените `<dag_id>`):
 1. `bookings_to_gp_ods`
 2. `bookings_to_gp_dds`
 3. `bookings_to_gp_dm`
+
+```bash
+# Повторите для каждого DAG из списка выше
+DAG_ID=bookings_to_gp_ods
+
+# 1. Unpause
+curl -s -X PATCH "http://localhost:8080/api/v1/dags/${DAG_ID}" \
+--user "${AIRFLOW_USER}:${AIRFLOW_PASSWORD}" \
+-H "Content-Type: application/json" \
+-d '{"is_paused": false}'
+
+# 2. Trigger
+curl -s -X POST "http://localhost:8080/api/v1/dags/${DAG_ID}/dagRuns" \
+--user "${AIRFLOW_USER}:${AIRFLOW_PASSWORD}" \
+-H "Content-Type: application/json" \
+-d '{}'
+```
 
 ---
 

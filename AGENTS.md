@@ -39,7 +39,9 @@
 - В каталоге `sql/` придерживаемся слоёв DWH:
   - `sql/src/` — скрипты, работающие с исходными системами (например, `bookings_generate_day_if_missing.sql`);
   - `sql/stg/` — скрипты для стейджинга (`bookings_ddl.sql`, `bookings_load.sql`, `bookings_dq.sql`);
-  - в будущем можно добавить `sql/ods/`, `sql/dds/`, `sql/dm/` по мере роста стенда.
+  - `sql/ods/` — скрипты ODS (операционное хранилище);
+  - `sql/dds/` — скрипты DDS (детальное хранилище, star schema);
+  - `sql/dm/`  — скрипты DM (витрины / data marts).
 - Нейминг служебных полей и SCD-полей фиксирован в `docs/internal/naming_conventions.md` (единый источник для всех новых слоёв).
 - Именование файлов: `{объект}_{роль}.sql`, где:
   - `объект` — логическое имя сущности (`bookings`, `orders`, и т.п.);

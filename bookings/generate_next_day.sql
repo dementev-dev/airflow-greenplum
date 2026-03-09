@@ -11,12 +11,11 @@ DECLARE
 BEGIN
     -- Проверяем, что демобаза установлена
     IF to_regclass('bookings.bookings') IS NULL THEN
-        RAISE EXCEPTION 'Таблица bookings.bookings не найдена. Сначала выполните make bookings-init.';
+        RAISE EXCEPTION 'Таблица bookings.bookings не найдена. Сначала выполните make bookings-init или make bookings-generate.';
     END IF;
 
-    -- В учебном стенде поддерживается только jobs=1, иначе генерация нестабильна.
-    IF v_jobs <> 1 THEN
-        RAISE EXCEPTION 'Поддерживается только bookings.jobs=1. Текущее значение: %. Установите BOOKINGS_JOBS=1 и выполните make bookings-init.', v_jobs;
+    IF v_jobs < 1 THEN
+        RAISE EXCEPTION 'bookings.jobs должен быть >= 1. Текущее значение: %.', v_jobs;
     END IF;
 
     -- Ищем последнюю сгенерированную дату
@@ -39,6 +38,17 @@ BEGIN
         CALL continue(v_end_date, v_jobs);
     END IF;
 
+    -- continue() делает TRUNCATE gen.stat_jobs → AccessExclusiveLock.
+    -- Без COMMIT воркеры не могут INSERT INTO gen.stat_jobs → deadlock.
+    COMMIT;
+
+    -- При jobs>1 воркерам нужно время, чтобы подключиться через dblink и
+    -- выставить application_name='Airlines processor'. Без паузы busy()
+    -- сразу вернёт false (воркеры ещё не видны в pg_stat_activity).
+    IF v_jobs > 1 THEN
+        PERFORM pg_sleep(3);
+    END IF;
+
     -- Ждём завершения фоновых джобов генератора, чтобы данные успели записаться
     WHILE busy() LOOP
         PERFORM pg_sleep(1);
@@ -50,4 +60,12 @@ BEGIN
     IF v_bookings_cnt = 0 THEN
         RAISE EXCEPTION 'Генератор demodb завершился, но bookings.bookings пустая. Проверьте применение патчей и логи генератора.';
     END IF;
+
+    -- Генерация закончена — возвращаем synchronous_commit = on и сбрасываем
+    -- буферы на диск. Без этого docker compose down может убить PostgreSQL
+    -- до записи WAL → данные пропадут (особенно на WSL2).
+    ALTER DATABASE demo SET synchronous_commit = on;
+    SET synchronous_commit = on;
 END $$;
+
+CHECKPOINT;

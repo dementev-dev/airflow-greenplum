@@ -1,7 +1,7 @@
 # Проблемы bookings-db (demodb)
 
 > Дата обнаружения: 2026-03-08
-> Зафиксированный коммит demodb: `d68de192850237719f09b47688d5f3fc94653ca6`
+> Зафиксированный коммит demodb: `866e56f7fe54596a1d2a88f5f32f4aa3b2698121`
 
 ---
 
@@ -9,7 +9,7 @@
 
 ### Симптом
 
-После `make bookings-init` таблицы в demo-базе существуют, но **пустые**.
+После `make bookings-generate` (генерация с нуля) таблицы в demo-базе существуют, но **пустые**.
 Повторные `make bookings-generate-day` тоже дают 0 строк.
 
 ### Корневая причина
@@ -22,7 +22,7 @@ ALTER DATABASE demo SET gen.connstr = 'dbname=demo';
 
 Без `user` и `password`. Makefile устанавливает правильный connstr
 (с `user=bookings password=bookings`) **после** `install.sql`, но при повторном
-`make bookings-init` порядок тот же: install.sql перезаписывает → Makefile
+`make bookings-generate` порядок тот же: install.sql перезаписывает → Makefile
 восстанавливает. Если что-то идёт не так между этими шагами, connstr остаётся
 без credentials.
 
@@ -47,7 +47,7 @@ SELECT * FROM gen.log ORDER BY at DESC LIMIT 5;
 ### Воркэраунд
 
 ```sql
--- Выполнить на bookings-db ПОСЛЕ install.sql:
+-- Выполнить на bookings-db ПОСЛЕ install.sql (актуально при make bookings-generate):
 ALTER DATABASE demo SET gen.connstr = 'dbname=demo user=bookings password=bookings';
 -- Затем переподключиться к demo и запустить генерацию заново.
 ```
@@ -135,9 +135,9 @@ Boarding passes создаются при событиях CHECK-IN и BOARDING,
 
 ## Рекомендации (TODO)
 
-- [ ] Обновить demodb до последнего коммита — проверить, исправлены ли баги
-- [ ] Добавить патч для gen.connstr (если не исправлено upstream)
-- [ ] Увеличить BOOKINGS_INIT_DAYS до 30-60
-- [ ] Добавить валидацию после init (`make bookings-init` проверяет count > 0)
+- [x] Обновить demodb до последнего коммита (`866e56f`) — upstream только README-правки, баги не исправлены
+- [x] Добавить патч для gen.connstr (`install_connstr_no_hardcode.patch`) — убирает хардкод без credentials
+- [x] Увеличить BOOKINGS_INIT_DAYS до 60 (в Makefile и .env)
+- [x] Добавить валидацию после init (count > 0 для bookings, flights; вывод counts всех таблиц)
 - [ ] Решить проблему UX с временем генерации (дамп или prebuilt image)
-- [ ] Проверить, появляются ли boarding_passes при init_days=90 + исправленном connstr
+- [ ] Проверить, появляются ли boarding_passes при init_days=60 + исправленном connstr (нужен запуск стенда)

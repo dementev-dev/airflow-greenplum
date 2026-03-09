@@ -4,29 +4,38 @@
 
 На первом этапе мы:
 - поднимаем отдельный контейнер `bookings-db` с Postgres;
-- устанавливаем в нём генератор демобазы `demodb` (репозиторий `postgrespro/demodb`);
+- инициализируем демобазу одним из двух способов (см. ниже);
 - генерируем данные «день за днём» с помощью `make`‑команд.
 
-Основные команды см. в корневом `Makefile` (`bookings-init`, `bookings-generate-day`, `bookings-psql`) и в `README.md` проекта.
+### Два способа инициализации
+
+| Команда | Что делает | Время | Для кого |
+|---------|-----------|-------|----------|
+| `make bookings-init` | Быстрое восстановление из seed-дампа | ~18 сек | **Студенты** (рекомендуется по умолчанию) |
+| `make bookings-generate` | Полная генерация с нуля через генератор demodb | часы | Разработчики, пересоздание дампа |
+
+Основные команды см. в корневом `Makefile` (`bookings-init`, `bookings-generate`, `bookings-generate-day`, `bookings-psql`) и в `README.md` проекта.
 
 ## Источник и версия
 - Репозиторий демобазы: `postgrespro/demodb`.
-- Закреплённый коммит: `d68de192850237719f09b47688d5f3fc94653ca6` (см. `DEMODB_COMMIT` в корневом `Makefile`).
+- Закреплённый коммит: `866e56f7` (см. `DEMODB_COMMIT` в корневом `Makefile`).
 
 ## Что мы патчим в demodb
 - `install.sql`: `DROP DATABASE IF EXISTS demo WITH (FORCE)` — установка не падает, даже если демобазу держат активные сессии (например, из Airflow).
 - `engine.sql`: два изменения в `engine_jobs1_sync.patch`:
   - `busy()` игнорирует свой `pid`, чтобы не считать собственное подключение занятым;
   - `continue()` при `jobs=1` вызывает `process_queue` синхронно (без `dblink`), иначе генерация обрывается при выходе из `psql` и данных не появляется.
-- Режим эксплуатации в этом стенде: только `jobs=1` (`BOOKINGS_JOBS=1`).
-- Патчи применяются автоматически в `make bookings-init`. Если что-то пошло не так, их можно накатить вручную:
+- `install.sql`: удалён хардкод `gen.connstr` без credentials (`install_connstr_no_hardcode.patch`).
+- Дефолт: `BOOKINGS_JOBS=2`. При `jobs=1` генерация синхронная (без dblink), при `jobs>1` — через dblink.
+- Патчи применяются автоматически в `make bookings-generate` (генерация с нуля). Если что-то пошло не так, их можно накатить вручную:
   ```
   patch -d bookings/demodb -p1 --forward < bookings/patches/install_drop_if_exists.patch
   patch -d bookings/demodb -p1 --forward < bookings/patches/engine_jobs1_sync.patch
   ```
 
 ## Быстрая проверка после init/обновления
-- `make bookings-init` должен завершиться без ошибок; в `bookings.bookings` ожидаем >0 строк (примерно 15k).
+- `make bookings-init` (восстановление из дампа) должен завершиться без ошибок; в `bookings.bookings` ожидаем >0 строк (примерно 15k).
+- `make bookings-generate` (генерация с нуля) тоже должен дать >0 строк, но занимает значительно больше времени.
 - `make bookings-generate-day` добавляет следующий день после `max(book_date)`.
 - Ручной вызов генерации из psql/DBeaver — только через DO-блок (подзапрос в аргументах `CALL` не работает):
   ```sql

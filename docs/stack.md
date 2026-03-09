@@ -131,8 +131,8 @@ make fmt
 - `BOOKINGS_DB_USER`, `BOOKINGS_DB_PASSWORD`
 - `BOOKINGS_DB_PORT` — внешний порт (по умолчанию `5434`)
 - `BOOKINGS_START_DATE` — стартовая дата модельного времени
-- `BOOKINGS_INIT_DAYS` — сколько дней генерировать при первом `make bookings-init`
-- `BOOKINGS_JOBS` — число джобов генератора; в учебном стенде поддерживается только `1`
+- `BOOKINGS_INIT_DAYS` — сколько дней генерировать при `make bookings-generate` (генерация с нуля)
+- `BOOKINGS_JOBS` — число джобов генератора (по умолчанию `2`)
 
 ### CSV pipeline (побочный пример)
 

@@ -2,18 +2,20 @@
 
 ## Контекст
 
-В стенде используется демобаза bookings из репозитория `postgrespro/demodb`, закреплённая на коммите `d68de192850237719f09b47688d5f3fc94653ca6` (см. `DEMODB_COMMIT` в `Makefile`).
+В стенде используется демобаза bookings из репозитория `postgrespro/demodb`, закреплённая на коммите `866e56f7fe54596a1d2a88f5f32f4aa3b2698121` (см. `DEMODB_COMMIT` в `Makefile`).
 
-Инициализация источника для ETL выполняется командой `make bookings-init`:
-- клонирует demodb в `bookings/demodb/`;
-- пытается применить патчи из `bookings/patches/`;
-- запускает `install.sql` в контейнере `bookings-db`;
-- выставляет GUC-параметры (`gen.connstr`, `bookings.start_date/init_days/jobs`);
-- запускает `/bookings/generate_next_day.sql` (должен сгенерировать минимум 1 день данных).
+Инициализация источника для ETL выполняется двумя способами:
+- `make bookings-init` — быстрое восстановление из seed-дампа (~18 сек, рекомендуется для студентов);
+- `make bookings-generate` — полная генерация с нуля (для разработчиков):
+  - клонирует demodb в `bookings/demodb/`;
+  - пытается применить патчи из `bookings/patches/`;
+  - запускает `install.sql` в контейнере `bookings-db`;
+  - выставляет GUC-параметры (`gen.connstr`, `bookings.start_date/init_days/jobs`);
+  - запускает `/bookings/generate_next_day.sql` (должен сгенерировать минимум 1 день данных).
 
 ## Симптомы (как в TODO)
 
-- после `make bookings-init` таблица `bookings.bookings` остаётся пустой;
+- после `make bookings-generate` таблица `bookings.bookings` остаётся пустой;
 - патчи `bookings/patches/engine_jobs1_sync.patch` и `bookings/patches/install_drop_if_exists.patch` падают при применении;
 - из‑за этого DAG `bookings_to_gp_stage` валится на проверках (источник пустой).
 
@@ -24,11 +26,11 @@
 
 2) `install_drop_if_exists.patch` устарел относительно закреплённого коммита demodb: в `install.sql` уже есть `DROP DATABASE IF EXISTS demo;`, поэтому hunk “не находится” и патч не накатывается.
 
-3) Ошибки патча сейчас замаскированы в `Makefile` через `|| true`, поэтому `make bookings-init` может завершаться “успешно”, хотя критичные правки в demodb не применились.
+3) Ошибки патча сейчас замаскированы в `Makefile` через `|| true`, поэтому `make bookings-generate` может завершаться “успешно”, хотя критичные правки в demodb не применились.
 
 ## Цель фикса
 
-- `make bookings-init` воспроизводимо создаёт и наполняет `demo.bookings.bookings` (>0 строк).
+- `make bookings-init` (восстановление из дампа) и `make bookings-generate` (генерация с нуля) воспроизводимо создают и наполняют `demo.bookings.bookings` (>0 строк).
 - Если патчи не применяются — процесс останавливается с понятным сообщением, что делать дальше.
 - Патчи соответствуют закреплённому коммиту demodb и применяются идемпотентно.
 
@@ -37,7 +39,7 @@
 1) Чистое воспроизведение:
 - `make clean`
 - `rm -rf bookings/demodb`
-- `make bookings-init`
+- `make bookings-generate`
 
 2) Проверка данных:
 - `make bookings-psql`
@@ -67,12 +69,12 @@
   - было: `DROP DATABASE IF EXISTS demo;`
   - стало: `DROP DATABASE IF EXISTS demo WITH (FORCE);`
 
-### Шаг 2. Сделать `make bookings-init` fail-fast на проблемах с патчами
+### Шаг 2. Сделать `make bookings-generate` fail-fast на проблемах с патчами
 
 В `Makefile`:
 - убрать `|| true` у применения патчей;
 - при ошибке патча — завершать `make` с ненулевым кодом и короткой подсказкой:
-  - “удалите `bookings/demodb` и повторите `make bookings-init`”,
+  - “удалите `bookings/demodb` и повторите `make bookings-generate`”,
   - “если не помогло — проверьте, что `DEMODB_COMMIT` не менялся и патчи собраны под него”.
 
 ### Шаг 3. Добавить “защиту от тихого пустого результата”
@@ -85,8 +87,8 @@
 
 ## Проверка (критерии готовности)
 
-- `make clean && rm -rf bookings/demodb && make bookings-init` завершается без ошибок.
-- `make bookings-psql` → `SELECT COUNT(*) FROM bookings.bookings;` возвращает `> 0`.
+- `make clean && rm -rf bookings/demodb && make bookings-generate` завершается без ошибок.
+- `make bookings-psql` → `SELECT COUNT(*) FROM bookings.bookings;` возвращает `> 0` (для обоих способов: `bookings-init` и `bookings-generate`).
 - `make bookings-generate-day` добавляет следующий день:
   - `max(book_date)` сдвигается на +1 сутки.
 - `./scripts/e2e_smoke.sh` проходит до проверки `stg.bookings` (или хотя бы DAG `bookings_to_gp_stage` перестаёт падать на “источник пустой”).

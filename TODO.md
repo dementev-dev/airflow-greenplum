@@ -28,7 +28,7 @@
 + ручное тестирование (make up, запуск DAG'ов, проверка данных).
 
 - [ ] Протестировать полный ETL-цикл с нуля
-      (make up → bookings-init → STG → ODS → DDS → DM)
+      (make up → bookings-init (восстановление из дампа) → STG → ODS → DDS → DM)
 - [ ] Прогнать инкремент (bookings-generate-day → повторный запуск DAG'ов)
 - [ ] Почистить код эталонного среза
 - [ ] Актуализировать README и документацию
@@ -119,7 +119,7 @@
   - диагностика текущего кейса: `docs/internal/pxf_bookings.md` (раздел «Известная проблема»).
 
 - [x] Разобраться с генератором demodb:
-  - после `make bookings-init` таблица `bookings.bookings` остаётся пустой;
+  - после `make bookings-generate` таблица `bookings.bookings` остаётся пустой;
   - патчи `bookings/patches/engine_jobs1_sync.patch` и `bookings/patches/install_drop_if_exists.patch`
     падают при применении (hunk failed / garbage in patch);
   - из‑за этого DAG `bookings_to_gp_stage` валится на проверках (источник пустой).

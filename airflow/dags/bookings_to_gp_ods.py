@@ -39,7 +39,7 @@ def _resolve_stg_batch_id(**context) -> str:
 
     Для инкрементальных транзакционных таблиц (bookings, tickets, flights, segments,
     boarding_passes) этот батч НЕ используется. Вместо этого они грузят все новые
-    записи по HWM: WHERE load_dttm > (SELECT MAX(_load_ts) FROM ods.table).
+    записи по HWM: WHERE _load_ts > (SELECT MAX(_load_ts) FROM ods.table).
     Это сделано для того, чтобы не потерять инкременты, если STG-DAG запускался
     несколько раз до запуска ODS-DAG'а.
 
@@ -57,50 +57,50 @@ def _resolve_stg_batch_id(**context) -> str:
         result = hook.get_first(
             """
             WITH candidate_batches AS (
-                SELECT batch_id
+                SELECT _load_id
                 FROM stg.airports
-                WHERE batch_id IS NOT NULL AND batch_id <> ''
-                GROUP BY batch_id
+                WHERE _load_id IS NOT NULL AND _load_id <> ''
+                GROUP BY _load_id
                 INTERSECT
-                SELECT batch_id
+                SELECT _load_id
                 FROM stg.airplanes
-                WHERE batch_id IS NOT NULL AND batch_id <> ''
-                GROUP BY batch_id
+                WHERE _load_id IS NOT NULL AND _load_id <> ''
+                GROUP BY _load_id
                 INTERSECT
-                SELECT batch_id
+                SELECT _load_id
                 FROM stg.routes
-                WHERE batch_id IS NOT NULL AND batch_id <> ''
-                GROUP BY batch_id
+                WHERE _load_id IS NOT NULL AND _load_id <> ''
+                GROUP BY _load_id
                 INTERSECT
-                SELECT batch_id
+                SELECT _load_id
                 FROM stg.seats
-                WHERE batch_id IS NOT NULL AND batch_id <> ''
-                GROUP BY batch_id
+                WHERE _load_id IS NOT NULL AND _load_id <> ''
+                GROUP BY _load_id
             ),
             batch_ready AS (
                 SELECT
-                    c.batch_id,
+                    c._load_id,
                     GREATEST(
                         COALESCE(
-                            (SELECT MAX(load_dttm) FROM stg.airports a WHERE a.batch_id = c.batch_id),
+                            (SELECT MAX(_load_ts) FROM stg.airports a WHERE a._load_id = c._load_id),
                             TIMESTAMP '1900-01-01 00:00:00'
                         ),
                         COALESCE(
-                            (SELECT MAX(load_dttm) FROM stg.airplanes a WHERE a.batch_id = c.batch_id),
+                            (SELECT MAX(_load_ts) FROM stg.airplanes a WHERE a._load_id = c._load_id),
                             TIMESTAMP '1900-01-01 00:00:00'
                         ),
                         COALESCE(
-                            (SELECT MAX(load_dttm) FROM stg.routes r WHERE r.batch_id = c.batch_id),
+                            (SELECT MAX(_load_ts) FROM stg.routes r WHERE r._load_id = c._load_id),
                             TIMESTAMP '1900-01-01 00:00:00'
                         ),
                         COALESCE(
-                            (SELECT MAX(load_dttm) FROM stg.seats s WHERE s.batch_id = c.batch_id),
+                            (SELECT MAX(_load_ts) FROM stg.seats s WHERE s._load_id = c._load_id),
                             TIMESTAMP '1900-01-01 00:00:00'
                         )
                     ) AS ready_dttm
                 FROM candidate_batches c
             )
-            SELECT batch_id
+            SELECT _load_id
             FROM batch_ready
             ORDER BY ready_dttm DESC
             LIMIT 1

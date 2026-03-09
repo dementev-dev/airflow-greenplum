@@ -4,19 +4,19 @@
 
 -- CTE для определения максимальной даты загрузки предыдущего батча
 WITH max_batch_ts AS (
-    SELECT COALESCE(MAX(src_created_at_ts), TIMESTAMP '1900-01-01 00:00:00') AS max_ts
+    SELECT COALESCE(MAX(event_ts), TIMESTAMP '1900-01-01 00:00:00') AS max_ts
     FROM stg.segments
-    WHERE batch_id <> '{{ run_id }}'::text
-        OR batch_id IS NULL
+    WHERE _load_id <> '{{ run_id }}'::text
+        OR _load_id IS NULL
 )
 INSERT INTO stg.segments (
     ticket_no,
     flight_id,
     fare_conditions,
     price,
-    src_created_at_ts,
-    load_dttm,
-    batch_id
+    event_ts,
+    _load_ts,
+    _load_id
 )
 SELECT
     ext.ticket_no,
@@ -32,11 +32,11 @@ JOIN stg.bookings_ext AS b ON t.book_ref = b.book_ref
 CROSS JOIN max_batch_ts AS mb
 WHERE b.book_date > mb.max_ts
 AND NOT EXISTS (
-    -- Идемпотентность: при повторном запуске/ретрае не вставляем повторно те же строки в рамках текущего batch_id.
+    -- Идемпотентность: при повторном запуске/ретрае не вставляем повторно те же строки в рамках текущего _load_id.
     -- Считаем ключом строки (ticket_no, flight_id).
     SELECT 1
     FROM stg.segments AS s
-    WHERE s.batch_id = '{{ run_id }}'::text
+    WHERE s._load_id = '{{ run_id }}'::text
         AND s.ticket_no = ext.ticket_no
         AND s.flight_id = ext.flight_id
 );

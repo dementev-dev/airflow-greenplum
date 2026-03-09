@@ -31,9 +31,9 @@ CREATE TABLE IF NOT EXISTS stg.routes (
     days_of_week      TEXT,
     scheduled_time    TEXT,
     duration          TEXT,
-    src_created_at_ts TIMESTAMP,
-    load_dttm         TIMESTAMP NOT NULL DEFAULT now(),
-    batch_id          TEXT
+    event_ts          TIMESTAMP,
+    _load_ts          TIMESTAMP NOT NULL DEFAULT now(),
+    _load_id          TEXT        NOT NULL
 )
 WITH (appendonly=true, orientation=row, compresstype=zstd, compresslevel=1)
 -- Ключ распределения: route_no

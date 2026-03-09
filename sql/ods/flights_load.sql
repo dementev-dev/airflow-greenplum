@@ -9,7 +9,7 @@ WITH segment_flights AS (
     SELECT DISTINCT
         NULLIF(s.flight_id, '')::INTEGER AS flight_id
     FROM stg.segments AS s
-    WHERE s.load_dttm > (SELECT COALESCE(MAX(_load_ts), '1900-01-01 00:00:00'::TIMESTAMP) FROM ods.segments)
+    WHERE s._load_ts > (SELECT COALESCE(MAX(_load_ts), '1900-01-01 00:00:00'::TIMESTAMP) FROM ods.segments)
         AND s.flight_id IS NOT NULL
         AND s.flight_id <> ''
 ),
@@ -22,9 +22,9 @@ stg_flights_typed AS (
         NULLIF(s.scheduled_arrival, '')::TIMESTAMP WITH TIME ZONE   AS scheduled_arrival,
         NULLIF(s.actual_departure, '')::TIMESTAMP WITH TIME ZONE    AS actual_departure,
         NULLIF(s.actual_arrival, '')::TIMESTAMP WITH TIME ZONE      AS actual_arrival,
-        s.src_created_at_ts                                          AS event_ts,
-        s.load_dttm,
-        s.batch_id
+        s.event_ts,
+        s._load_ts,
+        s._load_id
     FROM stg.flights AS s
     WHERE s.flight_id IS NOT NULL
         AND s.flight_id <> ''
@@ -40,10 +40,10 @@ src_union AS (
         f.actual_departure,
         f.actual_arrival,
         f.event_ts,
-        f.load_dttm,
-        f.batch_id
+        f._load_ts,
+        f._load_id
     FROM stg_flights_typed AS f
-    WHERE f.load_dttm > (SELECT COALESCE(MAX(_load_ts), '1900-01-01 00:00:00'::TIMESTAMP) FROM ods.flights)
+    WHERE f._load_ts > (SELECT COALESCE(MAX(_load_ts), '1900-01-01 00:00:00'::TIMESTAMP) FROM ods.flights)
 
     UNION ALL
 
@@ -57,8 +57,8 @@ src_union AS (
         f.actual_departure,
         f.actual_arrival,
         f.event_ts,
-        f.load_dttm,
-        f.batch_id
+        f._load_ts,
+        f._load_id
     FROM stg_flights_typed AS f
     JOIN segment_flights AS sf
         ON sf.flight_id = f.flight_id
@@ -73,11 +73,11 @@ src AS (
         u.actual_departure,
         u.actual_arrival,
         u.event_ts,
-        u.batch_id,
-        u.load_dttm,
+        u._load_id,
+        u._load_ts,
         ROW_NUMBER() OVER (
             PARTITION BY u.flight_id
-            ORDER BY u.event_ts DESC NULLS LAST, u.load_dttm DESC
+            ORDER BY u.event_ts DESC NULLS LAST, u._load_ts DESC
         ) AS rn
     FROM src_union AS u
 )
@@ -92,8 +92,8 @@ SET route_no            = s.route_no,
     actual_departure    = s.actual_departure,
     actual_arrival      = s.actual_arrival,
     event_ts            = s.event_ts,
-    _load_id            = s.batch_id,    -- Сохраняем оригинальный lineage из STG
-    _load_ts            = s.load_dttm    -- Фиксируем время STG как водяной знак для ODS
+    _load_id            = s._load_id,    -- Сохраняем оригинальный lineage из STG
+    _load_ts            = s._load_ts    -- Фиксируем время STG как водяной знак для ODS
 FROM tmp_flights_delta AS s
 WHERE o.flight_id = s.flight_id
     AND (
@@ -128,8 +128,8 @@ SELECT
     s.actual_departure,
     s.actual_arrival,
     s.event_ts,
-    s.batch_id,
-    s.load_dttm
+    s._load_id,
+    s._load_ts
 FROM tmp_flights_delta AS s
 WHERE NOT EXISTS (
     SELECT 1

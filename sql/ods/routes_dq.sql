@@ -16,11 +16,11 @@ BEGIN
     SELECT COUNT(*)
     INTO v_stg_batch_count
     FROM stg.routes
-    WHERE batch_id = v_batch_id;
+    WHERE _load_id = v_batch_id;
 
     IF v_stg_batch_count = 0 THEN
         RAISE EXCEPTION
-            'DQ FAILED: batch_id=% для stg.routes пустой. Проверьте загрузку STG и PXF.',
+            'DQ FAILED: _load_id=% для stg.routes пустой. Проверьте загрузку STG и PXF.',
             v_batch_id;
     END IF;
 
@@ -46,7 +46,7 @@ BEGIN
     FROM (
         SELECT DISTINCT route_no, validity
         FROM stg.routes
-        WHERE batch_id = v_batch_id
+        WHERE _load_id = v_batch_id
     ) AS s
     WHERE NOT EXISTS (
         SELECT 1
@@ -57,7 +57,7 @@ BEGIN
 
     IF v_missing_keys_count <> 0 THEN
         RAISE EXCEPTION
-            'DQ FAILED: в ods.routes отсутствуют ключи из stg.routes (batch_id=%): %',
+            'DQ FAILED: в ods.routes отсутствуют ключи из stg.routes (_load_id=%): %',
             v_batch_id,
             v_missing_keys_count;
     END IF;
@@ -71,7 +71,7 @@ BEGIN
         FROM (
             SELECT DISTINCT route_no, validity
             FROM stg.routes
-            WHERE batch_id = v_batch_id
+            WHERE _load_id = v_batch_id
         ) AS s
         WHERE s.route_no = o.route_no
             AND s.validity = o.validity
@@ -79,7 +79,7 @@ BEGIN
 
     IF v_extra_keys_count <> 0 THEN
         RAISE EXCEPTION
-            'DQ FAILED: в ods.routes найдены лишние ключи вне stg batch_id=%: %',
+            'DQ FAILED: в ods.routes найдены лишние ключи вне stg _load_id=%: %',
             v_batch_id,
             v_extra_keys_count;
     END IF;
@@ -157,7 +157,7 @@ BEGIN
     END IF;
 
     RAISE NOTICE
-        'DQ PASSED: ods.routes ок (batch_id=%): stg_batch_rows=%',
+        'DQ PASSED: ods.routes ок (_load_id=%): stg_batch_rows=%',
         v_batch_id,
         v_stg_batch_count;
 END $$;

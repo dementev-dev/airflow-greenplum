@@ -40,11 +40,11 @@
 - **Назначение**: Сырой слой, максимально близкий к источнику, без бизнес-логики
 - **Хранение**: AO-Row (Append-Only Row-oriented) для эффективной загрузки больших объёмов
 - **Типы данных**: Бизнес-колонки как `TEXT`, тех.колонки как `TIMESTAMP`
-- **Инкрементальная загрузка**: Опорное поле `src_created_at_ts` (из `book_date` для tickets)
+- **Инкрементальная загрузка**: Опорное поле `event_ts` (из `book_date` для tickets)
 - **Технологические колонки**:
-  - `src_created_at_ts TIMESTAMP` — дата/время из источника для инкремента
-  - `load_dttm TIMESTAMP NOT NULL DEFAULT now()` — когда запись была загружена
-  - `batch_id TEXT` — идентификатор пачки (рекомендуем `NOT NULL`, например `{{ ds_nodash }}` или `{{ run_id }}`)
+  - `event_ts TIMESTAMP` — дата/время из источника для инкремента
+  - `_load_ts TIMESTAMP NOT NULL DEFAULT now()` — когда запись была загружена
+  - `_load_id TEXT` — идентификатор пачки/батча (например `{{ run_id }}`)
 - **DQ-проверки (после загрузки STG)**: отдельные SQL-скрипты, которые валидируют данные (counts, дубли, NULL, orphan records) и при ошибке делают `RAISE EXCEPTION`; примеры: `sql/stg/bookings_dq.sql`, `sql/stg/tickets_dq.sql`
 
 #### ODS (Operational Data Store)
@@ -105,7 +105,7 @@
   - `book_ref TEXT` - номер бронирования
   - `book_date TEXT` - дата бронирования
   - `total_amount TEXT` - общая сумма
-- **Технические колонки:** `src_created_at_ts` (=book_date), `load_dttm`, `batch_id`
+- **Технические колонки:** `event_ts` (=book_date), `_load_ts`, `_load_id`
 - **Стратегия загрузки:** Инкремент по `book_date`
 - **DQ проверки:** count (окно инкремента, пустое окно допустимо), дубликаты book_ref, NULL обязательных полей
 
@@ -119,7 +119,7 @@
   - `passenger_id TEXT` - идентификатор пассажира
   - `passenger_name TEXT` - имя пассажира
   - `outbound TEXT` - направление (в источнике boolean)
-- **Технические колонки:** `src_created_at_ts` (из book_date через bookings), `load_dttm`, `batch_id`
+- **Технические колонки:** `event_ts` (из book_date через bookings), `_load_ts`, `_load_id`
 - **Стратегия загрузки:** Инкремент по `book_date` (через bookings)
 - **DQ проверки:** count (окно инкремента, пустое окно допустимо), дубликаты ticket_no, NULL обязательных полей, пустой passenger_name, ссылочная целостность (bookings)
 
@@ -133,7 +133,7 @@
   - `country TEXT` - страна (из JSONB)
   - `coordinates TEXT` - координаты
   - `timezone TEXT` - часовой пояс
-- **Технические колонки:** `src_created_at_ts`, `load_dttm`, `batch_id`
+- **Технические колонки:** `event_ts` (=now()), `_load_ts`, `_load_id`
 - **Стратегия загрузки:** Full load (все строки при каждом запуске)
 - **DQ проверки:** count, дубликаты airport_code, NULL обязательных полей
 
@@ -145,7 +145,7 @@
   - `model TEXT` - модель (из JSONB)
   - `range TEXT` - дальность полёта
   - `speed TEXT` - скорость
-- **Технические колонки:** `src_created_at_ts`, `load_dttm`, `batch_id`
+- **Технические колонки:** `event_ts` (=now()), `_load_ts`, `_load_id`
 - **Стратегия загрузки:** Full load
 - **DQ проверки:** count, дубликаты airplane_code, NULL обязательных полей
 
@@ -162,9 +162,9 @@
   - `days_of_week TEXT` - дни недели (из int[])
   - `scheduled_time TEXT` - плановое время
   - `duration TEXT` - длительность
-- **Технические колонки:** `src_created_at_ts`, `load_dttm`, `batch_id`
+- **Технические колонки:** `event_ts` (=now()), `_load_ts`, `_load_id`
 - **Стратегия загрузки:** Full load
-- **DQ проверки:** count, дубликаты (route_no, validity), NULL обязательных полей, ссылочная целостность (batch_id = текущий батч)
+- **DQ проверки:** count, дубликаты (route_no, validity), NULL обязательных полей, ссылочная целостность (_load_id = текущий батч)
 
 #### stg.seats (справочник, full load)
 - **Источник:** `bookings.seats` (через PXF)
@@ -173,9 +173,9 @@
   - `airplane_code TEXT` - код самолёта
   - `seat_no TEXT` - номер места
   - `fare_conditions TEXT` - класс обслуживания
-- **Технические колонки:** `src_created_at_ts`, `load_dttm`, `batch_id`
+- **Технические колонки:** `event_ts` (=now()), `_load_ts`, `_load_id`
 - **Стратегия загрузки:** Full load
-- **DQ проверки:** count, дубликаты (airplane_code, seat_no), NULL обязательных полей, ссылочная целостность (batch_id = текущий батч)
+- **DQ проверки:** count, дубликаты (airplane_code, seat_no), NULL обязательных полей, ссылочная целостность (_load_id = текущий батч)
 
 #### stg.flights (транзакции, инкремент)
 - **Источник:** `bookings.flights` (через PXF)
@@ -189,9 +189,9 @@
   - `scheduled_arrival TEXT` - плановое время прилёта
   - `actual_departure TEXT` - фактическое время вылета
   - `actual_arrival TEXT` - фактическое время прилёта
-- **Технические колонки:** `src_created_at_ts` (=scheduled_departure), `load_dttm`, `batch_id`
+- **Технические колонки:** `event_ts` (=scheduled_departure), `_load_ts`, `_load_id`
 - **Стратегия загрузки:** Инкремент по `scheduled_departure`
-- **DQ проверки:** count (окно инкремента, пустое окно допустимо), дубликаты flight_id, NULL обязательных полей, ссылочная целостность (routes, batch_id = текущий батч)
+- **DQ проверки:** count (окно инкремента, пустое окно допустимо), дубликаты flight_id, NULL обязательных полей, ссылочная целостность (routes, _load_id = текущий батч)
 
 #### stg.segments (транзакции, инкремент)
 - **Источник:** `bookings.segments` (через PXF)
@@ -202,7 +202,7 @@
   - `flight_id TEXT` - идентификатор рейса
   - `fare_conditions TEXT` - класс обслуживания
   - `price TEXT` - цена
-- **Технические колонки:** `src_created_at_ts` (из book_date через tickets), `load_dttm`, `batch_id`
+- **Технические колонки:** `event_ts` (из book_date через tickets), `_load_ts`, `_load_id`
 - **Стратегия загрузки:** Инкремент по `book_date` (через tickets)
 - **DQ проверки:** count (окно инкремента, пустое окно допустимо), дубликаты (ticket_no, flight_id), NULL обязательных полей, ссылочная целостность (tickets, flights)
 
@@ -216,7 +216,7 @@
   - `seat_no TEXT` - номер места
   - `boarding_no TEXT` - номер посадки
   - `boarding_time TEXT` - время посадки
-- **Технические колонки:** `src_created_at_ts` (=now()), `load_dttm`, `batch_id`
+- **Технические колонки:** `event_ts` (=now()), `_load_ts`, `_load_id`
 - **Стратегия загрузки:** Full snapshot (все строки при каждом запуске)
 - **DQ проверки:** count, дубликаты (ticket_no, flight_id), NULL обязательных полей, ссылочная целостность
 

@@ -11,12 +11,12 @@ DECLARE
     v_dup_count     BIGINT;
     v_empty_name_count BIGINT;
 BEGIN
-    -- Опорная метка: максимум src_created_at_ts среди предыдущих батчей
-    SELECT max(src_created_at_ts)
+    -- Опорная метка: максимум event_ts среди предыдущих батчей
+    SELECT max(event_ts)
     INTO v_prev_ts
     FROM stg.tickets
-    WHERE batch_id <> v_batch_id
-        OR batch_id IS NULL;
+    WHERE _load_id <> v_batch_id
+        OR _load_id IS NULL;
 
     -- Количество в источнике (новые билеты в том же окне инкремента, что и загрузка)
     SELECT COUNT(*)
@@ -27,21 +27,21 @@ BEGIN
 
     IF v_source_count = 0 THEN
         -- Пустое окно инкремента допустимо: новых данных может не быть.
-        -- В этом случае ожидаем, что в текущем batch_id тоже 0 строк.
+        -- В этом случае ожидаем, что в текущем _load_id тоже 0 строк.
         SELECT COUNT(*)
         INTO v_stg_count
         FROM stg.tickets
-        WHERE batch_id = v_batch_id;
+        WHERE _load_id = v_batch_id;
 
         IF v_stg_count <> 0 THEN
             RAISE EXCEPTION
-                'DQ FAILED: источник tickets_ext за окно инкремента пустой, но в stg.tickets есть строки текущего batch_id (batch_id=%): %',
+                'DQ FAILED: источник tickets_ext за окно инкремента пустой, но в stg.tickets есть строки текущего _load_id (_load_id=%): %',
                 v_batch_id,
                 v_stg_count;
         END IF;
 
         RAISE NOTICE
-            'В источнике tickets_ext нет строк для окна инкремента (book_date > %). Пропускаем DQ проверки (batch_id=%).',
+            'В источнике tickets_ext нет строк для окна инкремента (book_date > %). Пропускаем DQ проверки (_load_id=%).',
             COALESCE(v_prev_ts, TIMESTAMP '1900-01-01 00:00:00'),
             v_batch_id;
         RETURN;
@@ -51,11 +51,11 @@ BEGIN
     SELECT COUNT(*)
     INTO v_stg_count
     FROM stg.tickets
-    WHERE batch_id = v_batch_id;
+    WHERE _load_id = v_batch_id;
 
     IF v_source_count <> v_stg_count THEN
         RAISE EXCEPTION
-            'DQ FAILED: несовпадение количества билетов. Источник: %, STG (batch_id=%): %',
+            'DQ FAILED: несовпадение количества билетов. Источник: %, STG (_load_id=%): %',
             v_source_count,
             v_batch_id,
             v_stg_count;
@@ -67,12 +67,12 @@ BEGIN
     INTO v_orphan_count
     FROM stg.tickets AS t
     LEFT JOIN stg.bookings AS b ON t.book_ref = b.book_ref
-    WHERE t.batch_id = v_batch_id
+    WHERE t._load_id = v_batch_id
         AND b.book_ref IS NULL;
 
     IF v_orphan_count <> 0 THEN
         RAISE EXCEPTION
-            'DQ FAILED: найдены tickets без соответствующих bookings (batch_id=%): %',
+            'DQ FAILED: найдены tickets без соответствующих bookings (_load_id=%): %',
             v_batch_id,
             v_orphan_count;
     END IF;
@@ -81,12 +81,12 @@ BEGIN
     SELECT COUNT(*)
     INTO v_null_count
     FROM stg.tickets AS t
-    WHERE t.batch_id = v_batch_id
+    WHERE t._load_id = v_batch_id
         AND (t.ticket_no IS NULL OR t.book_ref IS NULL);
 
     IF v_null_count <> 0 THEN
         RAISE EXCEPTION
-            'DQ FAILED: найдены tickets с NULL в обязательных полях (batch_id=%): %',
+            'DQ FAILED: найдены tickets с NULL в обязательных полях (_load_id=%): %',
             v_batch_id,
             v_null_count;
     END IF;
@@ -95,11 +95,11 @@ BEGIN
     SELECT COUNT(*) - COUNT(DISTINCT ticket_no)
     INTO v_dup_count
     FROM stg.tickets AS t
-    WHERE t.batch_id = v_batch_id;
+    WHERE t._load_id = v_batch_id;
 
     IF v_dup_count <> 0 THEN
         RAISE EXCEPTION
-            'DQ FAILED: найдены дубликаты ticket_no (batch_id=%): %',
+            'DQ FAILED: найдены дубликаты ticket_no (_load_id=%): %',
             v_batch_id,
             v_dup_count;
     END IF;
@@ -108,18 +108,18 @@ BEGIN
     SELECT COUNT(*)
     INTO v_empty_name_count
     FROM stg.tickets AS t
-    WHERE t.batch_id = v_batch_id
+    WHERE t._load_id = v_batch_id
         AND (t.passenger_name IS NULL OR t.passenger_name = '');
 
     IF v_empty_name_count <> 0 THEN
         RAISE EXCEPTION
-            'DQ FAILED: найдены tickets с пустым именем пассажира (batch_id=%): %',
+            'DQ FAILED: найдены tickets с пустым именем пассажира (_load_id=%): %',
             v_batch_id,
             v_empty_name_count;
     END IF;
 
     RAISE NOTICE
-        'DQ PASSED: tickets ок (batch_id=%): source=% stg=%',
+        'DQ PASSED: tickets ок (_load_id=%): source=% stg=%',
         v_batch_id,
         v_source_count,
         v_stg_count;

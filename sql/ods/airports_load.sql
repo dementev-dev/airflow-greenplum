@@ -25,10 +25,10 @@ WITH src AS (
         s.timezone,
         ROW_NUMBER() OVER (
             PARTITION BY s.airport_code
-            ORDER BY s.load_dttm DESC, s.src_created_at_ts DESC NULLS LAST
+            ORDER BY s._load_ts DESC, s.event_ts DESC NULLS LAST
         ) AS rn
     FROM stg.airports AS s
-    WHERE s.batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
+    WHERE s._load_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
 )
 SELECT
     s.airport_code,

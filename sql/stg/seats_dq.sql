@@ -23,7 +23,7 @@ BEGIN
     SELECT COUNT(*)
     INTO v_stg_count
     FROM stg.seats
-    WHERE batch_id = v_batch_id;
+    WHERE _load_id = v_batch_id;
 
     IF v_src_count <> v_stg_count THEN
         RAISE EXCEPTION
@@ -37,11 +37,11 @@ BEGIN
     SELECT COUNT(*) - COUNT(DISTINCT md5(ROW(airplane_code, seat_no)::text))
     INTO v_dup_count
     FROM stg.seats AS s
-    WHERE s.batch_id = v_batch_id;
+    WHERE s._load_id = v_batch_id;
 
     IF v_dup_count <> 0 THEN
         RAISE EXCEPTION
-            'DQ FAILED: найдены дубликаты (airplane_code, seat_no) (batch_id=%): %',
+            'DQ FAILED: найдены дубликаты (airplane_code, seat_no) (_load_id=%): %',
             v_batch_id,
             v_dup_count;
     END IF;
@@ -50,14 +50,14 @@ BEGIN
     SELECT COUNT(*)
     INTO v_null_count
     FROM stg.seats AS s
-    WHERE s.batch_id = v_batch_id
+    WHERE s._load_id = v_batch_id
         AND (s.airplane_code IS NULL OR s.airplane_code = ''
             OR s.seat_no IS NULL OR s.seat_no = ''
             OR s.fare_conditions IS NULL OR s.fare_conditions = '');
 
     IF v_null_count <> 0 THEN
         RAISE EXCEPTION
-            'DQ FAILED: найдены строки с NULL в обязательных полях (airplane_code, seat_no, fare_conditions) (batch_id=%): %',
+            'DQ FAILED: найдены строки с NULL в обязательных полях (airplane_code, seat_no, fare_conditions) (_load_id=%): %',
             v_batch_id,
             v_null_count;
     END IF;
@@ -68,19 +68,19 @@ BEGIN
     FROM stg.seats AS s
     LEFT JOIN stg.airplanes AS a
         ON s.airplane_code = a.airplane_code
-        AND a.batch_id = v_batch_id
-    WHERE s.batch_id = v_batch_id
+        AND a._load_id = v_batch_id
+    WHERE s._load_id = v_batch_id
         AND a.airplane_code IS NULL;
 
     IF v_orphan_airplanes_count <> 0 THEN
         RAISE EXCEPTION
-            'DQ FAILED: найдены seats с несуществующим airplane_code в airplanes (batch_id=%): %',
+            'DQ FAILED: найдены seats с несуществующим airplane_code в airplanes (_load_id=%): %',
             v_batch_id,
             v_orphan_airplanes_count;
     END IF;
 
     RAISE NOTICE
-        'DQ PASSED: seats ок (batch_id=%): source=% stg=%',
+        'DQ PASSED: seats ок (_load_id=%): source=% stg=%',
         v_batch_id,
         v_src_count,
         v_stg_count;

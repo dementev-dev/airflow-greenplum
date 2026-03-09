@@ -13,7 +13,7 @@ BEGIN
     SELECT COUNT(*)
     INTO v_stg_batch_count
     FROM stg.boarding_passes
-    WHERE batch_id = v_batch_id;
+    WHERE _load_id = v_batch_id;
 
     -- В ODS не должно быть дублей по составному бизнес-ключу.
     SELECT COUNT(*)
@@ -37,7 +37,7 @@ BEGIN
     FROM (
         SELECT DISTINCT ticket_no, NULLIF(flight_id, '')::INTEGER AS flight_id
         FROM stg.boarding_passes
-        WHERE batch_id = v_batch_id
+        WHERE _load_id = v_batch_id
     ) AS s
     WHERE NOT EXISTS (
         SELECT 1
@@ -48,7 +48,7 @@ BEGIN
 
     IF v_missing_keys_count <> 0 THEN
         RAISE EXCEPTION
-            'DQ FAILED: в ods.boarding_passes отсутствуют ключи из stg.boarding_passes (batch_id=%): %',
+            'DQ FAILED: в ods.boarding_passes отсутствуют ключи из stg.boarding_passes (_load_id=%): %',
             v_batch_id,
             v_missing_keys_count;
     END IF;
@@ -90,7 +90,7 @@ BEGIN
     END IF;
 
     RAISE NOTICE
-        'DQ PASSED: ods.boarding_passes ок (batch_id=%): stg_batch_rows=%',
+        'DQ PASSED: ods.boarding_passes ок (_load_id=%): stg_batch_rows=%',
         v_batch_id,
         v_stg_batch_count;
 END $$;

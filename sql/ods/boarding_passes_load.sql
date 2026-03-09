@@ -10,16 +10,16 @@ WITH src AS (
         s.seat_no,
         NULLIF(s.boarding_no, '')::INTEGER                         AS boarding_no,
         NULLIF(s.boarding_time, '')::TIMESTAMP WITH TIME ZONE      AS boarding_time,
-        s.src_created_at_ts                                         AS event_ts,
-        s.batch_id,
-        s.load_dttm,
+        s.event_ts,
+        s._load_id,
+        s._load_ts,
         ROW_NUMBER() OVER (
             PARTITION BY s.ticket_no, s.flight_id
-            ORDER BY s.src_created_at_ts DESC NULLS LAST, s.load_dttm DESC
+            ORDER BY s.event_ts DESC NULLS LAST, s._load_ts DESC
         ) AS rn
     FROM stg.boarding_passes AS s
     -- Используем HWM (High Water Mark) по техническому времени STG
-    WHERE s.load_dttm > (SELECT COALESCE(MAX(_load_ts), '1900-01-01 00:00:00'::TIMESTAMP) FROM ods.boarding_passes)
+    WHERE s._load_ts > (SELECT COALESCE(MAX(_load_ts), '1900-01-01 00:00:00'::TIMESTAMP) FROM ods.boarding_passes)
 )
 SELECT * FROM src WHERE rn = 1;
 
@@ -29,8 +29,8 @@ SET seat_no       = s.seat_no,
     boarding_no   = s.boarding_no,
     boarding_time = s.boarding_time,
     event_ts      = s.event_ts,
-    _load_id      = s.batch_id,    -- Сохраняем оригинальный lineage из STG
-    _load_ts      = s.load_dttm    -- Фиксируем время STG как водяной знак для ODS
+    _load_id      = s._load_id,    -- Сохраняем оригинальный lineage из STG
+    _load_ts      = s._load_ts    -- Фиксируем время STG как водяной знак для ODS
 FROM tmp_boarding_passes_delta AS s
 WHERE o.ticket_no = s.ticket_no
     AND o.flight_id = s.flight_id
@@ -59,8 +59,8 @@ SELECT
     s.boarding_no,
     s.boarding_time,
     s.event_ts,
-    s.batch_id,
-    s.load_dttm
+    s._load_id,
+    s._load_ts
 FROM tmp_boarding_passes_delta AS s
 WHERE NOT EXISTS (
     SELECT 1

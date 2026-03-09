@@ -119,14 +119,14 @@ def test_bookings_to_gp_stage_dag_structure():
         _assert_direct_edge(dag, load_task_id, dq_task_id)
 
     # Барьеры по данным (не обязательно прямые рёбра).
-    # routes_dq использует airports/airplanes текущего batch_id.
+    # routes_dq использует airports/airplanes текущего _load_id.
     _assert_reachable(dag, "check_airports_dq", "check_routes_dq")
     _assert_reachable(dag, "check_airplanes_dq", "check_routes_dq")
 
-    # seats_dq использует airplanes текущего batch_id.
+    # seats_dq использует airplanes текущего _load_id.
     _assert_reachable(dag, "check_airplanes_dq", "check_seats_dq")
 
-    # flights_dq использует routes текущего batch_id.
+    # flights_dq использует routes текущего _load_id.
     _assert_reachable(dag, "check_routes_dq", "check_flights_dq")
 
     # segments_dq проверяет наличие flights (STG-история); для первой загрузки flights должны быть до segments.

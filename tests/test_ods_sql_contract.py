@@ -28,7 +28,7 @@ def test_snapshot_dq_checks_extra_keys() -> None:
 
 
 def test_ods_batch_resolver_uses_consistent_snapshot_batches() -> None:
-    """Резолвер батча должен искать batch_id, общий для всех snapshot-таблиц STG."""
+    """Резолвер батча должен искать _load_id, общий для всех snapshot-таблиц STG."""
     dag_code = _read("airflow/dags/bookings_to_gp_ods.py")
 
     for table_name in ("stg.airports", "stg.airplanes", "stg.routes", "stg.seats"):

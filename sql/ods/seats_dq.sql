@@ -14,11 +14,11 @@ BEGIN
     SELECT COUNT(*)
     INTO v_stg_batch_count
     FROM stg.seats
-    WHERE batch_id = v_batch_id;
+    WHERE _load_id = v_batch_id;
 
     IF v_stg_batch_count = 0 THEN
         RAISE EXCEPTION
-            'DQ FAILED: batch_id=% для stg.seats пустой. Проверьте загрузку STG и PXF.',
+            'DQ FAILED: _load_id=% для stg.seats пустой. Проверьте загрузку STG и PXF.',
             v_batch_id;
     END IF;
 
@@ -44,7 +44,7 @@ BEGIN
     FROM (
         SELECT DISTINCT airplane_code, seat_no
         FROM stg.seats
-        WHERE batch_id = v_batch_id
+        WHERE _load_id = v_batch_id
     ) AS s
     WHERE NOT EXISTS (
         SELECT 1
@@ -55,7 +55,7 @@ BEGIN
 
     IF v_missing_keys_count <> 0 THEN
         RAISE EXCEPTION
-            'DQ FAILED: в ods.seats отсутствуют ключи из stg.seats (batch_id=%): %',
+            'DQ FAILED: в ods.seats отсутствуют ключи из stg.seats (_load_id=%): %',
             v_batch_id,
             v_missing_keys_count;
     END IF;
@@ -69,7 +69,7 @@ BEGIN
         FROM (
             SELECT DISTINCT airplane_code, seat_no
             FROM stg.seats
-            WHERE batch_id = v_batch_id
+            WHERE _load_id = v_batch_id
         ) AS s
         WHERE s.airplane_code = o.airplane_code
             AND s.seat_no = o.seat_no
@@ -77,7 +77,7 @@ BEGIN
 
     IF v_extra_keys_count <> 0 THEN
         RAISE EXCEPTION
-            'DQ FAILED: в ods.seats найдены лишние ключи вне stg batch_id=%: %',
+            'DQ FAILED: в ods.seats найдены лишние ключи вне stg _load_id=%: %',
             v_batch_id,
             v_extra_keys_count;
     END IF;
@@ -119,7 +119,7 @@ BEGIN
     END IF;
 
     RAISE NOTICE
-        'DQ PASSED: ods.seats ок (batch_id=%): stg_batch_rows=%',
+        'DQ PASSED: ods.seats ок (_load_id=%): stg_batch_rows=%',
         v_batch_id,
         v_stg_batch_count;
 END $$;

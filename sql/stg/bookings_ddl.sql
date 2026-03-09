@@ -20,9 +20,9 @@ CREATE TABLE IF NOT EXISTS stg.bookings (
     book_ref          TEXT,
     book_date         TEXT,
     total_amount      TEXT,
-    src_created_at_ts TIMESTAMP,
-    load_dttm         TIMESTAMP NOT NULL DEFAULT now(),
-    batch_id          TEXT NOT NULL
+    event_ts          TIMESTAMP,
+    _load_ts          TIMESTAMP NOT NULL DEFAULT now(),
+    _load_id          TEXT NOT NULL
 )
 WITH (appendonly=true, orientation=row, compresstype=zstd, compresslevel=1)
 -- Ключ распределения: book_ref

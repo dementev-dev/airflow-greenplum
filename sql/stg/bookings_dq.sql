@@ -1,7 +1,7 @@
 -- Проверка количества строк между источником stg.bookings_ext и стейджем stg.bookings.
 -- Считаем строки за то же окно инкремента, что и при загрузке:
--- все записи во внешней таблице с book_date больше максимального src_created_at_ts
--- из предыдущих батчей должны совпасть по количеству со строками текущего batch_id.
+-- все записи во внешней таблице с book_date больше максимального event_ts
+-- из предыдущих батчей должны совпасть по количеству со строками текущего _load_id.
 
 DO $$
 DECLARE
@@ -12,12 +12,12 @@ DECLARE
     v_dup_count   bigint;
     v_null_amount_count bigint;
 BEGIN
-    -- Опорная метка: максимум src_created_at_ts среди предыдущих батчей
-    SELECT max(src_created_at_ts)
+    -- Опорная метка: максимум event_ts среди предыдущих батчей
+    SELECT max(event_ts)
     INTO v_prev_ts
     FROM stg.bookings
-    WHERE batch_id <> v_batch_id
-        OR batch_id IS NULL;
+    WHERE _load_id <> v_batch_id
+        OR _load_id IS NULL;
 
     -- Источник: считаем строки во внешней таблице, которые вошли в новое окно
     SELECT COUNT(*)
@@ -27,21 +27,21 @@ BEGIN
 
     IF v_src_count = 0 THEN
         -- Пустое окно инкремента допустимо: новых данных может не быть.
-        -- В этом случае ожидаем, что в текущем batch_id тоже 0 строк.
+        -- В этом случае ожидаем, что в текущем _load_id тоже 0 строк.
         SELECT COUNT(*)
         INTO v_stg_count
         FROM stg.bookings
-        WHERE batch_id = v_batch_id;
+        WHERE _load_id = v_batch_id;
 
         IF v_stg_count <> 0 THEN
             RAISE EXCEPTION
-                'DQ FAILED: источник bookings_ext за окно инкремента пустой, но в stg.bookings есть строки текущего batch_id (batch_id=%): %',
+                'DQ FAILED: источник bookings_ext за окно инкремента пустой, но в stg.bookings есть строки текущего _load_id (_load_id=%): %',
                 v_batch_id,
                 v_stg_count;
         END IF;
 
         RAISE NOTICE
-            'В источнике bookings_ext нет строк для окна инкремента (book_date > %). Пропускаем DQ проверки (batch_id=%).',
+            'В источнике bookings_ext нет строк для окна инкремента (book_date > %). Пропускаем DQ проверки (_load_id=%).',
             COALESCE(v_prev_ts, TIMESTAMP '1900-01-01 00:00:00'),
             v_batch_id;
         RETURN;
@@ -51,7 +51,7 @@ BEGIN
     SELECT COUNT(*)
     INTO v_stg_count
     FROM stg.bookings
-    WHERE batch_id = v_batch_id;
+    WHERE _load_id = v_batch_id;
 
     IF v_src_count <> v_stg_count THEN
         RAISE EXCEPTION
@@ -64,11 +64,11 @@ BEGIN
     SELECT COUNT(*) - COUNT(DISTINCT book_ref)
     INTO v_dup_count
     FROM stg.bookings AS b
-    WHERE b.batch_id = v_batch_id;
+    WHERE b._load_id = v_batch_id;
 
     IF v_dup_count <> 0 THEN
         RAISE EXCEPTION
-            'DQ FAILED: найдены дубликаты book_ref (batch_id=%): %',
+            'DQ FAILED: найдены дубликаты book_ref (_load_id=%): %',
             v_batch_id,
             v_dup_count;
     END IF;
@@ -77,12 +77,12 @@ BEGIN
     SELECT COUNT(*)
     INTO v_null_amount_count
     FROM stg.bookings AS b
-    WHERE b.batch_id = v_batch_id
+    WHERE b._load_id = v_batch_id
         AND (b.total_amount IS NULL OR b.total_amount = '');
 
     IF v_null_amount_count <> 0 THEN
         RAISE EXCEPTION
-            'DQ FAILED: найдены bookings с NULL или пустым total_amount (batch_id=%): %',
+            'DQ FAILED: найдены bookings с NULL или пустым total_amount (_load_id=%): %',
             v_batch_id,
             v_null_amount_count;
     END IF;

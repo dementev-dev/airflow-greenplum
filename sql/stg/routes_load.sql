@@ -1,5 +1,5 @@
 -- Загрузка всех строк из stg.routes_ext в stg.routes (full load).
--- Используем batch_id для отслеживания загрузки.
+-- Используем _load_id для отслеживания загрузки.
 
 INSERT INTO stg.routes (
     route_no,
@@ -10,9 +10,9 @@ INSERT INTO stg.routes (
     days_of_week,
     scheduled_time,
     duration,
-    src_created_at_ts,
-    load_dttm,
-    batch_id
+    event_ts,
+    _load_ts,
+    _load_id
 )
 SELECT
     ext.route_no::text,
@@ -28,11 +28,11 @@ SELECT
     '{{ run_id }}'::text
 FROM stg.routes_ext AS ext
 WHERE NOT EXISTS (
-    -- Идемпотентность: при повторном запуске/ретрае не вставляем повторно те же строки в рамках текущего batch_id.
+    -- Идемпотентность: при повторном запуске/ретрае не вставляем повторно те же строки в рамках текущего _load_id.
     -- Считаем ключом строки (route_no, validity).
     SELECT 1
     FROM stg.routes AS r
-    WHERE r.batch_id = '{{ run_id }}'::text
+    WHERE r._load_id = '{{ run_id }}'::text
         AND r.route_no = ext.route_no::text
         AND r.validity = ext.validity::text
 );

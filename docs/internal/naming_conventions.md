@@ -40,21 +40,17 @@
 
 - `event_ts` (effective time) и `_load_ts` (load time) — разные сущности, не смешиваем.
 - Если `event_ts` отсутствует в источнике, используем `_load_ts` как fallback и явно документируем это в SQL/доке.
+- Для snapshot-справочников (airports, airplanes, routes, seats) в STG нет бизнес-события с точным временем: `event_ts` заполняется через `now()` при загрузке. Это намеренно и задокументировано в каждом load-скрипте.
 
 ## 5. Применение по слоям
 
 ### STG
 
-- Для уже реализованного `bookings` STG сохраняем текущие legacy-имена ради обратной совместимости:
-  - `src_created_at_ts`
-  - `load_dttm`
-  - `batch_id`
-- Для новых STG-объектов (новые домены/задачи) используем канон `_load_id`, `_load_ts` (и `event_ts`, если нужно).
+- Используем канон `_load_id`, `_load_ts`, `event_ts` для всех таблиц.
 
 ### ODS
 
-- В новых реализациях используем канон:
-  - `_load_id`, `_load_ts`, `event_ts`.
+- Используем канон `_load_id`, `_load_ts`, `event_ts`.
 - Базовый эталон ODS в этом стенде: SCD Type 1 (current state + UPSERT).
 
 ### DDS
@@ -63,17 +59,7 @@
   - `valid_from`, `valid_to`, `hashdiff`, `created_at`, `updated_at`.
 - Интервалы считаем как `[valid_from, valid_to)`, current-версия: `valid_to IS NULL`.
 
-## 6. Переходный маппинг legacy -> канон
-
-| Legacy (текущий bookings STG) | Канон |
-|---|---|
-| `batch_id` | `_load_id` |
-| `load_dttm` | `_load_ts` |
-| `src_created_at_ts` | `event_ts` |
-
-Примечание: это логический маппинг для новых слоёв. Массовое переименование существующего STG не требуется.
-
-## 7. Что проверяем в ревью
+## 6. Что проверяем в ревью
 
 - Нет новых техполей-синнонимов вроде `loaded_at`, `ingested_at`, `batch_key`, если уже есть канон.
 - Нет смешивания `event_ts` и `_load_ts` в одном смысле.

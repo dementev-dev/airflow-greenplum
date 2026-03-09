@@ -22,7 +22,7 @@ BEGIN
     SELECT COUNT(*)
     INTO v_stg_count
     FROM stg.airports
-    WHERE batch_id = v_batch_id;
+    WHERE _load_id = v_batch_id;
 
     IF v_src_count <> v_stg_count THEN
         RAISE EXCEPTION
@@ -35,11 +35,11 @@ BEGIN
     SELECT COUNT(*) - COUNT(DISTINCT airport_code)
     INTO v_dup_count
     FROM stg.airports AS a
-    WHERE a.batch_id = v_batch_id;
+    WHERE a._load_id = v_batch_id;
 
     IF v_dup_count <> 0 THEN
         RAISE EXCEPTION
-            'DQ FAILED: найдены дубликаты airport_code (batch_id=%): %',
+            'DQ FAILED: найдены дубликаты airport_code (_load_id=%): %',
             v_batch_id,
             v_dup_count;
     END IF;
@@ -48,7 +48,7 @@ BEGIN
     SELECT COUNT(*)
     INTO v_null_count
     FROM stg.airports AS a
-    WHERE a.batch_id = v_batch_id
+    WHERE a._load_id = v_batch_id
         AND (a.airport_code IS NULL OR a.airport_code = ''
             OR a.airport_name IS NULL OR a.airport_name = ''
             OR a.city IS NULL OR a.city = ''
@@ -56,13 +56,13 @@ BEGIN
 
     IF v_null_count <> 0 THEN
         RAISE EXCEPTION
-            'DQ FAILED: найдены строки с NULL в обязательных полях (airport_code, airport_name, city, timezone) (batch_id=%): %',
+            'DQ FAILED: найдены строки с NULL в обязательных полях (airport_code, airport_name, city, timezone) (_load_id=%): %',
             v_batch_id,
             v_null_count;
     END IF;
 
     RAISE NOTICE
-        'DQ PASSED: airports ок (batch_id=%): source=% stg=%',
+        'DQ PASSED: airports ок (_load_id=%): source=% stg=%',
         v_batch_id,
         v_src_count,
         v_stg_count;

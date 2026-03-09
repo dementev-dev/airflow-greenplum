@@ -39,7 +39,7 @@
   - важно: DAG `bookings_stg_ddl` **не** создаёт базу `demo` в `bookings-db`; если вы делали `docker compose down -v` / `make clean`, `make bookings-init` обязателен (быстрое восстановление из seed-дампа);
   - включить DAG `bookings_to_gp_stage` и запустить `Trigger DAG`;
   - убедиться, что все задачи завершились со статусом Success (включая загрузки справочников/транзакций и DQ);
-  - при желании проверить данные: в `bookings-db` появился новый день, а в Greenplum в `stg.bookings` — строки с актуальным `batch_id` (см. пример запросов в разделе 5).
+  - при желании проверить данные: в `bookings-db` появился новый день, а в Greenplum в `stg.bookings` — строки с актуальным `_load_id` (см. пример запросов в разделе 5).
 
 - (опционально, для менторов/разработчиков) Smoke-тест DAG через Airflow CLI без UI:
    - `docker compose -f docker-compose.yml exec airflow-webserver airflow dags test bookings_to_gp_stage 2024-01-01` — прогоняет `bookings_to_gp_stage` целиком в «off-line» режиме;

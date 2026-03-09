@@ -3,10 +3,10 @@
 
 -- CTE для определения максимальной даты загрузки предыдущего батча
 WITH max_batch_ts AS (
-    SELECT COALESCE(MAX(src_created_at_ts), TIMESTAMP '1900-01-01 00:00:00') AS max_ts
+    SELECT COALESCE(MAX(event_ts), TIMESTAMP '1900-01-01 00:00:00') AS max_ts
     FROM stg.tickets
-    WHERE batch_id <> '{{ run_id }}'::text
-        OR batch_id IS NULL
+    WHERE _load_id <> '{{ run_id }}'::text
+        OR _load_id IS NULL
 )
 INSERT INTO stg.tickets (
     ticket_no,
@@ -14,9 +14,9 @@ INSERT INTO stg.tickets (
     passenger_id,
     passenger_name,
     outbound,
-    src_created_at_ts,
-    load_dttm,
-    batch_id
+    event_ts,
+    _load_ts,
+    _load_id
 )
 SELECT
     ext.ticket_no,

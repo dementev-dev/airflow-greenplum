@@ -7,7 +7,7 @@
 
 - Определяет `stg_batch_id`:
   - берёт из `dag_run.conf["stg_batch_id"]`, если передан;
-  - иначе берёт последний **согласованный** `batch_id`, который есть во всех snapshot-таблицах STG
+  - иначе берёт последний **согласованный** `_load_id`, который есть во всех snapshot-таблицах STG
     (`airports`, `airplanes`, `routes`, `seats`).
 - Загружает 9 таблиц ODS (`airports`, `airplanes`, `routes`, `seats`, `bookings`, `tickets`,
   `flights`, `segments`, `boarding_passes`).

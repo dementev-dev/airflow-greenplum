@@ -84,7 +84,7 @@ make gp-psql
 -- внутри psql:
 SELECT COUNT(*) FROM stg.bookings;
 SELECT COUNT(*) FROM stg.tickets;
-SELECT * FROM stg.bookings ORDER BY src_created_at_ts DESC LIMIT 10;
+SELECT * FROM stg.bookings ORDER BY event_ts DESC LIMIT 10;
 SELECT COUNT(*) FROM ods.bookings;
 SELECT COUNT(*) FROM ods.tickets;
 SELECT COUNT(*) FROM dds.dim_routes;

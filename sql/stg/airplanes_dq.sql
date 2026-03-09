@@ -22,7 +22,7 @@ BEGIN
     SELECT COUNT(*)
     INTO v_stg_count
     FROM stg.airplanes
-    WHERE batch_id = v_batch_id;
+    WHERE _load_id = v_batch_id;
 
     IF v_src_count <> v_stg_count THEN
         RAISE EXCEPTION
@@ -35,11 +35,11 @@ BEGIN
     SELECT COUNT(*) - COUNT(DISTINCT airplane_code)
     INTO v_dup_count
     FROM stg.airplanes AS a
-    WHERE a.batch_id = v_batch_id;
+    WHERE a._load_id = v_batch_id;
 
     IF v_dup_count <> 0 THEN
         RAISE EXCEPTION
-            'DQ FAILED: найдены дубликаты airplane_code (batch_id=%): %',
+            'DQ FAILED: найдены дубликаты airplane_code (_load_id=%): %',
             v_batch_id,
             v_dup_count;
     END IF;
@@ -48,19 +48,19 @@ BEGIN
     SELECT COUNT(*)
     INTO v_null_count
     FROM stg.airplanes AS a
-    WHERE a.batch_id = v_batch_id
+    WHERE a._load_id = v_batch_id
         AND (a.airplane_code IS NULL OR a.airplane_code = ''
             OR a.model IS NULL OR a.model = '');
 
     IF v_null_count <> 0 THEN
         RAISE EXCEPTION
-            'DQ FAILED: найдены строки с NULL в обязательных полях (airplane_code, model) (batch_id=%): %',
+            'DQ FAILED: найдены строки с NULL в обязательных полях (airplane_code, model) (_load_id=%): %',
             v_batch_id,
             v_null_count;
     END IF;
 
     RAISE NOTICE
-        'DQ PASSED: airplanes ок (batch_id=%): source=% stg=%',
+        'DQ PASSED: airplanes ок (_load_id=%): source=% stg=%',
         v_batch_id,
         v_src_count,
         v_stg_count;

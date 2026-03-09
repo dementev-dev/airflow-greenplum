@@ -13,7 +13,7 @@ BEGIN
     SELECT COUNT(*)
     INTO v_stg_batch_count
     FROM stg.tickets
-    WHERE batch_id = v_batch_id;
+    WHERE _load_id = v_batch_id;
 
     -- В ODS не должно быть дублей по бизнес-ключу.
     SELECT COUNT(*) - COUNT(DISTINCT ticket_no)
@@ -32,7 +32,7 @@ BEGIN
     FROM (
         SELECT DISTINCT ticket_no
         FROM stg.tickets
-        WHERE batch_id = v_batch_id
+        WHERE _load_id = v_batch_id
     ) AS s
     WHERE NOT EXISTS (
         SELECT 1
@@ -42,7 +42,7 @@ BEGIN
 
     IF v_missing_keys_count <> 0 THEN
         RAISE EXCEPTION
-            'DQ FAILED: в ods.tickets отсутствуют ключи из stg.tickets (batch_id=%): %',
+            'DQ FAILED: в ods.tickets отсутствуют ключи из stg.tickets (_load_id=%): %',
             v_batch_id,
             v_missing_keys_count;
     END IF;
@@ -86,7 +86,7 @@ BEGIN
     END IF;
 
     RAISE NOTICE
-        'DQ PASSED: ods.tickets ок (batch_id=%): stg_batch_rows=%',
+        'DQ PASSED: ods.tickets ок (_load_id=%): stg_batch_rows=%',
         v_batch_id,
         v_stg_batch_count;
 END $$;

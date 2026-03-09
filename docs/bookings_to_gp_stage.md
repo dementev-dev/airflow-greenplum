@@ -63,15 +63,15 @@ make bookings-init
 - выполняет `sql/stg/bookings_load.sql` в Greenplum;
 - берёт строки из `stg.bookings_ext`, которые попадают в новое окно инкремента;
 - вставляет их в `stg.bookings`, добавляя тех.колонки:
-  - `src_created_at_ts` (опорная метка времени для инкремента),
-  - `load_dttm`,
-  - `batch_id={{ run_id }}`.
+  - `event_ts` (опорная метка времени для инкремента),
+  - `_load_ts`,
+  - `_load_id={{ run_id }}`.
 
 3) `check_row_counts`
 
 - выполняет `sql/stg/bookings_dq.sql` в Greenplum;
 - считает количество строк в источнике за то же окно инкремента и сравнивает с количеством строк,
-  вставленных в `stg.bookings` для текущего `batch_id`;
+  вставленных в `stg.bookings` для текущего `_load_id`;
 - при расхождении делает `RAISE EXCEPTION` с понятным текстом.
 
 4) `load_tickets_to_stg`
@@ -79,7 +79,7 @@ make bookings-init
 - выполняет `sql/stg/tickets_load.sql` в Greenplum;
 - так как в `bookings.tickets` нет явной временной колонки, окно инкремента берётся по `book_date`
   из связанной внешней таблицы `stg.bookings_ext` (JOIN по `book_ref`);
-- вставляет строки в `stg.tickets`, добавляя `src_created_at_ts`, `load_dttm` и `batch_id={{ run_id }}`.
+- вставляет строки в `stg.tickets`, добавляя `event_ts`, `_load_ts` и `_load_id={{ run_id }}`.
 
 5) `check_tickets_dq`
 
@@ -135,11 +135,11 @@ make gp-psql
 SELECT COUNT(*) FROM stg.bookings;
 
 SELECT
-    src_created_at_ts,
-    load_dttm,
-    batch_id
+    event_ts,
+    _load_ts,
+    _load_id
 FROM stg.bookings
-ORDER BY src_created_at_ts DESC
+ORDER BY event_ts DESC
 LIMIT 10;
 ```
 

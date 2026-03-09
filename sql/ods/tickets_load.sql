@@ -10,16 +10,16 @@ WITH src AS (
         s.passenger_id,
         s.passenger_name,
         NULLIF(s.outbound, '')::BOOLEAN AS is_outbound,
-        s.src_created_at_ts             AS event_ts,
-        s.batch_id,
-        s.load_dttm,
+        s.event_ts,
+        s._load_id,
+        s._load_ts,
         ROW_NUMBER() OVER (
             PARTITION BY s.ticket_no
-            ORDER BY s.src_created_at_ts DESC NULLS LAST, s.load_dttm DESC
+            ORDER BY s.event_ts DESC NULLS LAST, s._load_ts DESC
         ) AS rn
     FROM stg.tickets AS s
     -- Используем HWM (High Water Mark) по техническому времени STG
-    WHERE s.load_dttm > (SELECT COALESCE(MAX(_load_ts), '1900-01-01 00:00:00'::TIMESTAMP) FROM ods.tickets)
+    WHERE s._load_ts > (SELECT COALESCE(MAX(_load_ts), '1900-01-01 00:00:00'::TIMESTAMP) FROM ods.tickets)
 )
 SELECT * FROM src WHERE rn = 1;
 
@@ -30,8 +30,8 @@ SET book_ref       = s.book_ref,
     passenger_name = s.passenger_name,
     is_outbound    = s.is_outbound,
     event_ts       = s.event_ts,
-    _load_id       = s.batch_id,    -- Сохраняем оригинальный lineage из STG
-    _load_ts       = s.load_dttm    -- Фиксируем время STG как водяной знак для ODS
+    _load_id       = s._load_id,    -- Сохраняем оригинальный lineage из STG
+    _load_ts       = s._load_ts    -- Фиксируем время STG как водяной знак для ODS
 FROM tmp_tickets_delta AS s
 WHERE o.ticket_no = s.ticket_no
     AND (
@@ -60,8 +60,8 @@ SELECT
     s.passenger_name,
     s.is_outbound,
     s.event_ts,
-    s.batch_id,
-    s.load_dttm
+    s._load_id,
+    s._load_ts
 FROM tmp_tickets_delta AS s
 WHERE NOT EXISTS (
     SELECT 1

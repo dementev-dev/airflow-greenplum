@@ -24,9 +24,9 @@ CREATE TABLE IF NOT EXISTS stg.boarding_passes (
     seat_no       TEXT,
     boarding_no   TEXT,
     boarding_time TEXT,
-    src_created_at_ts TIMESTAMP,
-    load_dttm     TIMESTAMP NOT NULL DEFAULT now(),
-    batch_id      TEXT
+    event_ts      TIMESTAMP,
+    _load_ts      TIMESTAMP NOT NULL DEFAULT now(),
+    _load_id      TEXT        NOT NULL
 )
 WITH (appendonly=true, orientation=row, compresstype=zstd, compresslevel=1)
 -- Ключ распределения: ticket_no

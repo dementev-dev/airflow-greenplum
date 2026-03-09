@@ -28,9 +28,9 @@ CREATE TABLE IF NOT EXISTS stg.flights (
     scheduled_arrival    TEXT,
     actual_departure     TEXT,
     actual_arrival       TEXT,
-    src_created_at_ts    TIMESTAMP,
-    load_dttm            TIMESTAMP NOT NULL DEFAULT now(),
-    batch_id             TEXT
+    event_ts             TIMESTAMP,
+    _load_ts             TIMESTAMP NOT NULL DEFAULT now(),
+    _load_id             TEXT        NOT NULL
 )
 WITH (appendonly=true, orientation=row, compresstype=zstd, compresslevel=1)
 -- Ключ распределения: flight_id

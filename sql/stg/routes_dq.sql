@@ -24,7 +24,7 @@ BEGIN
     SELECT COUNT(*)
     INTO v_stg_count
     FROM stg.routes
-    WHERE batch_id = v_batch_id;
+    WHERE _load_id = v_batch_id;
 
     IF v_src_count <> v_stg_count THEN
         RAISE EXCEPTION
@@ -38,11 +38,11 @@ BEGIN
     SELECT COUNT(*) - COUNT(DISTINCT md5(ROW(route_no, validity)::text))
     INTO v_dup_count
     FROM stg.routes AS r
-    WHERE r.batch_id = v_batch_id;
+    WHERE r._load_id = v_batch_id;
 
     IF v_dup_count <> 0 THEN
         RAISE EXCEPTION
-            'DQ FAILED: найдены дубликаты (route_no, validity) (batch_id=%): %',
+            'DQ FAILED: найдены дубликаты (route_no, validity) (_load_id=%): %',
             v_batch_id,
             v_dup_count;
     END IF;
@@ -51,7 +51,7 @@ BEGIN
     SELECT COUNT(*)
     INTO v_null_count
     FROM stg.routes AS r
-    WHERE r.batch_id = v_batch_id
+    WHERE r._load_id = v_batch_id
         AND (r.route_no IS NULL OR r.route_no = ''
             OR r.departure_airport IS NULL OR r.departure_airport = ''
             OR r.arrival_airport IS NULL OR r.arrival_airport = ''
@@ -59,7 +59,7 @@ BEGIN
 
     IF v_null_count <> 0 THEN
         RAISE EXCEPTION
-            'DQ FAILED: найдены строки с NULL в обязательных полях (route_no, departure_airport, arrival_airport, airplane_code) (batch_id=%): %',
+            'DQ FAILED: найдены строки с NULL в обязательных полях (route_no, departure_airport, arrival_airport, airplane_code) (_load_id=%): %',
             v_batch_id,
             v_null_count;
     END IF;
@@ -70,13 +70,13 @@ BEGIN
     FROM stg.routes AS r
     LEFT JOIN stg.airports AS da
         ON r.departure_airport = da.airport_code
-        AND da.batch_id = v_batch_id
-    WHERE r.batch_id = v_batch_id
+        AND da._load_id = v_batch_id
+    WHERE r._load_id = v_batch_id
         AND da.airport_code IS NULL;
 
     IF v_orphan_airports_count <> 0 THEN
         RAISE EXCEPTION
-            'DQ FAILED: найдены routes с несуществующим departure_airport в airports (batch_id=%): %',
+            'DQ FAILED: найдены routes с несуществующим departure_airport в airports (_load_id=%): %',
             v_batch_id,
             v_orphan_airports_count;
     END IF;
@@ -87,13 +87,13 @@ BEGIN
     FROM stg.routes AS r
     LEFT JOIN stg.airports AS aa
         ON r.arrival_airport = aa.airport_code
-        AND aa.batch_id = v_batch_id
-    WHERE r.batch_id = v_batch_id
+        AND aa._load_id = v_batch_id
+    WHERE r._load_id = v_batch_id
         AND aa.airport_code IS NULL;
 
     IF v_orphan_airports_count <> 0 THEN
         RAISE EXCEPTION
-            'DQ FAILED: найдены routes с несуществующим arrival_airport в airports (batch_id=%): %',
+            'DQ FAILED: найдены routes с несуществующим arrival_airport в airports (_load_id=%): %',
             v_batch_id,
             v_orphan_airports_count;
     END IF;
@@ -104,19 +104,19 @@ BEGIN
     FROM stg.routes AS r
     LEFT JOIN stg.airplanes AS a
         ON r.airplane_code = a.airplane_code
-        AND a.batch_id = v_batch_id
-    WHERE r.batch_id = v_batch_id
+        AND a._load_id = v_batch_id
+    WHERE r._load_id = v_batch_id
         AND a.airplane_code IS NULL;
 
     IF v_orphan_airplanes_count <> 0 THEN
         RAISE EXCEPTION
-            'DQ FAILED: найдены routes с несуществующим airplane_code в airplanes (batch_id=%): %',
+            'DQ FAILED: найдены routes с несуществующим airplane_code в airplanes (_load_id=%): %',
             v_batch_id,
             v_orphan_airplanes_count;
     END IF;
 
     RAISE NOTICE
-        'DQ PASSED: routes ок (batch_id=%): source=% stg=%',
+        'DQ PASSED: routes ок (_load_id=%): source=% stg=%',
         v_batch_id,
         v_src_count,
         v_stg_count;

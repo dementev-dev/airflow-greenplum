@@ -1,5 +1,5 @@
 -- Загрузка всех строк из stg.airports_ext в stg.airports (full load).
--- Используем batch_id для отслеживания загрузки.
+-- Используем _load_id для отслеживания загрузки.
 
 INSERT INTO stg.airports (
     airport_code,
@@ -8,9 +8,9 @@ INSERT INTO stg.airports (
     country,
     coordinates,
     timezone,
-    src_created_at_ts,
-    load_dttm,
-    batch_id
+    event_ts,
+    _load_ts,
+    _load_id
 )
 SELECT
     ext.airport_code::text,
@@ -24,10 +24,10 @@ SELECT
     '{{ run_id }}'::text
 FROM stg.airports_ext AS ext
 WHERE NOT EXISTS (
-    -- Идемпотентность: при повторном запуске/ретрае не вставляем повторно те же строки в рамках текущего batch_id.
+    -- Идемпотентность: при повторном запуске/ретрае не вставляем повторно те же строки в рамках текущего _load_id.
     SELECT 1
     FROM stg.airports AS a
-    WHERE a.batch_id = '{{ run_id }}'::text
+    WHERE a._load_id = '{{ run_id }}'::text
         AND a.airport_code = ext.airport_code::text
 );
 

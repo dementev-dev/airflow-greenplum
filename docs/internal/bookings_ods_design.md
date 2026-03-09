@@ -5,7 +5,7 @@
 STG-слой уже реализован как учебный эталон:
 - данные из `bookings-db` читаются через PXF;
 - в STG бизнес-колонки хранятся как `TEXT`;
-- загрузка и DQ работают батчами (`batch_id = {{ run_id }}`).
+- загрузка и DQ работают батчами (`_load_id = {{ run_id }}`).
 
 Этот документ фиксирует **простую и каноничную** реализацию ODS для менти.
 
@@ -36,7 +36,7 @@ ODS в учебном проекте — это:
 
 ### 1.3. Где хранится история изменений
 
-- История «как приходили данные» уже сохраняется в STG (append + `batch_id`).
+- История «как приходили данные» уже сохраняется в STG (append + `_load_id`).
 - Историзацию измерений (SCD2) показываем позже в DDS (как в учебной статье `dwh-modeling`).
 
 Итог: **ODS = текущий слой (current state), простой и понятный**.
@@ -55,9 +55,9 @@ ODS в учебном проекте — это:
 
 ### 2.1. Маппинг из текущего STG
 
-- `stg.batch_id` -> `ods._load_id`
-- `stg.load_dttm` не переносим 1:1; в ODS пишем собственный `ods._load_ts = now()`
-- `stg.src_created_at_ts` -> `ods.event_ts` (для транзакционных таблиц)
+- `stg._load_id` -> `ods._load_id`
+- `stg._load_ts` не переносим 1:1; в ODS пишем собственный `ods._load_ts = now()`
+- `stg.event_ts` -> `ods.event_ts` (для транзакционных таблиц)
 
 ### 2.2. Почему так
 
@@ -239,8 +239,8 @@ DISTRIBUTED BY (ticket_no)
 | `flights` | `flight_id` | `flight_id` | `INTEGER` | Только cast TEXT → INT |
 | `segments` | `flight_id` | `flight_id` | `INTEGER` | Только cast TEXT → INT |
 | `boarding_passes` | `flight_id` | `flight_id` | `INTEGER` | Только cast TEXT → INT |
-| все транзакционные | `src_created_at_ts` | `event_ts` | `TIMESTAMP` | Маппинг legacy → канон |
-| все | `batch_id` | `_load_id` | `TEXT` | Маппинг legacy → канон |
+| все транзакционные | `event_ts` | `event_ts` | `TIMESTAMP` | Прямой перенос (канон) |
+| все | `_load_id` | `_load_id` | `TEXT` | Прямой перенос (канон) |
 
 Пример каста с переименованием в SQL (в CTE):
 ```sql
@@ -282,32 +282,32 @@ def _resolve_stg_batch_id(**context):
     stg_batch_id = conf.get("stg_batch_id")
 
     if not stg_batch_id:
-        # Берём batch_id, который присутствует во всех snapshot-таблицах STG:
+        # Берём _load_id, который присутствует во всех snapshot-таблицах STG:
         # airports, airplanes, routes, seats. Это защищает от частично успешных запусков.
         hook = PostgresHook(postgres_conn_id=GREENPLUM_CONN_ID)
         result = hook.get_first(
             '''
             WITH candidate_batches AS (
-                SELECT batch_id FROM stg.airports  WHERE batch_id IS NOT NULL GROUP BY batch_id
+                SELECT _load_id FROM stg.airports  WHERE _load_id IS NOT NULL GROUP BY _load_id
                 INTERSECT
-                SELECT batch_id FROM stg.airplanes WHERE batch_id IS NOT NULL GROUP BY batch_id
+                SELECT _load_id FROM stg.airplanes WHERE _load_id IS NOT NULL GROUP BY _load_id
                 INTERSECT
-                SELECT batch_id FROM stg.routes    WHERE batch_id IS NOT NULL GROUP BY batch_id
+                SELECT _load_id FROM stg.routes    WHERE _load_id IS NOT NULL GROUP BY _load_id
                 INTERSECT
-                SELECT batch_id FROM stg.seats     WHERE batch_id IS NOT NULL GROUP BY batch_id
+                SELECT _load_id FROM stg.seats     WHERE _load_id IS NOT NULL GROUP BY _load_id
             ),
             batch_ready AS (
                 SELECT
-                    c.batch_id,
+                    c._load_id,
                     GREATEST(
-                        (SELECT MAX(load_dttm) FROM stg.airports  a WHERE a.batch_id = c.batch_id),
-                        (SELECT MAX(load_dttm) FROM stg.airplanes a WHERE a.batch_id = c.batch_id),
-                        (SELECT MAX(load_dttm) FROM stg.routes    r WHERE r.batch_id = c.batch_id),
-                        (SELECT MAX(load_dttm) FROM stg.seats     s WHERE s.batch_id = c.batch_id)
+                        (SELECT MAX(_load_ts) FROM stg.airports  a WHERE a._load_id = c._load_id),
+                        (SELECT MAX(_load_ts) FROM stg.airplanes a WHERE a._load_id = c._load_id),
+                        (SELECT MAX(_load_ts) FROM stg.routes    r WHERE r._load_id = c._load_id),
+                        (SELECT MAX(_load_ts) FROM stg.seats     s WHERE s._load_id = c._load_id)
                     ) AS ready_dttm
                 FROM candidate_batches c
             )
-            SELECT batch_id
+            SELECT _load_id
             FROM batch_ready
             ORDER BY ready_dttm DESC
             LIMIT 1
@@ -334,7 +334,7 @@ resolve_batch = PythonOperator(
 Во всех `sql/ods/*_load.sql` и `sql/ods/*_dq.sql` значение `stg_batch_id` подставляется через Jinja-шаблон:
 
 ```sql
-WHERE batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
+WHERE _load_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
 ```
 
 Для читаемости в DAG можно вынести шаблон в константу:
@@ -370,7 +370,7 @@ WITH src AS (
         coordinates,
         timezone
     FROM stg.airports
-    WHERE batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
+    WHERE _load_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
 )
 UPDATE ods.airports AS o
 SET airport_name = s.airport_name,
@@ -403,7 +403,7 @@ WITH src AS (
         coordinates,
         timezone
     FROM stg.airports
-    WHERE batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
+    WHERE _load_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
 )
 INSERT INTO ods.airports (
     airport_code, airport_name, city, country, coordinates, timezone,
@@ -423,7 +423,7 @@ WHERE NOT EXISTS (
 WITH src_keys AS (
     SELECT DISTINCT airport_code
     FROM stg.airports
-    WHERE batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
+    WHERE _load_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
 )
 DELETE FROM ods.airports o
 WHERE NOT EXISTS (
@@ -447,13 +447,13 @@ WITH src AS (
         book_ref,
         book_date::TIMESTAMP WITH TIME ZONE AS book_date,
         total_amount::NUMERIC(10,2)         AS total_amount,
-        src_created_at_ts                    AS event_ts,
+        event_ts,
         ROW_NUMBER() OVER (
             PARTITION BY book_ref
-            ORDER BY src_created_at_ts DESC NULLS LAST, load_dttm DESC
+            ORDER BY event_ts DESC NULLS LAST, _load_ts DESC
         ) AS rn
     FROM stg.bookings
-    WHERE batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
+    WHERE _load_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
 )
 UPDATE ods.bookings AS o
 SET book_date      = s.book_date,
@@ -475,13 +475,13 @@ WITH src AS (
         book_ref,
         book_date::TIMESTAMP WITH TIME ZONE AS book_date,
         total_amount::NUMERIC(10,2)         AS total_amount,
-        src_created_at_ts                    AS event_ts,
+        event_ts,
         ROW_NUMBER() OVER (
             PARTITION BY book_ref
-            ORDER BY src_created_at_ts DESC NULLS LAST, load_dttm DESC
+            ORDER BY event_ts DESC NULLS LAST, _load_ts DESC
         ) AS rn
     FROM stg.bookings
-    WHERE batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
+    WHERE _load_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
 )
 INSERT INTO ods.bookings (
     book_ref, book_date, total_amount, event_ts,
@@ -547,7 +547,7 @@ SELECT COUNT(*)
 FROM (
     SELECT DISTINCT book_ref
     FROM stg.bookings
-    WHERE batch_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
+    WHERE _load_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
 ) s
 WHERE NOT EXISTS (
     SELECT 1
@@ -694,7 +694,7 @@ SELECT COUNT(*)
 FROM (
     SELECT DISTINCT book_ref
     FROM stg.bookings
-    WHERE batch_id = '<stg_batch_id>'
+    WHERE _load_id = '<stg_batch_id>'
 ) s
 WHERE NOT EXISTS (
     SELECT 1

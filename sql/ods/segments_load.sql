@@ -9,16 +9,16 @@ WITH src AS (
         NULLIF(s.flight_id, '')::INTEGER   AS flight_id,
         s.fare_conditions,
         NULLIF(s.price, '')::NUMERIC(10,2) AS amount,
-        s.src_created_at_ts                 AS event_ts,
-        s.batch_id,
-        s.load_dttm,
+        s.event_ts,
+        s._load_id,
+        s._load_ts,
         ROW_NUMBER() OVER (
             PARTITION BY s.ticket_no, s.flight_id
-            ORDER BY s.src_created_at_ts DESC NULLS LAST, s.load_dttm DESC
+            ORDER BY s.event_ts DESC NULLS LAST, s._load_ts DESC
         ) AS rn
     FROM stg.segments AS s
     -- Используем HWM (High Water Mark) по техническому времени STG
-    WHERE s.load_dttm > (SELECT COALESCE(MAX(_load_ts), '1900-01-01 00:00:00'::TIMESTAMP) FROM ods.segments)
+    WHERE s._load_ts > (SELECT COALESCE(MAX(_load_ts), '1900-01-01 00:00:00'::TIMESTAMP) FROM ods.segments)
 )
 SELECT * FROM src WHERE rn = 1;
 
@@ -27,8 +27,8 @@ UPDATE ods.segments AS o
 SET fare_conditions = s.fare_conditions,
     amount          = s.amount,
     event_ts        = s.event_ts,
-    _load_id        = s.batch_id,    -- Сохраняем оригинальный lineage из STG
-    _load_ts        = s.load_dttm    -- Фиксируем время STG как водяной знак для ODS
+    _load_id        = s._load_id,    -- Сохраняем оригинальный lineage из STG
+    _load_ts        = s._load_ts    -- Фиксируем время STG как водяной знак для ODS
 FROM tmp_segments_delta AS s
 WHERE o.ticket_no = s.ticket_no
     AND o.flight_id = s.flight_id
@@ -54,8 +54,8 @@ SELECT
     s.fare_conditions,
     s.amount,
     s.event_ts,
-    s.batch_id,
-    s.load_dttm
+    s._load_id,
+    s._load_ts
 FROM tmp_segments_delta AS s
 WHERE NOT EXISTS (
     SELECT 1

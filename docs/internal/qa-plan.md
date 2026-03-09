@@ -136,23 +136,22 @@ UNION ALL SELECT 'boarding_passes',
 
 ```sql
 -- Снапшот-таблицы: ODS = последний батч STG
--- Примечание: поле называется batch_id (без подчёркивания), а не _batch_id
 SELECT
     'airports' AS entity,
     (SELECT COUNT(*) FROM stg.airports
-     WHERE batch_id = (SELECT MAX(batch_id) FROM stg.airports)) AS stg_cnt,
+     WHERE _load_id = (SELECT MAX(_load_id) FROM stg.airports)) AS stg_cnt,
     (SELECT COUNT(*) FROM ods.airports) AS ods_cnt
 UNION ALL SELECT 'airplanes',
     (SELECT COUNT(*) FROM stg.airplanes
-     WHERE batch_id = (SELECT MAX(batch_id) FROM stg.airplanes)),
+     WHERE _load_id = (SELECT MAX(_load_id) FROM stg.airplanes)),
     (SELECT COUNT(*) FROM ods.airplanes)
 UNION ALL SELECT 'routes',
     (SELECT COUNT(*) FROM stg.routes
-     WHERE batch_id = (SELECT MAX(batch_id) FROM stg.routes)),
+     WHERE _load_id = (SELECT MAX(_load_id) FROM stg.routes)),
     (SELECT COUNT(*) FROM ods.routes)
 UNION ALL SELECT 'seats',
     (SELECT COUNT(*) FROM stg.seats
-     WHERE batch_id = (SELECT MAX(batch_id) FROM stg.seats)),
+     WHERE _load_id = (SELECT MAX(_load_id) FROM stg.seats)),
     (SELECT COUNT(*) FROM ods.seats);
 ```
 
@@ -281,7 +280,7 @@ WHERE f.calendar_sk IS NOT NULL AND c.calendar_sk IS NULL;
 ```sql
 SELECT COUNT(*) AS unprocessed
 FROM stg.bookings
-WHERE load_dttm > (SELECT COALESCE(MAX(_load_ts), '1900-01-01') FROM ods.bookings);
+WHERE _load_ts > (SELECT COALESCE(MAX(_load_ts), '1900-01-01') FROM ods.bookings);
 -- Ожидание: 0
 ```
 
@@ -352,10 +351,10 @@ ORDER BY 1;
 #### B. STG хранит оба батча
 
 ```sql
-SELECT _batch_id, COUNT(*) FROM stg.bookings GROUP BY 1 ORDER BY 1;
+SELECT _load_id, COUNT(*) FROM stg.bookings GROUP BY 1 ORDER BY 1;
 ```
 
-**Ожидание:** 2 разных `_batch_id`, оба с данными.
+**Ожидание:** 2 разных `_load_id`, оба с данными.
 
 #### C. Снапшоты не дублировались
 
@@ -363,19 +362,19 @@ SELECT _batch_id, COUNT(*) FROM stg.bookings GROUP BY 1 ORDER BY 1;
 SELECT
     'airports' AS entity,
     (SELECT COUNT(*) FROM stg.airports
-     WHERE _batch_id = (SELECT MAX(_batch_id) FROM stg.airports)) AS stg_last_batch,
+     WHERE _load_id = (SELECT MAX(_load_id) FROM stg.airports)) AS stg_last_batch,
     (SELECT COUNT(*) FROM ods.airports) AS ods_cnt
 UNION ALL SELECT 'airplanes',
     (SELECT COUNT(*) FROM stg.airplanes
-     WHERE _batch_id = (SELECT MAX(_batch_id) FROM stg.airplanes)),
+     WHERE _load_id = (SELECT MAX(_load_id) FROM stg.airplanes)),
     (SELECT COUNT(*) FROM ods.airplanes)
 UNION ALL SELECT 'routes',
     (SELECT COUNT(*) FROM stg.routes
-     WHERE _batch_id = (SELECT MAX(_batch_id) FROM stg.routes)),
+     WHERE _load_id = (SELECT MAX(_load_id) FROM stg.routes)),
     (SELECT COUNT(*) FROM ods.routes)
 UNION ALL SELECT 'seats',
     (SELECT COUNT(*) FROM stg.seats
-     WHERE _batch_id = (SELECT MAX(_batch_id) FROM stg.seats)),
+     WHERE _load_id = (SELECT MAX(_load_id) FROM stg.seats)),
     (SELECT COUNT(*) FROM ods.seats);
 ```
 
@@ -431,7 +430,7 @@ make bookings-generate-day
 #### A. Монотонный рост инкрементальных таблиц
 
 ```sql
-SELECT _batch_id, COUNT(*) FROM stg.bookings GROUP BY 1 ORDER BY 1;
+SELECT _load_id, COUNT(*) FROM stg.bookings GROUP BY 1 ORDER BY 1;
 ```
 
 **Ожидание:** 5 строк, все с данными.
@@ -483,25 +482,21 @@ SELECT
 **Цель:** проверить качество кода без запуска стенда. Можно делать параллельно
 с блоками 1-4.
 
-### 5.1 Консистентность _load_id / _batch_id
+### 5.1 Консистентность _load_id во всех слоях
 
 ```bash
-# В STG должен быть _batch_id (через {{ run_id }})
-grep -r '_batch_id' sql/stg/*_load.sql | head -20
+# В STG/ODS/DDS/DM должен быть _load_id
+grep -r '_load_id' sql/stg/*_load.sql sql/ods/*_load.sql sql/dds/*_load.sql sql/dm/*_load.sql | head -20
 
-# В ODS/DDS/DM должен быть _load_id (через {{ run_id }})
-grep -r '_load_id' sql/ods/*_load.sql sql/dds/*_load.sql sql/dm/*_load.sql | head -20
-
-# НЕ должно быть: _load_id в STG или _batch_id в ODS/DDS/DM (кроме чтения из STG)
-grep -r '_load_id' sql/stg/*_load.sql           # ожидание: пусто
-grep -r '_batch_id' sql/ods/*_load.sql           # допустимо: чтение из stg
-grep -r '_batch_id' sql/dds/*_load.sql sql/dm/*_load.sql  # ожидание: пусто
+# Не должно быть старых имён batch_id, load_dttm, src_created_at_ts
+grep -r '\bbatch_id\b' sql/stg/ sql/ods/ sql/dds/ sql/dm/  # ожидание: только допустимые переменные PL (v_batch_id)
+grep -r 'load_dttm\|src_created_at_ts' sql/                 # ожидание: пусто
 ```
 
 ### 5.2 Все load.sql используют шаблон {{ run_id }}
 
 Примечание: ODS намеренно не использует `{{ run_id }}` — вместо этого в `_load_id`
-сохраняется `batch_id` из STG для сквозного lineage (traceable to source batch).
+сохраняется `_load_id` из STG для сквозного lineage (traceable to source batch).
 Это правильный паттерн, а не баг. Проверять нужно только STG/DDS/DM.
 
 ```bash

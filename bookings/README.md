@@ -26,7 +26,7 @@
   - `busy()` игнорирует свой `pid`, чтобы не считать собственное подключение занятым;
   - `continue()` при `jobs=1` вызывает `process_queue` синхронно (без `dblink`), иначе генерация обрывается при выходе из `psql` и данных не появляется.
 - `install.sql`: удалён хардкод `gen.connstr` без credentials (`install_connstr_no_hardcode.patch`).
-- Дефолт: `BOOKINGS_JOBS=2`. При `jobs=1` генерация синхронная (без dblink), при `jobs>1` — через dblink.
+- Дефолт: `BOOKINGS_JOBS=1` (синхронно, без dblink — оптимально для +1 дня, ~3 мин). При `jobs>1` — через dblink, но на WSL2 в 3× медленнее из-за lock contention на `gen.events`.
 - Патчи применяются автоматически в `make bookings-generate` (генерация с нуля). Если что-то пошло не так, их можно накатить вручную:
   ```
   patch -d bookings/demodb -p1 --forward < bookings/patches/install_drop_if_exists.patch

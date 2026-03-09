@@ -35,6 +35,12 @@ BEGIN
         CALL generate(v_start_date, v_end_date, v_jobs);
     ELSE
         v_end_date := v_start_date + interval '1 day';
+
+        -- Убираем VACUUM-ивенты из очереди: генератор demodb кладёт
+        -- VACUUM ANALYZE всей БД каждую неделю модельного времени.
+        -- На 500k+ строках это занимает минуты и бессмысленно для +1 дня.
+        DELETE FROM gen.events WHERE type = 'VACUUM';
+
         CALL continue(v_end_date, v_jobs);
     END IF;
 
@@ -42,17 +48,19 @@ BEGIN
     -- Без COMMIT воркеры не могут INSERT INTO gen.stat_jobs → deadlock.
     COMMIT;
 
-    -- При jobs>1 воркерам нужно время, чтобы подключиться через dblink и
-    -- выставить application_name='Airlines processor'. Без паузы busy()
-    -- сразу вернёт false (воркеры ещё не видны в pg_stat_activity).
+    -- Ждём завершения каждого воркера через dblink_is_busy().
+    -- Раньше опрашивали busy() (pg_stat_activity + application_name),
+    -- но это ненадёжно: воркер может обрабатывать VACUUM ANALYZE (десятки минут),
+    -- или зависнуть в пустой очереди — а busy() не отличает «полезную работу»
+    -- от «бесконечного pg_sleep(1) при пустом gen.events».
+    -- dblink_is_busy() проверяет состояние конкретного dblink-соединения напрямую.
     IF v_jobs > 1 THEN
-        PERFORM pg_sleep(3);
+        FOR i IN 1 .. v_jobs LOOP
+            WHILE dblink_is_busy('job' || i) = 1 LOOP
+                PERFORM pg_sleep(1);
+            END LOOP;
+        END LOOP;
     END IF;
-
-    -- Ждём завершения фоновых джобов генератора, чтобы данные успели записаться
-    WHILE busy() LOOP
-        PERFORM pg_sleep(1);
-    END LOOP;
     PERFORM dblink_disconnect(unnest(dblink_get_connections()));
 
     -- Если данных нет, останавливаемся с понятной ошибкой

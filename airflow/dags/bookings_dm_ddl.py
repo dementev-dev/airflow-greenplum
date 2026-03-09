@@ -67,4 +67,10 @@ with DAG(
     )
 
     # Линейная цепочка
-    apply_dm_sales_report_ddl >> apply_dm_route_performance_ddl >> apply_dm_passenger_loyalty_ddl >> apply_dm_airport_traffic_ddl >> apply_dm_monthly_overview_ddl
+    (
+        apply_dm_sales_report_ddl
+        >> apply_dm_route_performance_ddl
+        >> apply_dm_passenger_loyalty_ddl
+        >> apply_dm_airport_traffic_ddl
+        >> apply_dm_monthly_overview_ddl
+    )

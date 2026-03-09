@@ -55,7 +55,7 @@ fare_modes AS (
 SELECT
     bm.*,
     fm.favorite_fare_conditions,
-    p.passenger_id AS passenger_bk, -- Исправлено: в dim_passengers BK называется passenger_id
+    p.passenger_id AS passenger_bk,
     p.passenger_name,
     (bm.last_flight_date - bm.first_flight_date) AS days_as_customer
 FROM base_metrics bm
@@ -127,3 +127,5 @@ WHERE NOT EXISTS (
     SELECT 1 FROM dm.passenger_loyalty AS tgt
     WHERE tgt.passenger_sk = src.passenger_sk
 );
+
+ANALYZE dm.passenger_loyalty;

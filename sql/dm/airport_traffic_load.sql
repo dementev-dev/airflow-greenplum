@@ -127,3 +127,5 @@ WHERE NOT EXISTS (
     WHERE tgt.traffic_date = src.traffic_date
       AND tgt.airport_sk   = src.airport_sk
 );
+
+ANALYZE dm.airport_traffic;

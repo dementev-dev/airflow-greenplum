@@ -163,3 +163,5 @@ WHERE NOT EXISTS (
       AND tgt.month_actual = src.month_actual
       AND tgt.airplane_sk = src.airplane_sk
 );
+
+ANALYZE dm.monthly_overview;

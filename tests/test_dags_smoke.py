@@ -355,10 +355,18 @@ def test_bookings_dm_ddl_dag_structure():
     assert expected_tasks.issubset(dag.task_dict.keys())
 
     # Проверяем линейную цепочку
-    _assert_direct_edge(dag, "apply_dm_sales_report_ddl", "apply_dm_route_performance_ddl")
-    _assert_direct_edge(dag, "apply_dm_route_performance_ddl", "apply_dm_passenger_loyalty_ddl")
-    _assert_direct_edge(dag, "apply_dm_passenger_loyalty_ddl", "apply_dm_airport_traffic_ddl")
-    _assert_direct_edge(dag, "apply_dm_airport_traffic_ddl", "apply_dm_monthly_overview_ddl")
+    _assert_direct_edge(
+        dag, "apply_dm_sales_report_ddl", "apply_dm_route_performance_ddl"
+    )
+    _assert_direct_edge(
+        dag, "apply_dm_route_performance_ddl", "apply_dm_passenger_loyalty_ddl"
+    )
+    _assert_direct_edge(
+        dag, "apply_dm_passenger_loyalty_ddl", "apply_dm_airport_traffic_ddl"
+    )
+    _assert_direct_edge(
+        dag, "apply_dm_airport_traffic_ddl", "apply_dm_monthly_overview_ddl"
+    )
 
 
 def test_bookings_to_gp_dm_dag_structure():

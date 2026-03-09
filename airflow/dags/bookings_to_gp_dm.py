@@ -131,7 +131,7 @@ with DAG(
         load_dm_route_performance,
         load_dm_passenger_loyalty,
         load_dm_airport_traffic,
-        load_dm_monthly_overview
+        load_dm_monthly_overview,
     ]
 
     # Связываем dq с finish

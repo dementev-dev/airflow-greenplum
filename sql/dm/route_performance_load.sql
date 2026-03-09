@@ -79,3 +79,5 @@ SELECT
     '{{ run_id }}' AS _load_id
 FROM tmp_route_metrics m
 JOIN dds.dim_routes r_curr ON m.route_bk = r_curr.route_bk AND r_curr.valid_to IS NULL;
+
+ANALYZE dm.route_performance;

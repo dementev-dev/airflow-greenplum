@@ -162,3 +162,5 @@ WHERE NOT EXISTS (
       AND tgt.arrival_airport_sk   = src.arrival_airport_sk
       AND tgt.tariff_sk            = src.tariff_sk
 );
+
+ANALYZE dm.sales_report;

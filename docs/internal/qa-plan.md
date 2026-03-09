@@ -136,22 +136,23 @@ UNION ALL SELECT 'boarding_passes',
 
 ```sql
 -- Снапшот-таблицы: ODS = последний батч STG
+-- Примечание: поле называется batch_id (без подчёркивания), а не _batch_id
 SELECT
     'airports' AS entity,
     (SELECT COUNT(*) FROM stg.airports
-     WHERE _batch_id = (SELECT MAX(_batch_id) FROM stg.airports)) AS stg_cnt,
+     WHERE batch_id = (SELECT MAX(batch_id) FROM stg.airports)) AS stg_cnt,
     (SELECT COUNT(*) FROM ods.airports) AS ods_cnt
 UNION ALL SELECT 'airplanes',
     (SELECT COUNT(*) FROM stg.airplanes
-     WHERE _batch_id = (SELECT MAX(_batch_id) FROM stg.airplanes)),
+     WHERE batch_id = (SELECT MAX(batch_id) FROM stg.airplanes)),
     (SELECT COUNT(*) FROM ods.airplanes)
 UNION ALL SELECT 'routes',
     (SELECT COUNT(*) FROM stg.routes
-     WHERE _batch_id = (SELECT MAX(_batch_id) FROM stg.routes)),
+     WHERE batch_id = (SELECT MAX(batch_id) FROM stg.routes)),
     (SELECT COUNT(*) FROM ods.routes)
 UNION ALL SELECT 'seats',
     (SELECT COUNT(*) FROM stg.seats
-     WHERE _batch_id = (SELECT MAX(_batch_id) FROM stg.seats)),
+     WHERE batch_id = (SELECT MAX(batch_id) FROM stg.seats)),
     (SELECT COUNT(*) FROM ods.seats);
 ```
 
@@ -180,8 +181,11 @@ UNION ALL SELECT 'passengers',
 
 ```sql
 -- Маршруты SCD2: текущих записей = уникальных бизнес-ключей в ODS
+-- Примечание: бизнес-ключ = route_no (не route_no || '-' || validity).
+-- Один route_no может иметь несколько периодов validity в ods.routes,
+-- но DDS берёт только самый свежий (rn=1 по validity DESC).
 SELECT
-    (SELECT COUNT(DISTINCT route_no || '-' || validity) FROM ods.routes) AS ods_routes,
+    (SELECT COUNT(DISTINCT route_no) FROM ods.routes) AS ods_routes,
     (SELECT COUNT(*) FROM dds.dim_routes WHERE valid_to IS NULL) AS dds_current,
     (SELECT COUNT(*) FROM dds.dim_routes) AS dds_total;
 ```
@@ -201,8 +205,9 @@ SELECT
 
 ```sql
 -- Общая выручка: fact vs sales_report
+-- Примечание: колонка называется price (не ticket_price)
 SELECT
-    (SELECT SUM(ticket_price) FROM dds.fact_flight_sales) AS fact_revenue,
+    (SELECT SUM(price) FROM dds.fact_flight_sales) AS fact_revenue,
     (SELECT SUM(total_revenue) FROM dm.sales_report) AS dm_revenue;
 ```
 
@@ -219,13 +224,12 @@ SELECT
 **Ожидание:** совпадение (или объяснимая разница).
 
 ```sql
--- Общее число посадок: fact vs airport_traffic
--- Примечание: airport_traffic считает и вылеты и прилёты отдельно,
--- поэтому dm_total_pax может быть ~2x от fact_boarded
+-- Общее число посадок: fact vs sales_report
+-- Примечание: колонка называется is_boarded (не boarding_seq)
 SELECT
     (SELECT COUNT(*) FROM dds.fact_flight_sales
-     WHERE boarding_seq IS NOT NULL) AS fact_boarded,
-    (SELECT SUM(total_passengers) FROM dm.airport_traffic) AS dm_total_pax;
+     WHERE is_boarded = TRUE) AS fact_boarded,
+    (SELECT SUM(passengers_boarded) FROM dm.sales_report) AS dm_boarded;
 ```
 
 #### E. Целостность суррогатных ключей (FK в DDS и DM)
@@ -267,7 +271,19 @@ WHERE f.calendar_sk IS NOT NULL AND c.calendar_sk IS NULL;
 
 ## Блок 2: Идемпотентность (повторный Day 1)
 
-**Цель:** повторный прогон тех же DAG'ов НЕ дублирует данные.
+**Цель:** повторный прогон ODS/DDS/DM НЕ дублирует данные при неизменённом STG.
+
+**Важно:** `bookings_to_gp_stage` ВСЕГДА генерирует следующий день при запуске
+(через `generate_bookings_day`). Тест идемпотентности нужно проводить только для
+`bookings_to_gp_ods`, `bookings_to_gp_dds`, `bookings_to_gp_dm` — без повторного
+запуска STG. Убедитесь, что все STG-батчи уже обработаны ODS перед тестом:
+
+```sql
+SELECT COUNT(*) AS unprocessed
+FROM stg.bookings
+WHERE load_dttm > (SELECT COALESCE(MAX(_load_ts), '1900-01-01') FROM ods.bookings);
+-- Ожидание: 0
+```
 
 ### 2.1 Зафиксировать counts после Day 1
 
@@ -484,8 +500,12 @@ grep -r '_batch_id' sql/dds/*_load.sql sql/dm/*_load.sql  # ожидание: п
 
 ### 5.2 Все load.sql используют шаблон {{ run_id }}
 
+Примечание: ODS намеренно не использует `{{ run_id }}` — вместо этого в `_load_id`
+сохраняется `batch_id` из STG для сквозного lineage (traceable to source batch).
+Это правильный паттерн, а не баг. Проверять нужно только STG/DDS/DM.
+
 ```bash
-for f in sql/stg/*_load.sql sql/ods/*_load.sql sql/dds/*_load.sql sql/dm/*_load.sql; do
+for f in sql/stg/*_load.sql sql/dds/*_load.sql sql/dm/*_load.sql; do
     if ! grep -q '{{ run_id }}\|{{ ti.xcom_pull' "$f"; then
         echo "WARN: $f не содержит {{ run_id }}"
     fi

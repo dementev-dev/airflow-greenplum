@@ -7,7 +7,7 @@
 > Аудитория документа: AI-агент (Sonnet) или человек, выполняющий отладку.
 >
 > Зависимость: перед запуском этого плана нужно починить bookings-db
-> (см. `docs/internal/bookings_db_issues.md`).
+> (см. `docs/reference/bookings_db_issues.md`).
 
 ---
 

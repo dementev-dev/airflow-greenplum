@@ -3,8 +3,8 @@
 Этот файл собирает задачи по подготовке стенда к курсовой работе
 и идеи по доработке, которые не критичны для текущих задач менти.
 
-Контекст и стратегия: [docs/internal/PRD.md](docs/internal/PRD.md).
-Дизайн задания: [docs/internal/assignment_design.md](docs/internal/assignment_design.md).
+Контекст и стратегия: [docs/design/PRD.md](docs/design/PRD.md).
+Дизайн задания: [docs/design/assignment_design.md](docs/design/assignment_design.md).
 
 ---
 
@@ -40,7 +40,7 @@
 ### Этап 2. Подготовка main
 
 **Инструмент:** Sonnet — удаление файлов и добавление заглушек
-по списку из [assignment_design.md](docs/internal/assignment_design.md).
+по списку из [assignment_design.md](docs/design/assignment_design.md).
 
 - [ ] Оставить только эталонный срез (sales_report + цепочка)
 - [ ] Убрать реализации таблиц-заданий (airplanes, seats, routes в STG/ODS;
@@ -118,14 +118,14 @@
   - при необходимости доработать init‑скрипты в `pxf/init/` и/или документацию,
     чтобы порядок действий для ментей был однозначным и воспроизводимым;
   - добавить краткий раздел в README/TESTING о типичных ошибках PXF/Greenplum и шагах по их устранению.
-  - диагностика текущего кейса: `docs/internal/pxf_bookings.md` (раздел «Известная проблема»).
+  - диагностика текущего кейса: `docs/reference/pxf_bookings.md` (раздел «Известная проблема»).
 
 - [x] Разобраться с генератором demodb:
   - после `make bookings-generate` таблица `bookings.bookings` остаётся пустой;
   - патчи `bookings/patches/engine_jobs1_sync.patch` и `bookings/patches/install_drop_if_exists.patch`
     падают при применении (hunk failed / garbage in patch);
   - из‑за этого DAG `bookings_to_gp_stage` валится на проверках (источник пустой).
-  - детали: `docs/internal/bookings_db_issues.md`
+  - детали: `docs/reference/bookings_db_issues.md`
 
 - [x] Добавить раздел «Благодарности» в `README.md`:
   - явно поблагодарить Postgres Pro за демо‑БД bookings (репозиторий `postgrespro/demodb`);
@@ -138,4 +138,4 @@
   - привести измерение в соответствие с принципом Кимбалла («самодостаточное измерение»);
   - упростить `dm.route_performance` с 4-JOIN до 1-JOIN;
   - обновить DAG-зависимости: airports+airplanes DQ → routes load;
-  - подробный план: `docs/internal/dim_routes_denormalization_plan.md`.
+  - подробный план: `docs/archive/dim_routes_denormalization_plan.md`.

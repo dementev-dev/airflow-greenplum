@@ -206,7 +206,7 @@ solution (полное решение)
 
 ### Для ментора (ревью + защита)
 
-- [ ] Код соответствует naming conventions (`docs/internal/naming_conventions.md`)
+- [ ] Код соответствует naming conventions (`docs/design/naming_conventions.md`)
 - [ ] SQL идемпотентен (повторный запуск не ломает данные)
 - [ ] Distribution keys выбраны осмысленно
 - [ ] Студент может объяснить: почему delete+insert, а не MERGE;

@@ -45,7 +45,7 @@ ODS в учебном проекте — это:
 
 ## 2) Нейминг служебных полей (консистентно с de-roadmap)
 
-Источник правил: [`docs/internal/naming_conventions.md`](naming_conventions.md).
+Источник правил: [`docs/design/naming_conventions.md`](naming_conventions.md).
 
 В ODS используем такие техполя:
 

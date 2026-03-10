@@ -101,7 +101,7 @@
   - причина: файлы уже лежат в `PXF_BASE` на томе, а seed из образа по умолчанию не перетирает их;
   - решение: `make build` + restart `greenplum` + (при необходимости) `PXF_SEED_OVERWRITE=1`.
 
-## 9. Известная проблема: `protocol "pxf" does not exist` на «холодном старте» (исправлено)
+## 8. Известная проблема: `protocol "pxf" does not exist` на «холодном старте» (исправлено)
 
 Раньше (воспроизводилось в `./scripts/e2e_smoke.sh`) при первом `make ddl-gp` можно было получить:
 
@@ -137,7 +137,7 @@
 2) Проверьте наличие extension:
 `docker compose exec greenplum bash -lc "su - gpadmin -c '/usr/local/greenplum-db/bin/psql -d gp_dwh -t -A -c \"SELECT extname FROM pg_extension WHERE extname = ''pxf'';\"'"`
 
-## 8. Связанные файлы
+## 9. Связанные файлы
 
 - `Dockerfile.greenplum`
 - `docker-compose.yml` (сервис `greenplum`: `build`, `hostname`, env, healthcheck)

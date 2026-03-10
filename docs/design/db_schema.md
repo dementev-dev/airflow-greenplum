@@ -23,7 +23,7 @@
 - **Даты**: как минимум различаем `book_date` (дата покупки) и `scheduled_departure` (дата/время вылета)
 - **Инкремент в STG**: для `tickets` опорная дата берётся из `bookings.book_date`, потому что в `tickets` нет собственного поля времени изменения
 - **DQ-проверки**: проверки качества данных выполняем SQL-скриптами, но **не сохраняем результаты в отдельные таблицы/слой DQ** (при проблемах падаем с понятной ошибкой и останавливаем пайплайн)
-- **Нейминг полей**: единый стандарт — в [`docs/internal/naming_conventions.md`](naming_conventions.md)
+- **Нейминг полей**: единый стандарт — в [`docs/design/naming_conventions.md`](naming_conventions.md)
 
 ### Статус реализации по слоям
 
@@ -33,6 +33,7 @@
 | **STG** | ✅ Готово | 9 из 9 таблиц (bookings, tickets, airports, airplanes, routes, seats, flights, segments, boarding_passes) |
 | **ODS** | ✅ Готово | 9 из 9 таблиц + DAG `bookings_ods_ddl` и `bookings_to_gp_ods` |
 | **DDS** | ✅ Готово | 6 измерений + 1 факт + DAG `bookings_dds_ddl` и `bookings_to_gp_dds` |
+| **DM** | ✅ Готово | 5 витрин (sales_report, route_performance, passenger_loyalty, airport_traffic, monthly_overview) + DAG `bookings_dm_ddl` и `bookings_to_gp_dm` |
 
 ### Архитектура слоёв
 
@@ -418,13 +419,13 @@ graph LR
 
 ## Связанные документы
 
-- [`docs/internal/bookings_stg_design.md`](bookings_stg_design.md) — Детальный дизайн STG слоя для bookings
-- [`docs/internal/bookings_ods_design.md`](bookings_ods_design.md) — Детальный дизайн ODS слоя (SCD1, batch contract, DQ)
-- [`docs/internal/bookings_dds_design.md`](bookings_dds_design.md) — План реализации DDS слоя (Star Schema, SCD2 для routes)
+- [`docs/design/bookings_stg_design.md`](bookings_stg_design.md) — Детальный дизайн STG слоя для bookings
+- [`docs/design/bookings_ods_design.md`](bookings_ods_design.md) — Детальный дизайн ODS слоя (SCD1, batch contract, DQ)
+- [`docs/design/bookings_dds_design.md`](bookings_dds_design.md) — План реализации DDS слоя (Star Schema, SCD2 для routes)
 - [`docs/bookings_to_gp_dds.md`](../bookings_to_gp_dds.md) — Запуск и проверка DAG `bookings_to_gp_dds`
-- [`docs/internal/bookings_stg_code_review.md`](bookings_stg_code_review.md) — Ревью решения и рекомендации по улучшению
-- [`docs/internal/bookings_tz.md`](bookings_tz.md) — Работа с часовыми поясами в источнике
-- [`docs/internal/pxf_bookings.md`](pxf_bookings.md) — Настройка PXF для чтения из bookings-db
+- [`docs/archive/bookings_stg_code_review.md`](../archive/bookings_stg_code_review.md) — Ревью решения и рекомендации по улучшению
+- [`docs/reference/bookings_tz.md`](../reference/bookings_tz.md) — Работа с часовыми поясами в источнике
+- [`docs/reference/pxf_bookings.md`](../reference/pxf_bookings.md) — Настройка PXF для чтения из bookings-db
 - [`TESTING.md`](../../TESTING.md) — Пошаговый чек-лист для тестирования стенда
 
 ---
@@ -439,12 +440,3 @@ graph LR
 | 2025-01-17 | 1.1 | Исправлены названия таблиц (`aircrafts_data` → `airplanes_data`, `ticket_flights` → `segments`), удалено `dim.bookings`, добавлены суррогатные ключи, добавлен слой DQ, исправлены связи |
 | 2025-01-XX | 1.0 | Первоначальная версия |
 
----
-
-## TODO
-
-- [x] Реализовать STG слой полностью (все 9 таблиц)
-- [x] Реализовать ODS слой
-- [x] Реализовать DDS слой (измерения и факт)
-- [x] Создать DAG для загрузки ODS
-- [x] Создать DAG для загрузки DDS

@@ -276,11 +276,11 @@ start_dm ──>>     load_dm_passenger_loyalty   → dq_dm_passenger_loyalty   
 
 18. `sql/ddl_gp.sql` — добавить `\i dm/*_ddl.sql` в конец
 19. `tests/test_dags_smoke.py` — 2 новых теста (DDL DAG + ETL DAG)
-20. `docs/internal/db_schema.md` — добавить DM-слой в описание/Mermaid
+20. `docs/design/db_schema.md` — добавить DM-слой в описание/Mermaid
 
 ### Документация (2 шт.)
 
-21. `docs/internal/bookings_dm_design.md` — полный дизайн-документ DM-слоя (этот файл)
+21. `docs/design/bookings_dm_design.md` — полный дизайн-документ DM-слоя (этот файл)
 22. `docs/bookings_to_gp_dm.md` — инструкция для студентов (аналог `bookings_to_gp_dds.md`)
 
 ---
@@ -288,7 +288,7 @@ start_dm ──>>     load_dm_passenger_loyalty   → dq_dm_passenger_loyalty   
 ## Порядок реализации
 
 ### Этап 1: Инфраструктура + эталонная витрина `dm.sales_report`
-- Дизайн-документ `docs/internal/bookings_dm_design.md`
+- Дизайн-документ `docs/design/bookings_dm_design.md`
 - DDL + load + DQ для sales_report
 - Оба DAG (изначально с 1 витриной)
 - Обновить `ddl_gp.sql`
@@ -392,7 +392,7 @@ PL/pgSQL `DO $$` блоки (как в DDS):
 | DQ PL/pgSQL (RAISE EXCEPTION/NOTICE) | `sql/dds/fact_flight_sales_dq.sql` |
 | DDL (CREATE TABLE IF NOT EXISTS) | `sql/dds/dim_airports_ddl.sql` |
 | Smoke-тесты DAG | `tests/test_dags_smoke.py` |
-| Naming conventions | `docs/internal/naming_conventions.md` |
+| Naming conventions | `docs/design/naming_conventions.md` |
 
 ---
 

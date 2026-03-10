@@ -2,7 +2,7 @@
 
 ## 1. Цель и общий контур
 
-- Источник: Postgres в контейнере `bookings-db`, база `demo`, таблица `bookings.bookings` (см. `docs/internal/bookings_tz.md`).
+- Источник: Postgres в контейнере `bookings-db`, база `demo`, таблица `bookings.bookings` (см. [`docs/reference/bookings_tz.md`](../reference/bookings_tz.md)).
 - Цель: показываем путь данных от операционной БД до сырого слоя DWH в Greenplum.
 - В этом документе описываем часть `src (bookings-db) → STG (Greenplum)`. STG — входной слой; далее данные обрабатываются в ODS → DDS → DM (см. соответствующие design-документы).
 
@@ -127,8 +127,8 @@ DDL определён в `sql/stg/bookings_ddl.sql` и подключается
 
 ## 5. Связь с остальными документами
 
-- `docs/internal/bookings_tz.md` — как готовится и генерируется источник `bookings-db`.
-- `docs/internal/pxf_bookings.md` — детали настройки PXF и внешней таблицы для чтения из `bookings-db`.
+- [`docs/reference/bookings_tz.md`](../reference/bookings_tz.md) — как готовится и генерируется источник `bookings-db`.
+- [`docs/reference/pxf_bookings.md`](../reference/pxf_bookings.md) — детали настройки PXF и внешней таблицы для чтения из `bookings-db`.
 - `sql/stg/bookings_ddl.sql` — DDL для схемы `stg` и таблиц `stg.bookings_ext` / `stg.bookings` (подключается из `sql/ddl_gp.sql` и применяется через `make ddl-gp`).
 
 Дальнейшая обработка данных описана в design-документах ODS/DDS/DM (см. раздел 5).

@@ -148,9 +148,9 @@ LIMIT 10;
 - `database "demo" does not exist`: демо‑БД не установлена → выполните `make bookings-init`.
 - Ошибки про `stg.*`/`stg.*_ext`: не применён DDL → запустите `bookings_stg_ddl` или `make ddl-gp`.
 - Ошибки PXF (`protocol "pxf" does not exist`, connection refused): перезапустите `greenplum` и повторите DDL.
-  Для технических деталей см. `docs/internal/pxf_bookings.md`.
+  Для технических деталей см. `docs/reference/pxf_bookings.md`.
 
 ## Рекомендации по качеству решения
 
 Ревью решения и список улучшений, которые делают пайплайн более “эталонным” для обучения:
-`docs/internal/bookings_stg_code_review.md`.
+`docs/archive/bookings_stg_code_review.md`.

@@ -5,7 +5,7 @@
 STG (9 таблиц, TEXT, append-only) и ODS (9 таблиц, типизированные, SCD1) уже реализованы.
 Этот план фиксирует реализацию DDS-слоя: Star Schema с измерениями и таблицей фактов.
 
-Формат плана аналогичен `docs/internal/bookings_ods_design.md` — достаточно детальный,
+Формат плана аналогичен `docs/design/bookings_ods_design.md` — достаточно детальный,
 чтобы реализация была однозначной.
 
 ---
@@ -182,7 +182,7 @@ DQ-проверки явно контролируют каждую группу 
 
 ## 4) Нейминг служебных полей (консистентно с naming_conventions.md)
 
-Источник правил: [`docs/internal/naming_conventions.md`](naming_conventions.md).
+Источник правил: [`docs/design/naming_conventions.md`](naming_conventions.md).
 
 В DDS используем:
 
@@ -825,8 +825,8 @@ airflow/dags/                           (2 новых DAG)
 sql/ddl_gp.sql                         (+ \i dds/*_ddl.sql в конец)
 tests/test_dags_smoke.py               (+ 2 smoke-теста)
 docs/bookings_to_gp_dds.md             (документация для студентов)
-docs/internal/bookings_dds_design.md    (этот план)
-docs/internal/db_schema.md             (обновить: добавить dim_routes, статус DDS)
+docs/design/bookings_dds_design.md    (этот план)
+docs/design/db_schema.md             (обновить: добавить dim_routes, статус DDS)
 ```
 
 ---
@@ -942,7 +942,7 @@ load_dds_fact_flight_sales >> dq_dds_fact_flight_sales >> finish_dds_summary
 6. DAG `airflow/dags/bookings_to_gp_dds.py`
 7. Smoke-тесты в `tests/test_dags_smoke.py` (+2 теста)
 8. Документация `docs/bookings_to_gp_dds.md`
-9. Обновить `docs/internal/db_schema.md` — отразить `dim_routes` и актуальный статус DDS
+9. Обновить `docs/design/db_schema.md` — отразить `dim_routes` и актуальный статус DDS
 
 Итого: **21 SQL-файл** + **2 DAG** + **обновления 3 существующих файлов** + **1 новый doc-файл**.
 

@@ -1,225 +1,10 @@
 # Схема БД DWH (Bookings → Greenplum)
 
-> **Статус:** Проект в разработке. Реализованы STG, ODS и DDS (bookings).
+> **Статус:** Все слои реализованы (STG, ODS, DDS, DM).
 
-## Обзор
-
-Эта документация описывает архитектуру хранилища данных (DWH) для учебного проекта Airflow + Greenplum. Источник данных — демо-БД `bookings` (Postgres).
-
-**Целевые аудитории:**
-- **LLM/Разработчики**: Технические спецификации для реализации (см. раздел "Спецификации для реализации")
-- **Студенты**: Обучающие материалы и пояснения (см. раздел "Обучающие материалы")
-
----
-
-## Спецификации для реализации (для LLM и разработчиков)
-
-### Ключевые договорённости
-
-- **Источник**: используем основные таблицы схемы `bookings` (табличные данные, не `VIEW`)
-- **Зерно факта `dds.fact_flight_sales`**: 1 строка = 1 сегмент билета (`ticket_no` + `flight_id`, источник: `segments`)
-- **Обязательная связь для аэропортов и самолёта**: `flights.route_no → routes → (departure_airport, arrival_airport, airplane_code)`
-- **Маршруты в DDS**: используем `dds.dim_routes` (SCD2), в факт пишем `route_sk` через point-in-time lookup на дату вылета
-- **Даты**: как минимум различаем `book_date` (дата покупки) и `scheduled_departure` (дата/время вылета)
-- **Инкремент в STG**: для `tickets` опорная дата берётся из `bookings.book_date`, потому что в `tickets` нет собственного поля времени изменения
-- **DQ-проверки**: проверки качества данных выполняем SQL-скриптами, но **не сохраняем результаты в отдельные таблицы/слой DQ** (при проблемах падаем с понятной ошибкой и останавливаем пайплайн)
-- **Нейминг полей**: единый стандарт — в [`docs/design/naming_conventions.md`](naming_conventions.md)
-
-### Статус реализации по слоям
-
-| Слой | Статус | Реализовано |
-|------|--------|-------------|
-| **Source** | ✅ Готово | Демо-БД bookings (Postgres) |
-| **STG** | ✅ Готово | 9 из 9 таблиц (bookings, tickets, airports, airplanes, routes, seats, flights, segments, boarding_passes) |
-| **ODS** | ✅ Готово | 9 из 9 таблиц + DAG `bookings_ods_ddl` и `bookings_to_gp_ods` |
-| **DDS** | ✅ Готово | 6 измерений + 1 факт + DAG `bookings_dds_ddl` и `bookings_to_gp_dds` |
-| **DM** | ✅ Готово | 5 витрин (sales_report, route_performance, passenger_loyalty, airport_traffic, monthly_overview) + DAG `bookings_dm_ddl` и `bookings_to_gp_dm` |
-
-### Архитектура слоёв
-
-#### STG (Staging Layer)
-- **Назначение**: Сырой слой, максимально близкий к источнику, без бизнес-логики
-- **Хранение**: AO-Row (Append-Only Row-oriented) для эффективной загрузки больших объёмов
-- **Типы данных**: Бизнес-колонки как `TEXT`, тех.колонки как `TIMESTAMP`
-- **Инкрементальная загрузка**: Опорное поле `event_ts` (из `book_date` для tickets)
-- **Технологические колонки**:
-  - `event_ts TIMESTAMP` — дата/время из источника для инкремента
-  - `_load_ts TIMESTAMP NOT NULL DEFAULT now()` — когда запись была загружена
-  - `_load_id TEXT` — идентификатор пачки/батча (например `{{ run_id }}`)
-- **DQ-проверки (после загрузки STG)**: отдельные SQL-скрипты, которые валидируют данные (counts, дубли, NULL, orphan records) и при ошибке делают `RAISE EXCEPTION`; примеры: `sql/stg/bookings_dq.sql`, `sql/stg/tickets_dq.sql`
-
-#### ODS (Operational Data Store)
-- **Назначение**: Очищенные данные в 3NF, готовые для аналитики
-- **Хранение**: Heap для частых чтений и обновлений
-- **Трансформации**: Очистка, приведение типов, нормализация, SCD1 UPSERT
-- **Связи**: Все связи через бизнес-ключи (без суррогатных ключей)
-- **Текущий статус**: Реализован (9 таблиц, SQL DQ, DAG загрузки)
-
-#### DDS (Data Delivery System)
-- **Назначение**: Star Schema для аналитики и отчётности
-- **Хранение**: Heap или AO-CO (Append-Only Column-oriented) для аналитических запросов
-- **Структура**: Измерения (Dimensions) + Факты (Facts)
-- **Ключи**: Суррогатные ключи (SK) для измерений, FK в фактах
-- **Текущий статус**: Реализован (6 измерений, 1 факт, SQL DQ, DAG загрузки)
-
-### Измерения DDS (Dimensions)
-
-| Измерение | Бизнес-ключ | Суррогатный ключ | Атрибуты |
-|-----------|-------------|------------------|----------|
-| `dds.dim_calendar` | `date_actual` | `calendar_sk` | `year_actual`, `month_actual`, `day_actual`, `day_of_week`, `day_name`, `is_weekend` |
-| `dds.dim_airports` | `airport_code` (`airport_bk`) | `airport_sk` | `airport_name`, `city`, `country`, `timezone`, `coordinates` |
-| `dds.dim_airplanes` | `airplane_code` (`airplane_bk`) | `airplane_sk` | `model`, `range_km`, `speed_kmh`, `total_seats` |
-| `dds.dim_tariffs` | `fare_conditions` | `tariff_sk` | `fare_conditions` |
-| `dds.dim_passengers` | `passenger_id` (`passenger_bk`) | `passenger_sk` | `passenger_name` (SCD1) |
-| `dds.dim_routes` | `route_no` (`route_bk`) | `route_sk` | `departure_airport`, `arrival_airport`, `airplane_code`, `departure_city` (денормализовано), `arrival_city` (денормализовано), `airplane_model` (денормализовано), `total_seats` (денормализовано), `hashdiff`, `valid_from`, `valid_to` (SCD2) |
-
-### Факт DDS (Fact)
-
-`dds.fact_flight_sales`:
-- **Зерно**: 1 строка = 1 сегмент билета (`ticket_no` + `flight_id`)
-- **FK на измерения**:
-  - `calendar_sk` — ссылка на дату вылета
-  - `departure_airport_sk` — аэропорт вылета
-  - `arrival_airport_sk` — аэропорт прилёта
-  - `airplane_sk` — самолёт
-  - `tariff_sk` — тариф
-  - `passenger_sk` — пассажир
-  - `route_sk` — версия маршрута (SCD2, point-in-time)
-- **Метрики**:
-  - `price NUMERIC` — стоимость сегмента
-  - `is_boarded BOOLEAN` — сел ли пассажир в самолёт (из boarding_passes)
-- **Атрибуты**:
-  - `book_ref TEXT` — бизнес-ключ бронирования
-  - `book_date DATE` — дата покупки
-  - `ticket_no TEXT` — номер билета
-  - `flight_id INT` — ID рейса
-  - `seat_no TEXT` — место (если есть)
-
----
-
-### Детальное описание таблиц STG слоя
-
-#### stg.bookings (транзакции, инкремент)
-- **Источник:** `bookings.bookings` (через PXF)
-- **Ключ распределения:** `book_ref`
-- **Бизнес-колонки:**
-  - `book_ref TEXT` - номер бронирования
-  - `book_date TEXT` - дата бронирования
-  - `total_amount TEXT` - общая сумма
-- **Технические колонки:** `event_ts` (=book_date), `_load_ts`, `_load_id`
-- **Стратегия загрузки:** Инкремент по `book_date`
-- **DQ проверки:** count (окно инкремента, пустое окно допустимо), дубликаты book_ref, NULL обязательных полей
-
-#### stg.tickets (транзакции, инкремент)
-- **Источник:** `bookings.tickets` (через PXF)
-- **Ключ распределения:** `book_ref`
-- **Примечание:** JOIN `tickets` ↔ `segments`/`boarding_passes` по `ticket_no` может требовать motion (ключи распределения разные).
-- **Бизнес-колонки:**
-  - `ticket_no TEXT` - номер билета
-  - `book_ref TEXT` - номер бронирования
-  - `passenger_id TEXT` - идентификатор пассажира
-  - `passenger_name TEXT` - имя пассажира
-  - `outbound TEXT` - направление (в источнике boolean)
-- **Технические колонки:** `event_ts` (из book_date через bookings), `_load_ts`, `_load_id`
-- **Стратегия загрузки:** Инкремент по `book_date` (через bookings)
-- **DQ проверки:** count (окно инкремента, пустое окно допустимо), дубликаты ticket_no, NULL обязательных полей, пустой passenger_name, ссылочная целостность (bookings)
-
-#### stg.airports (справочник, full load)
-- **Источник:** `bookings.airports_data` (через PXF)
-- **Ключ распределения:** `airport_code`
-- **Бизнес-колонки:**
-  - `airport_code TEXT` - код аэропорта
-  - `airport_name TEXT` - название аэропорта (из JSONB)
-  - `city TEXT` - город (из JSONB)
-  - `country TEXT` - страна (из JSONB)
-  - `coordinates TEXT` - координаты
-  - `timezone TEXT` - часовой пояс
-- **Технические колонки:** `event_ts` (=now()), `_load_ts`, `_load_id`
-- **Стратегия загрузки:** Full load (все строки при каждом запуске)
-- **DQ проверки:** count, дубликаты airport_code, NULL обязательных полей
-
-#### stg.airplanes (справочник, full load)
-- **Источник:** `bookings.airplanes_data` (через PXF)
-- **Ключ распределения:** `airplane_code`
-- **Бизнес-колонки:**
-  - `airplane_code TEXT` - код самолёта
-  - `model TEXT` - модель (из JSONB)
-  - `range TEXT` - дальность полёта
-  - `speed TEXT` - скорость
-- **Технические колонки:** `event_ts` (=now()), `_load_ts`, `_load_id`
-- **Стратегия загрузки:** Full load
-- **DQ проверки:** count, дубликаты airplane_code, NULL обязательных полей
-
-#### stg.routes (справочник, full load)
-- **Источник:** `bookings.routes` (через PXF)
-- **Ключ распределения:** `route_no`
-- **Примечание:** JOIN по `departure_airport`/`arrival_airport`/`airplane_code` может требовать motion (ключи распределения разные).
-- **Бизнес-колонки:**
-  - `route_no TEXT` - номер маршрута
-  - `validity TEXT` - период действия (из tstzrange)
-  - `departure_airport TEXT` - аэропорт вылета
-  - `arrival_airport TEXT` - аэропорт прилёта
-  - `airplane_code TEXT` - код самолёта
-  - `days_of_week TEXT` - дни недели (из int[])
-  - `scheduled_time TEXT` - плановое время
-  - `duration TEXT` - длительность
-- **Технические колонки:** `event_ts` (=now()), `_load_ts`, `_load_id`
-- **Стратегия загрузки:** Full load
-- **DQ проверки:** count, дубликаты (route_no, validity), NULL обязательных полей, ссылочная целостность (_load_id = текущий батч)
-
-#### stg.seats (справочник, full load)
-- **Источник:** `bookings.seats` (через PXF)
-- **Ключ распределения:** `airplane_code` (co-location с airplanes)
-- **Бизнес-колонки:**
-  - `airplane_code TEXT` - код самолёта
-  - `seat_no TEXT` - номер места
-  - `fare_conditions TEXT` - класс обслуживания
-- **Технические колонки:** `event_ts` (=now()), `_load_ts`, `_load_id`
-- **Стратегия загрузки:** Full load
-- **DQ проверки:** count, дубликаты (airplane_code, seat_no), NULL обязательных полей, ссылочная целостность (_load_id = текущий батч)
-
-#### stg.flights (транзакции, инкремент)
-- **Источник:** `bookings.flights` (через PXF)
-- **Ключ распределения:** `flight_id`
-- **Примечание:** JOIN с таблицами, распределёнными по другим ключам, может требовать motion.
-- **Бизнес-колонки:**
-  - `flight_id TEXT` - идентификатор рейса
-  - `route_no TEXT` - номер маршрута
-  - `status TEXT` - статус
-  - `scheduled_departure TEXT` - плановое время вылета
-  - `scheduled_arrival TEXT` - плановое время прилёта
-  - `actual_departure TEXT` - фактическое время вылета
-  - `actual_arrival TEXT` - фактическое время прилёта
-- **Технические колонки:** `event_ts` (=scheduled_departure), `_load_ts`, `_load_id`
-- **Стратегия загрузки:** Инкремент по `scheduled_departure`
-- **DQ проверки:** count (окно инкремента, пустое окно допустимо), дубликаты flight_id, NULL обязательных полей, ссылочная целостность (routes, _load_id = текущий батч)
-
-#### stg.segments (транзакции, инкремент)
-- **Источник:** `bookings.segments` (через PXF)
-- **Ключ распределения:** `ticket_no` (co-location с boarding_passes)
-- **Примечание:** JOIN `segments` ↔ `tickets` по `ticket_no` может требовать motion (stg.tickets распределена по `book_ref`).
-- **Бизнес-колонки:**
-  - `ticket_no TEXT` - номер билета
-  - `flight_id TEXT` - идентификатор рейса
-  - `fare_conditions TEXT` - класс обслуживания
-  - `price TEXT` - цена
-- **Технические колонки:** `event_ts` (из book_date через tickets), `_load_ts`, `_load_id`
-- **Стратегия загрузки:** Инкремент по `book_date` (через tickets)
-- **DQ проверки:** count (окно инкремента, пустое окно допустимо), дубликаты (ticket_no, flight_id), NULL обязательных полей, ссылочная целостность (tickets, flights)
-
-#### stg.boarding_passes (транзакции, full snapshot)
-- **Источник:** `bookings.boarding_passes` (через PXF)
-- **Ключ распределения:** `ticket_no` (co-location с segments)
-- **Примечание:** JOIN `boarding_passes` ↔ `tickets` по `ticket_no` может требовать motion (stg.tickets распределена по `book_ref`).
-- **Бизнес-колонки:**
-  - `ticket_no TEXT` - номер билета
-  - `flight_id TEXT` - идентификатор рейса
-  - `seat_no TEXT` - номер места
-  - `boarding_no TEXT` - номер посадки
-  - `boarding_time TEXT` - время посадки
-- **Технические колонки:** `event_ts` (=now()), `_load_ts`, `_load_id`
-- **Стратегия загрузки:** Full snapshot (все строки при каждом запуске)
-- **DQ проверки:** count, дубликаты (ticket_no, flight_id), NULL обязательных полей, ссылочная целостность
+Архитектура хранилища данных (DWH) для учебного проекта Airflow + Greenplum.
+Источник — демо-БД `bookings` (Postgres). Документ даёт цельный взгляд «сверху»;
+детали реализации — в дизайн-документах слоёв.
 
 ---
 
@@ -233,6 +18,7 @@ graph LR
     classDef ods fill:#e0f2f1,stroke:#00695c,stroke-width:2px;
     classDef dim fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
     classDef fact fill:#ffccbc,stroke:#bf360c,stroke-width:4px;
+    classDef dm fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
 
     %% 1. Source
     subgraph Source_Postgres [Source: Postgres Bookings]
@@ -273,7 +59,7 @@ graph LR
     SRC_Segments --> STG_Segments
     SRC_Boarding --> STG_Boarding
 
-    %% 3. ODS (3NF, Clean, Type, Heap)
+    %% 3. ODS (3NF, Clean, Type)
     subgraph ODS_Layer [Layer: ODS Operational Core]
         direction TB
         ODS_Airports[ods.airports]:::ods
@@ -301,142 +87,222 @@ graph LR
     %% 4. DDS (Star Schema)
     subgraph DDS_Layer [Layer: DDS Star Schema]
         direction TB
-        
-        %% Dimensions
         DIM_Calendar[dds.dim_calendar]:::dim
         DIM_Airports[dds.dim_airports]:::dim
         DIM_Airplanes[dds.dim_airplanes]:::dim
         DIM_Tariffs[dds.dim_tariffs]:::dim
         DIM_Passengers[dds.dim_passengers]:::dim
         DIM_Routes[dds.dim_routes SCD2]:::dim
-
-        %% Fact
         FACT_Sales[dds.fact_flight_sales]:::fact
     end
 
-    %% Transformations ODS to DDS
-
-    %% Form reference tables
+    %% ODS to DDS Dimensions
     ODS_Airports --> DIM_Airports
-    
     ODS_Airplanes --> DIM_Airplanes
-    ODS_Seats -.->|Enrich total_seats| DIM_Airplanes
-    
-    ODS_Segments -.->|Extract distinct| DIM_Tariffs
-    
-    ODS_Tickets -->|Extract Unique| DIM_Passengers
-    ODS_Routes -->|SCD2 with hashdiff| DIM_Routes
-    DIM_Airports -.->|Enrich cities| DIM_Routes
-    DIM_Airplanes -.->|Enrich model and seats| DIM_Routes
+    ODS_Seats -.->|total_seats| DIM_Airplanes
+    ODS_Segments -.->|DISTINCT| DIM_Tariffs
+    ODS_Tickets -->|Unique passengers| DIM_Passengers
+    ODS_Routes -->|SCD2 hashdiff| DIM_Routes
+    DIM_Airports -.->|cities| DIM_Routes
+    DIM_Airplanes -.->|model, seats| DIM_Routes
 
-    %% Fact assembly (Main process + route point-in-time)
-    ODS_Segments -->|Main Stream| FACT_Sales
-    ODS_Tickets -->|Join book_ref passenger_id| FACT_Sales
-    ODS_Bookings -->|Join book_date| FACT_Sales
-    ODS_Flights -->|Join Times Status Route No| FACT_Sales
-    ODS_Boarding -->|LEFT JOIN Seat No| FACT_Sales
-    
-    %% Link dimensions to fact
+    %% ODS to Fact
+    ODS_Segments -->|Main stream| FACT_Sales
+    ODS_Tickets -->|book_ref, passenger_id| FACT_Sales
+    ODS_Bookings -->|book_date| FACT_Sales
+    ODS_Flights -->|schedule, route_no| FACT_Sales
+    ODS_Boarding -->|LEFT JOIN seat_no| FACT_Sales
+
+    %% Dimensions to Fact
     DIM_Calendar -->|calendar_sk| FACT_Sales
-    DIM_Airports -->|departure_airport_sk| FACT_Sales
-    DIM_Airports -->|arrival_airport_sk| FACT_Sales
+    DIM_Airports -->|dep/arr _sk| FACT_Sales
     DIM_Airplanes -->|airplane_sk| FACT_Sales
     DIM_Tariffs -->|tariff_sk| FACT_Sales
     DIM_Passengers -->|passenger_sk| FACT_Sales
     DIM_Routes -->|route_sk| FACT_Sales
+
+    %% 5. DM (Vitrines)
+    subgraph DM_Layer [Layer: DM Data Marts]
+        direction TB
+        DM_Sales[dm.sales_report]:::dm
+        DM_Traffic[dm.airport_traffic]:::dm
+        DM_Route[dm.route_performance]:::dm
+        DM_Monthly[dm.monthly_overview]:::dm
+        DM_Loyalty[dm.passenger_loyalty]:::dm
+    end
+
+    %% DDS to DM
+    FACT_Sales --> DM_Sales
+    FACT_Sales --> DM_Traffic
+    FACT_Sales --> DM_Route
+    FACT_Sales --> DM_Monthly
+    FACT_Sales --> DM_Loyalty
+    DIM_Airports -.-> DM_Sales
+    DIM_Airports -.-> DM_Traffic
+    DIM_Tariffs -.-> DM_Sales
+    DIM_Tariffs -.-> DM_Loyalty
+    DIM_Calendar -.-> DM_Sales
+    DIM_Calendar -.-> DM_Traffic
+    DIM_Calendar -.-> DM_Route
+    DIM_Calendar -.-> DM_Monthly
+    DIM_Calendar -.-> DM_Loyalty
+    DIM_Routes -.-> DM_Route
+    DIM_Routes -.-> DM_Monthly
+    DIM_Routes -.-> DM_Loyalty
+    DIM_Airplanes -.-> DM_Monthly
+    DIM_Passengers -.-> DM_Loyalty
 ```
 
 ---
 
-## Обучающие материалы (для студентов)
+## Сводка объектов по слоям
 
-### Глоссарий ключевых терминов
+### STG (Staging)
+
+Сырые данные из источника, все бизнес-поля как TEXT. Хранение: AO Row (zstd).
+Служебные поля: `event_ts`, `_load_ts`, `_load_id`.
+
+| Таблица | Источник (PXF) | Ключ | Стратегия загрузки | Distribution |
+|---------|---------------|------|-------------------|--------------|
+| `stg.bookings` | `bookings.bookings` | `book_ref` | Инкремент (book_date) | `book_ref` |
+| `stg.tickets` | `bookings.tickets` | `ticket_no` | Инкремент (через bookings) | `book_ref` |
+| `stg.flights` | `bookings.flights` | `flight_id` | Инкремент (scheduled_departure) | `flight_id` |
+| `stg.segments` | `bookings.segments` | `(ticket_no, flight_id)` | Инкремент (через tickets) | `ticket_no` |
+| `stg.boarding_passes` | `bookings.boarding_passes` | `(ticket_no, flight_id)` | Full snapshot | `ticket_no` |
+| `stg.airports` | `bookings.airports_data` | `airport_code` | Full snapshot | `airport_code` |
+| `stg.airplanes` | `bookings.airplanes_data` | `airplane_code` | Full snapshot | `airplane_code` |
+| `stg.routes` | `bookings.routes` | `(route_no, validity)` | Full snapshot | `route_no` |
+| `stg.seats` | `bookings.seats` | `(airplane_code, seat_no)` | Full snapshot | `airplane_code` |
+
+Детали: [`bookings_stg_design.md`](bookings_stg_design.md)
+
+### ODS (Operational Data Store)
+
+Очищенные данные с корректными типами. Справочники: AO Row (TRUNCATE+INSERT).
+Транзакции: Heap (SCD1 UPSERT). Служебные поля: `_load_id`, `_load_ts`,
+`event_ts` (для транзакционных таблиц).
+
+| Таблица | Стратегия | Storage | Ключевые преобразования |
+|---------|-----------|---------|------------------------|
+| `ods.bookings` | SCD1 UPSERT (HWM) | Heap | `total_amount` TEXT → NUMERIC |
+| `ods.tickets` | SCD1 UPSERT (HWM) | Heap | `outbound` TEXT → BOOLEAN |
+| `ods.flights` | SCD1 UPSERT (HWM) | Heap | TEXT → INTEGER, TIMESTAMP WITH TIME ZONE |
+| `ods.segments` | SCD1 UPSERT (HWM) | Heap | `price` TEXT → `amount` NUMERIC |
+| `ods.boarding_passes` | SCD1 UPSERT (HWM) | Heap | `boarding_no` TEXT → INTEGER |
+| `ods.airports` | TRUNCATE+INSERT | AO Row | JSON → отдельные поля (`airport_name`, `city`) |
+| `ods.airplanes` | TRUNCATE+INSERT | AO Row | `range`/`speed` TEXT → INTEGER |
+| `ods.routes` | TRUNCATE+INSERT | AO Row | `days_of_week` → INTEGER[], `scheduled_time` → TIME |
+| `ods.seats` | TRUNCATE+INSERT | AO Row | Без преобразований |
+
+Детали: [`bookings_ods_design.md`](bookings_ods_design.md)
+
+### DDS (Detailed Data Store — Star Schema)
+
+Измерения с суррогатными ключами. Факт в центре звезды.
+SK генерация: `MAX(sk) + ROW_NUMBER()` (безопасно при `concurrency=1`).
+
+#### Измерения
+
+| Измерение | BK | SK | SCD | Storage | Источник |
+|-----------|----|----|-----|---------|----------|
+| `dim_calendar` | `date_actual` | `calendar_sk` | Static | AO Row | Генерация (2016–2030) |
+| `dim_airports` | `airport_bk` | `airport_sk` | SCD1 | Heap | `ods.airports` |
+| `dim_airplanes` | `airplane_bk` | `airplane_sk` | SCD1 | Heap | `ods.airplanes` + `ods.seats` (total_seats) |
+| `dim_tariffs` | `fare_conditions` | `tariff_sk` | SCD1 | AO Row | `ods.segments` (DISTINCT) |
+| `dim_passengers` | `passenger_id` | `passenger_sk` | SCD1 | Heap | `ods.tickets` (дедупликация) |
+| `dim_routes` | `route_bk` | `route_sk` | **SCD2** | Heap | `ods.routes` + `dim_airports` + `dim_airplanes` |
+
+#### Факт
+
+`dds.fact_flight_sales` — зерно: 1 строка = 1 сегмент билета (`ticket_no` + `flight_id`).
+
+| FK | Источник | Примечание |
+|----|----------|------------|
+| `calendar_sk` | `dim_calendar` | Дата вылета |
+| `departure_airport_sk` | `dim_airports` | Аэропорт вылета |
+| `arrival_airport_sk` | `dim_airports` | Аэропорт прилёта |
+| `airplane_sk` | `dim_airplanes` | Самолёт |
+| `tariff_sk` | `dim_tariffs` | Тариф |
+| `passenger_sk` | `dim_passengers` | Пассажир |
+| `route_sk` | `dim_routes` | Версия маршрута (SCD2, point-in-time) |
+
+Метрики: `price` (NUMERIC), `is_boarded` (BOOLEAN).
+Degenerate keys: `book_ref`, `ticket_no`, `flight_id`, `book_date`, `seat_no`.
+
+Детали: [`bookings_dds_design.md`](bookings_dds_design.md)
+
+### DM (Data Marts — Витрины)
+
+Аналитические витрины поверх DDS. Каждая отвечает на конкретный бизнес-вопрос.
+
+| Витрина | Бизнес-вопрос | Зерно | Стратегия | Storage |
+|---------|--------------|-------|-----------|---------|
+| `dm.sales_report` | Выручка и boarding rate по направлениям/тарифам/дням | (flight_date, dep_sk, arr_sk, tariff_sk) | UPSERT (HWM) | Heap |
+| `dm.airport_traffic` | Пассажиропоток аэропортов по дням | (traffic_date, airport_sk) | UPSERT (HWM) | Heap |
+| `dm.route_performance` | Эффективность маршрутов за всё время | route_bk | Full Rebuild | AO Column (zstd) |
+| `dm.monthly_overview` | Помесячная динамика по типам самолётов | (year, month, airplane_sk) | UPSERT (HWM) | Heap |
+| `dm.passenger_loyalty` | Профиль лояльности пассажиров | passenger_sk | UPSERT (затронутые ключи) | Heap |
+
+Детали: [`bookings_dm_design.md`](bookings_dm_design.md)
+
+---
+
+## Ключевые договорённости
+
+- **Нейминг полей**: [`naming_conventions.md`](naming_conventions.md)
+- **DQ-проверки**: SQL-скрипты с `RAISE EXCEPTION` (не отдельный DQ-слой)
+- **Инкремент STG**: для `tickets` опорная дата — из `bookings.book_date`
+- **Point-in-time JOIN**: факт ↔ `dim_routes` по `[valid_from, valid_to)`
+- **Суррогатные ключи**: `MAX(sk) + ROW_NUMBER()` (не SERIAL — GP-специфика)
+
+---
+
+## Обучающие материалы
+
+### Глоссарий
 
 | Термин | Объяснение |
 |--------|-----------|
-| **Зерно факта (Fact Grain)** | Минимальная единица измерения в факте. Для `dds.fact_flight_sales` — это один сегмент билета. |
-| **Суррогатный ключ (Surrogate Key, SK)** | Технический ключ (обычно INT), который генерируется в DWH и не зависит от бизнес-ключа. |
-| **Бизнес-ключ (Business Key)** | Ключ из источника (например, `airport_code`, `passenger_id`). |
-| **Star Schema** | Модель данных, где факт в центре, а измерения вокруг него (как звезда). |
-| **SCD Type 1** | Slowly Changing Dimension Type 1: при изменении данных просто перезаписываем старую запись. |
-| **SCD Type 2** | Slowly Changing Dimension Type 2: при изменении данных создаём новую запись с датой начала/действия. |
-| **AO-Row** | Append-Only Row-oriented: хранение данных по строкам, только добавление (без UPDATE/DELETE). |
-| **Heap** | Обычное хранение данных (как в обычной таблице), поддерживает UPDATE/DELETE. |
-| **Инкрементальная загрузка** | Загрузка только новых/изменённых данных за период, а не всей таблицы. |
+| **Зерно факта (Fact Grain)** | Минимальная единица в факте. Здесь — один сегмент билета. |
+| **Суррогатный ключ (SK)** | Технический INT-ключ, генерируемый в DWH. |
+| **Бизнес-ключ (BK)** | Ключ из источника (`airport_code`, `passenger_id`). |
+| **Star Schema** | Факт в центре, измерения вокруг (без snowflake-подтаблиц). |
+| **SCD Type 1** | Перезапись атрибутов без истории. |
+| **SCD Type 2** | Версионирование: `valid_from`/`valid_to`, `hashdiff`. |
+| **AO Row/Column** | Append-Only хранение (Row или Column). Не поддерживает UPDATE. |
+| **Heap** | Стандартное хранение с поддержкой UPDATE/DELETE. |
+| **HWM (High Water Mark)** | Отсечка по `MAX(_load_ts)` для инкрементальной загрузки. |
 
-### Пояснения к схеме
+### На что обратить внимание
 
-Эта диаграмма покрывает основные таблицы источника и показывает логику их трансформации. Вот на что стоит обратить внимание при обучении:
+**Обогащение измерений:**
+`seats` + `airplanes` → `dim_airplanes` — пример обогащения (total_seats).
 
-#### 1. Ветка справочников (Reference Data)
+**«Майнинг» измерений из транзакций:**
+`tickets` → `dim_passengers` — в источнике нет таблицы «Пассажиры». Извлекаем
+уникальных пассажиров из билетов с дедупликацией.
 
-**`seats` + `airplanes` → `dds.dim_airplanes`**: Здесь мы показываем пример **обогащения**. Таблица `seats` сама по себе в аналитике редко нужна отдельной сущностью. Мы используем её в ODS, чтобы посчитать общее количество мест (`total_seats`) и добавить это как атрибут в измерение самолётов (`dds.dim_airplanes`).
+**Нормализация:**
+`segments.fare_conditions` → `dim_tariffs` — выносим строковый атрибут в отдельный
+справочник для компактного INT-ключа в факте.
 
-**`airports` → `dds.dim_airports`**: Простой перенос (1-в-1), но в DDS мы можем добавить, например, поле `city_ru` и `city_en` как отдельные колонки, убрав JSON, который есть в источнике.
+**Почему нет `dim_bookings`:**
+`bookings` — транзакция, не справочник. `book_ref` и `book_date` хранятся
+как degenerate keys в факте.
 
-#### 2. Ветка генерации измерений (Dimension Generation)
-
-**`tickets` → `dds.dim_passengers`**: Это самая сложная трансформация для измерения. В источнике нет таблицы "Пассажиры". Мы должны объяснить студентам, что мы "майним" пассажиров из билетов. Важно: один и тот же пассажир может иметь разные записи с разными именами (опечатки, изменение фамилии), поэтому в проде часто делают логику SCD Type 2 для отслеживания изменений.
-
-- Для домашки (и первого эталонного решения) обычно достаточно **SCD Type 1**: одна актуальная запись на `passenger_id`, а SCD2 можно оставить как усложнение.
-
-**`segments` → `dds.dim_tariffs`**: Таблицы тарифов физически нет в источнике, она хранится строкой (`fare_conditions`: Economy/Comfort/Business) в таблице `segments`. Мы выносим её в отдельный справочник (нормализация), чтобы в факте хранить маленький `INT` ключ, а не длинную строку.
-
-**`routes` → `dds.dim_routes` (SCD2)**: Это отдельный учебный пример историзации. По `route_no` храним версии маршрута с `valid_from/valid_to` и `hashdiff`, чтобы показать студентам паттерн SCD2 на практике.
-
-#### 3. Сборка Факта (`dds.fact_flight_sales`)
-
-Это центр звезды. Мы собираем его из шести ODS таблиц:
-
-1. **`ods.segments`**: Основа (зерно факта — один полётный сегмент билета). Дает стоимость (`price`).
-2. **`ods.tickets`**: Приджойниваем, чтобы получить `book_ref` и `passenger_id`.
-3. **`ods.bookings`**: Приджойниваем по `book_ref`, чтобы получить `book_date` (дата покупки).
-4. **`ods.flights`**: Приджойниваем, чтобы получить расписание/факт времени и статус рейса, а также `route_no` (связка на маршруты).
-5. **`dds.dim_routes`**: По `route_no` и дате вылета подбираем версию маршрута (point-in-time) и получаем `route_sk`.
-6. **`ods.boarding_passes`**: Приджойниваем (LEFT JOIN), чтобы узнать, **сел ли пассажир реально в самолёт** и на какое место (`seat_no`). Это важный бизнес-аспект: билет куплен, но посадочный не выдан = пассажир не летел.
-
-#### 4. Почему нет `dds.dim_bookings`?
-
-В классической Star Schema измерения — это справочники (airports, airplanes, passengers), а факты — транзакции/события (sales, bookings).
-
-`bookings` — это транзакционная таблица, а не справочник. Вместо отдельного измерения `dds.dim_bookings` мы храним:
-- `book_ref` — бизнес-ключ бронирования (в факте)
-- `book_date` — дата бронирования (в факте, берём из `ods.bookings` по `book_ref`)
-
-Это позволяет отвечать на вопросы типа: *"За сколько дней до вылета люди обычно покупают билеты?"* (разница между `book_date` и датой вылета из `dds.dim_calendar`).
-
-#### 5. Суррогатные ключи (Surrogate Keys)
-
-В Star Schema факт должен ссылаться на суррогатные ключи (SK) измерений, а не на бизнес-ключи:
-
-| Бизнес-ключ | Суррогатный ключ | Преимущество |
-|-------------|------------------|--------------|
-| `airport_code CHAR(3)` | `airport_sk INT` | Меньший размер, стабильность |
-| `airplane_code TEXT` | `airplane_sk INT` | Меньший размер, стабильность |
-| `passenger_id TEXT` | `passenger_sk INT` | Меньший размер, отслеживание изменений |
+**Point-in-time JOIN (SCD2):**
+Факт присоединяется к той версии маршрута, которая действовала на дату вылета:
+`scheduled_departure::DATE >= valid_from AND (valid_to IS NULL OR ... < valid_to)`.
 
 ---
 
 ## Связанные документы
 
-- [`docs/design/bookings_stg_design.md`](bookings_stg_design.md) — Детальный дизайн STG слоя для bookings
-- [`docs/design/bookings_ods_design.md`](bookings_ods_design.md) — Детальный дизайн ODS слоя (SCD1, batch contract, DQ)
-- [`docs/design/bookings_dds_design.md`](bookings_dds_design.md) — План реализации DDS слоя (Star Schema, SCD2 для routes)
-- [`docs/bookings_to_gp_dds.md`](../bookings_to_gp_dds.md) — Запуск и проверка DAG `bookings_to_gp_dds`
-- [`docs/archive/bookings_stg_code_review.md`](../archive/bookings_stg_code_review.md) — Ревью решения и рекомендации по улучшению
-- [`docs/reference/bookings_tz.md`](../reference/bookings_tz.md) — Работа с часовыми поясами в источнике
-- [`docs/reference/pxf_bookings.md`](../reference/pxf_bookings.md) — Настройка PXF для чтения из bookings-db
-- [`TESTING.md`](../../TESTING.md) — Пошаговый чек-лист для тестирования стенда
-
----
-
-## История изменений
-
-| Дата | Версия | Описание изменений |
-|------|--------|-------------------|
-| 2026-02-25 | 2.2 | Реализован DDS: добавлены `sql/dds/*` (DDL/LOAD/DQ), DAG `bookings_dds_ddl`, DAG `bookings_to_gp_dds`, обновлены smoke-тесты и документация. |
-| 2026-02-23 | 2.1 | Актуализирован статус: STG+ODS реализованы. Обновлены DDS-объекты (`dds.dim_*`, `dds.fact_flight_sales`), добавлен `dds.dim_routes` (SCD2), исправлены диаграмма и TODO. |
-| 2025-01-17 | 2.0 | Удалён слой DQ для упрощения учебного стенда. Добавлены спецификации для LLM и обучающие материалы для студентов. Добавлен глоссарий терминов. |
-| 2025-01-17 | 1.1 | Исправлены названия таблиц (`aircrafts_data` → `airplanes_data`, `ticket_flights` → `segments`), удалено `dim.bookings`, добавлены суррогатные ключи, добавлен слой DQ, исправлены связи |
-| 2025-01-XX | 1.0 | Первоначальная версия |
-
+- [`bookings_stg_design.md`](bookings_stg_design.md) — дизайн STG
+- [`bookings_ods_design.md`](bookings_ods_design.md) — дизайн ODS (SCD1, batch contract, DQ)
+- [`bookings_dds_design.md`](bookings_dds_design.md) — дизайн DDS (Star Schema, SCD2)
+- [`bookings_dm_design.md`](bookings_dm_design.md) — дизайн DM (5 витрин)
+- [`naming_conventions.md`](naming_conventions.md) — нейминг полей
+- [`../reference/bookings_tz.md`](../reference/bookings_tz.md) — часовые пояса
+- [`../reference/pxf_bookings.md`](../reference/pxf_bookings.md) — настройка PXF
+- [`../assignment/analyst_spec.md`](../assignment/analyst_spec.md) — ТЗ от аналитика (курсовое задание)

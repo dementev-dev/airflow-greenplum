@@ -162,7 +162,7 @@ with DAG(
         sql="stg/seats_dq.sql",
     )
 
-    # Загрузка транзакций (инкремент/full snapshot)
+    # Загрузка транзакций (инкремент)
     load_flights_to_stg = PostgresOperator(
         task_id="load_flights_to_stg",
         postgres_conn_id=GREENPLUM_CONN_ID,

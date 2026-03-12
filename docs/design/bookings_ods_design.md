@@ -511,7 +511,7 @@ ANALYZE ods.bookings;
 
 ### 6.4. Поведение при пустом батче
 
-- для инкрементальных таблиц (`bookings`, `tickets`, `flights`, `segments`) пустой батч допустим;
+- для инкрементальных таблиц (`bookings`, `tickets`, `flights`, `segments`, `boarding_passes`) пустой батч допустим;
 - для snapshot-справочников (`airports`, `airplanes`, `routes`, `seats`) пустой батч считаем ошибкой.
 
 ---

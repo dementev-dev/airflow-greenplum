@@ -172,7 +172,7 @@ graph LR
 | `stg.tickets` | `bookings.tickets` | `ticket_no` | Инкремент (через bookings) | `book_ref` |
 | `stg.flights` | `bookings.flights` | `flight_id` | Инкремент (scheduled_departure) | `flight_id` |
 | `stg.segments` | `bookings.segments` | `(ticket_no, flight_id)` | Инкремент (через tickets) | `ticket_no` |
-| `stg.boarding_passes` | `bookings.boarding_passes` | `(ticket_no, flight_id)` | Full snapshot | `ticket_no` |
+| `stg.boarding_passes` | `bookings.boarding_passes` | `(ticket_no, flight_id)` | Инкремент (через tickets/bookings) | `ticket_no` |
 | `stg.airports` | `bookings.airports_data` | `airport_code` | Full snapshot | `airport_code` |
 | `stg.airplanes` | `bookings.airplanes_data` | `airplane_code` | Full snapshot | `airplane_code` |
 | `stg.routes` | `bookings.routes` | `(route_no, validity)` | Full snapshot | `route_no` |

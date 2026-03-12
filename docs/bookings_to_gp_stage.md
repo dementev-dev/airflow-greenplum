@@ -13,7 +13,7 @@
 - Загружает инкремент в `stg.tickets` через внешнюю таблицу `stg.tickets_ext`, используя PXF.
 - Запускает DQ‑проверки для `stg.tickets` (количество, ссылочная целостность, обязательные поля).
 - Загружает справочники (full load): `stg.airports`, `stg.airplanes`, `stg.routes`, `stg.seats` + DQ.
-- Загружает транзакции: `stg.flights` (инкремент), `stg.segments` (инкремент), `stg.boarding_passes` (full snapshot) + DQ.
+- Загружает транзакции: `stg.flights` (инкремент), `stg.segments` (инкремент), `stg.boarding_passes` (инкремент через tickets/bookings) + DQ.
 
 ## Что должно быть готово перед запуском
 
@@ -110,7 +110,7 @@ check_tickets_dq
 
 - `load_flights_to_stg` → `check_flights_dq` (инкремент по `scheduled_departure`) — зависит от **routes**
 - `load_segments_to_stg` → `check_segments_dq` (инкремент по `book_date` через tickets/bookings) — зависит от **flights**
-- `load_boarding_passes_to_stg` → `check_boarding_passes_dq` (full snapshot) — зависит от **segments**
+- `load_boarding_passes_to_stg` → `check_boarding_passes_dq` (инкремент по `book_date` через tickets/bookings) — зависит от **segments**
 
 Ветка `seats` работает параллельно с веткой `routes → flights → segments → boarding_passes`.
 Обе ветки сходятся на `finish_summary`.

@@ -48,6 +48,21 @@ WITH fact_src AS (
     -- Учебный комментарий: Late-arriving dimensions (Опаздывающие измерения)
     -- Мы используем LEFT JOIN, так как факт (рейс/билет) может прийти раньше,
     -- чем справочник (пассажир/маршрут) обновится в DDS.
+    --
+    -- Airport lookup через ods.routes (эталонный справочник), а не через dds.dim_routes
+    -- (студенческое задание SCD2). Это архитектурное решение: эталонный пайплайн работает
+    -- независимо от студенческого кода. Аэропорты вылета/прилёта одинаковы во всех
+    -- версиях одного route_no — безопасно брать из ODS без point-in-time логики.
+    -- ROW_NUMBER по validity DESC: выбираем актуальную версию расписания маршрута.
+    LEFT JOIN (
+        SELECT route_no, departure_airport, arrival_airport
+        FROM (
+            SELECT route_no, departure_airport, arrival_airport,
+                   ROW_NUMBER() OVER (PARTITION BY route_no ORDER BY validity DESC) AS rn
+            FROM ods.routes
+        ) ranked
+        WHERE rn = 1
+    ) AS ods_rte ON ods_rte.route_no = flt.route_no
     LEFT JOIN dds.dim_routes AS rte
         ON rte.route_bk = flt.route_no
         AND flt.scheduled_departure::DATE >= rte.valid_from
@@ -55,11 +70,11 @@ WITH fact_src AS (
     LEFT JOIN dds.dim_calendar AS cal
         ON cal.date_actual = flt.scheduled_departure::DATE
     LEFT JOIN dds.dim_airports AS dep
-        ON dep.airport_bk = rte.departure_airport
+        ON dep.airport_bk = ods_rte.departure_airport    -- через ods.routes (эталон)
     LEFT JOIN dds.dim_airports AS arr
-        ON arr.airport_bk = rte.arrival_airport
+        ON arr.airport_bk = ods_rte.arrival_airport      -- через ods.routes (эталон)
     LEFT JOIN dds.dim_airplanes AS ap
-        ON ap.airplane_bk = rte.airplane_code
+        ON ap.airplane_bk = rte.airplane_code            -- через dim_routes (point-in-time, как прежде)
     LEFT JOIN dds.dim_tariffs AS tar
         ON tar.fare_conditions = seg.fare_conditions
     LEFT JOIN dds.dim_passengers AS pax

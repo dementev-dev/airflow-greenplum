@@ -5,8 +5,9 @@
 > опираясь на эталонный срез (витрина `dm.sales_report` и вся её цепочка).
 >
 > **Эталон для изучения:**
-> - STG: `bookings`, `tickets`, `flights`, `segments`, `boarding_passes`, `airports`
-> - ODS: те же таблицы
+> - STG: весь слой — `bookings`, `tickets`, `flights`, `segments`, `boarding_passes`,
+>   `airports`, `airplanes`, `seats`, `routes` (реализован как образец)
+> - ODS: `bookings`, `tickets`, `segments`, `flights`, `boarding_passes`, `airports`, `routes`
 > - DDS: `dim_airports`, `dim_tariffs`, `dim_calendar`, `fact_flight_sales`
 > - DM: `sales_report`
 >
@@ -16,18 +17,20 @@
 
 ## Рекомендуемый порядок выполнения
 
-1. **STG** — `airplanes`, `seats`, `routes` (разминка по аналогии)
-2. **ODS** — `airplanes`, `seats`, `routes` (закрепление UPSERT / TRUNCATE+INSERT)
-3. **DDS** — `dim_airplanes`, `dim_passengers` (SCD1 — новые измерения)
-4. **DDS** — `dim_routes` (SCD2 — ключевой вызов курсовой)
-5. **DM** — `airport_traffic` (простая витрина, похожа на `sales_report`)
-6. **DM** — `route_performance` (Full Rebuild, работа с SCD2-измерением)
-7. **DM** — `monthly_overview` (двухуровневая агрегация)
-8. **DM** — `passenger_loyalty` (самая сложная, пересчёт истории)
+> **Примечание:** STG-слой полностью реализован в эталоне (все 9 таблиц), `ods.routes`
+> тоже эталонный. Ваше задание начинается с ODS: `airplanes` и `seats`.
+
+1. **ODS** — `airplanes`, `seats` (практика TRUNCATE+INSERT по аналогии с `ods.airports`)
+2. **DDS** — `dim_airplanes`, `dim_passengers` (SCD1 — новые измерения)
+3. **DDS** — `dim_routes` (SCD2 — ключевой вызов курсовой)
+4. **DM** — `airport_traffic` (простая витрина, похожа на `sales_report`)
+5. **DM** — `route_performance` (Full Rebuild, работа с SCD2-измерением)
+6. **DM** — `monthly_overview` (двухуровневая агрегация)
+7. **DM** — `passenger_loyalty` (самая сложная, пересчёт истории)
 
 Порядок выстроен от простого к сложному. Каждый шаг опирается на опыт
 предыдущего. Вы можете двигаться в ином порядке, но убедитесь, что зависимости
-слоёв соблюдены (STG → ODS → DDS → DM).
+слоёв соблюдены (ODS → DDS → DM).
 
 ---
 
@@ -46,106 +49,40 @@
 
 ---
 
-## Часть 1. STG-слой (Staging)
+## Почему STG-слой уже реализован
 
-> **Цель:** Скопировать данные из источника (bookings-db) в Greenplum «как есть»,
-> сохраняя все поля в текстовом виде. Преобразование типов — задача ODS.
->
-> **Аналог для изучения:** `sql/stg/airports_ddl.sql`, `sql/stg/airports_load.sql`
+STG-слой (все 9 таблиц) и `ods.routes` полностью реализованы в эталоне. Причина:
 
-### 1.1. stg.airplanes
+Эталонный пайплайн использует **batch resolver** — механизм, который находит
+согласованный набор данных во всех четырёх snapshot-таблицах (`stg.airports`,
+`stg.airplanes`, `stg.routes`, `stg.seats`) по одному `_load_id`. Если любая
+из этих таблиц пуста — batch resolver не найдёт общего батча, и весь ODS pipeline
+не запустится.
 
-**Описание:** Справочник моделей воздушных судов. Содержит технические
-характеристики каждой модели: дальность полёта и крейсерскую скорость.
+Это означает: без заполненного STG невозможна загрузка ODS и всей последующей
+цепочки (DDS, DM). Поэтому весь STG реализован как эталон — чтобы пайплайн
+работал с первого запуска.
 
-**Источник:** `bookings.airplanes_data` (через PXF)
+`ods.routes` тоже эталонный: факт `fact_flight_sales` использует его для резолвинга
+аэропортов вылета/прилёта, независимо от студенческого `dds.dim_routes`.
 
-| Поле | Тип | Описание | Маппинг из источника |
-|------|-----|----------|----------------------|
-| `airplane_code` | TEXT | Код модели самолёта (бизнес-ключ) | `airplanes_data.airplane_code::TEXT` |
-| `model` | TEXT | Полное наименование модели (JSON в источнике) | `airplanes_data.model::TEXT` |
-| `range` | TEXT | Дальность полёта, км | `airplanes_data.range::TEXT` |
-| `speed` | TEXT | Крейсерская скорость, км/ч | `airplanes_data.speed::TEXT` |
-| `event_ts` | TIMESTAMP | Момент загрузки (`now()`). У snapshot-справочников нет бизнес-события с точным временем, поэтому `event_ts` заполняется при загрузке | `now()` |
-| `_load_ts` | TIMESTAMP NOT NULL | Момент загрузки в STG | `now()` |
-| `_load_id` | TEXT NOT NULL | Идентификатор батча загрузки | `'{{ run_id }}'` |
-
-**Тип историзации:** Нет (накопительный snapshot). Каждый запуск добавляет
-новый батч по `_load_id`; прошлые батчи остаются в таблице. Не используйте TRUNCATE.
-
-**Стратегия загрузки:** Полный снимок (Full Snapshot). Справочник маленький —
-загружаем целиком каждый раз. Идемпотентность — через проверку `_load_id`.
-
-**Distribution Key:** `airplane_code`
+**Что вам делать:** Изучите эталонные скрипты как образец — именно так написан
+«боевой» код загрузки:
+- `sql/stg/airports_load.sql` — инкрементальная загрузка (HWM)
+- `sql/stg/airplanes_load.sql` — full snapshot с проверкой `_load_id`
+- `sql/ods/airports_load.sql` — TRUNCATE+INSERT из STG
 
 ---
 
-### 1.2. stg.seats
-
-**Описание:** Карта посадочных мест для каждой модели самолёта.
-Каждая строка — одно конкретное место в конкретной модели.
-
-**Источник:** `bookings.seats` (через PXF)
-
-| Поле | Тип | Описание | Маппинг из источника |
-|------|-----|----------|----------------------|
-| `airplane_code` | TEXT | Код модели самолёта (FK → airplanes) | `seats.airplane_code::TEXT` |
-| `seat_no` | TEXT | Номер места (напр. «1A», «12C») | `seats.seat_no::TEXT` |
-| `fare_conditions` | TEXT | Класс обслуживания (`Economy`, `Business`, `Comfort`) | `seats.fare_conditions::TEXT` |
-| `event_ts` | TIMESTAMP | Момент загрузки (`now()`). Snapshot-справочник — бизнес-событие отсутствует | `now()` |
-| `_load_ts` | TIMESTAMP NOT NULL | Момент загрузки в STG | `now()` |
-| `_load_id` | TEXT NOT NULL | Идентификатор батча загрузки | `'{{ run_id }}'` |
-
-**Тип историзации:** Нет (накопительный snapshot). Каждый запуск добавляет
-новый батч по `_load_id`; прошлые батчи остаются в таблице. Не используйте TRUNCATE.
-
-**Стратегия загрузки:** Полный снимок. Идемпотентность — через
-`airplane_code` + `seat_no` + `_load_id`.
-
-**Distribution Key:** `airplane_code`
-
----
-
-### 1.3. stg.routes
-
-**Описание:** Справочник авиамаршрутов. Маршрут — регулярный рейс между двумя
-аэропортами на определённом типе самолёта с фиксированным расписанием.
-
-**Источник:** `bookings.routes` (через PXF)
-
-| Поле | Тип | Описание | Маппинг из источника |
-|------|-----|----------|----------------------|
-| `route_no` | TEXT | Номер маршрута (бизнес-ключ, часть 1) | `routes.route_no::TEXT` |
-| `validity` | TEXT | Период действия маршрута (бизнес-ключ, часть 2) | `routes.validity::TEXT` |
-| `departure_airport` | TEXT | Код аэропорта вылета (FK → airports) | `routes.departure_airport::TEXT` |
-| `arrival_airport` | TEXT | Код аэропорта прилёта (FK → airports) | `routes.arrival_airport::TEXT` |
-| `airplane_code` | TEXT | Код модели самолёта (FK → airplanes) | `routes.airplane_code::TEXT` |
-| `days_of_week` | TEXT | Дни недели выполнения рейса | `routes.days_of_week::TEXT` |
-| `scheduled_time` | TEXT | Время вылета по расписанию | `routes.scheduled_time::TEXT` |
-| `duration` | TEXT | Плановая продолжительность полёта | `routes.duration::TEXT` |
-| `event_ts` | TIMESTAMP | Момент загрузки (`now()`). Snapshot-справочник — бизнес-событие отсутствует | `now()` |
-| `_load_ts` | TIMESTAMP NOT NULL | Момент загрузки в STG | `now()` |
-| `_load_id` | TEXT NOT NULL | Идентификатор батча загрузки | `'{{ run_id }}'` |
-
-**Тип историзации:** Нет (накопительный snapshot). Каждый запуск добавляет
-новый батч по `_load_id`; прошлые батчи остаются в таблице. Не используйте TRUNCATE.
-
-**Стратегия загрузки:** Полный снимок. Идемпотентность — по составному ключу
-`route_no` + `validity` + `_load_id`.
-
-**Distribution Key:** `route_no`
-
----
-
-## Часть 2. ODS-слой (Operational Data Store)
+## Часть 1. ODS-слой (Operational Data Store)
 
 > **Цель:** Привести данные из STG к целевым типам, очистить, дедуплицировать.
-> Справочники (airplanes, seats, routes) загружаются стратегией TRUNCATE + INSERT
-> из последнего согласованного батча STG.
+> Справочники (`airplanes`, `seats`) загружаются стратегией TRUNCATE + INSERT
+> из последнего согласованного батча STG. (`ods.routes` реализован в эталоне.)
 >
 > **Аналог для изучения:** `sql/ods/airports_ddl.sql`, `sql/ods/airports_load.sql`
 
-### 2.1. ods.airplanes
+### 1.1. ods.airplanes
 
 **Описание:** Очищенный справочник моделей воздушных судов с правильными типами.
 
@@ -175,7 +112,7 @@
 
 ---
 
-### 2.2. ods.seats
+### 1.2. ods.seats
 
 **Описание:** Карта посадочных мест с корректными типами.
 
@@ -203,41 +140,9 @@
 
 ---
 
-### 2.3. ods.routes
-
-**Описание:** Справочник маршрутов с правильными типами данных.
-
-**Источник:** `stg.routes`
-
-| Поле | Тип | Описание | Маппинг из STG |
-|------|-----|----------|----------------|
-| `route_no` | TEXT NOT NULL | Номер маршрута (PK, часть 1) | `route_no` |
-| `validity` | TEXT NOT NULL | Период действия (PK, часть 2) | `validity` |
-| `departure_airport` | TEXT NOT NULL | Код аэропорта вылета | `departure_airport` |
-| `arrival_airport` | TEXT NOT NULL | Код аэропорта прилёта | `arrival_airport` |
-| `airplane_code` | TEXT NOT NULL | Код модели самолёта | `airplane_code` |
-| `days_of_week` | INTEGER[] | Дни недели (массив) | `days_of_week` — преобразовать TEXT в `INTEGER[]` |
-| `departure_time` | TIME NOT NULL | Время вылета | `scheduled_time::TIME` |
-| `duration` | INTERVAL NOT NULL | Длительность полёта | `duration::INTERVAL` |
-| `_load_id` | TEXT NOT NULL | Идентификатор батча | `'{{ run_id }}'` |
-| `_load_ts` | TIMESTAMP NOT NULL | Момент загрузки | `now()` |
-
-**Тип историзации:** Нет (текущее состояние справочника, TRUNCATE + INSERT).
-
-**Стратегия загрузки:** TRUNCATE + INSERT.
-
-**Бизнес-правила:**
-- Составной PK: `(route_no, validity)`.
-- Преобразование `days_of_week` из текста в массив целых чисел (`INTEGER[]`).
-- Преобразование `scheduled_time` → `TIME`, `duration` → `INTERVAL`.
-
-**Тип хранения Greenplum:** Append-Only Row.
-
-**Distribution Key:** `(route_no, validity)`
-
 ---
 
-## Часть 3. DDS-слой (Detailed Data Store) — Измерения
+## Часть 2. DDS-слой (Detailed Data Store) — Измерения
 
 > **Цель:** Построить измерения звёздной схемы (Star Schema) с суррогатными
 > ключами. SCD1-измерения обновляют атрибуты «на месте». SCD2-измерение
@@ -245,7 +150,7 @@
 >
 > **Аналог для SCD1:** `sql/dds/dim_airports_ddl.sql`, `sql/dds/dim_airports_load.sql`
 
-### 3.1. dds.dim_airplanes (SCD1)
+### 2.1. dds.dim_airplanes (SCD1)
 
 **Описание:** Измерение моделей самолётов. Содержит технические характеристики
 и рассчитанное общее количество мест (обогащение из `ods.seats`).
@@ -284,7 +189,7 @@
 
 ---
 
-### 3.2. dds.dim_passengers (SCD1)
+### 2.2. dds.dim_passengers (SCD1)
 
 **Описание:** Измерение пассажиров. Извлекается из таблицы билетов — каждый
 уникальный `passenger_id` становится строкой измерения.
@@ -322,7 +227,7 @@
 
 ---
 
-### 3.3. dds.dim_routes (SCD2)
+### 2.3. dds.dim_routes (SCD2)
 
 > **Это ключевой вызов курсовой.** Реализация SCD Type 2 — обязательный навык
 > для Data Engineer. Ниже — алгоритм текстом; SQL вы пишете самостоятельно.
@@ -406,14 +311,14 @@ md5(concat_ws('|',
 
 ---
 
-## Часть 4. DM-слой (Data Marts) — Витрины
+## Часть 3. DM-слой (Data Marts) — Витрины
 
 > **Цель:** Построить аналитические витрины поверх DDS.
 > Каждая витрина отвечает на конкретный бизнес-вопрос.
 >
 > **Аналог для изучения:** `sql/dm/sales_report_ddl.sql`, `sql/dm/sales_report_load.sql`
 
-### 4.1. dm.airport_traffic
+### 3.1. dm.airport_traffic
 
 **Бизнес-вопрос:** «Какой пассажиропоток и выручка у каждого аэропорта по дням?»
 
@@ -469,7 +374,7 @@ md5(concat_ws('|',
 
 ---
 
-### 4.2. dm.route_performance
+### 3.2. dm.route_performance
 
 **Бизнес-вопрос:** «Какие маршруты самые эффективные? Где высокий load factor,
 а где теряем пассажиров?»
@@ -532,7 +437,7 @@ md5(concat_ws('|',
 
 ---
 
-### 4.3. dm.monthly_overview
+### 3.3. dm.monthly_overview
 
 **Бизнес-вопрос:** «Какова помесячная динамика: рейсы, выручка, load factor
 в разрезе типов самолётов?»
@@ -594,7 +499,7 @@ md5(concat_ws('|',
 
 ---
 
-### 4.4. dm.passenger_loyalty
+### 3.4. dm.passenger_loyalty
 
 **Бизнес-вопрос:** «Кто наши самые лояльные пассажиры? Сколько они летают,
 тратят, какой класс предпочитают?»
@@ -657,6 +562,34 @@ md5(concat_ws('|',
 **Тип хранения Greenplum:** Heap (для UPSERT).
 
 **Distribution Key:** `passenger_sk`
+
+---
+
+## Пересчёт факта после реализации измерений
+
+После того, как вы реализуете все DDS-измерения (`dim_airplanes`, `dim_passengers`,
+`dim_routes`), нужно пересчитать факт — он загружался ещё без ваших SK:
+
+1. Запустите загрузку своих измерений (dim_airplanes, dim_passengers, dim_routes)
+2. Выполните `TRUNCATE dds.fact_flight_sales;`
+3. Перезапустите загрузку факта (DAG или только таск `load_dds_fact_flight_sales`)
+4. Перезапустите DM-витрины
+
+```sql
+-- Проверка: все SK заполнены
+SELECT
+    COUNT(*)                      AS total,
+    COUNT(departure_airport_sk)   AS has_dep_sk,
+    COUNT(arrival_airport_sk)     AS has_arr_sk,
+    COUNT(route_sk)               AS has_route_sk,
+    COUNT(passenger_sk)           AS has_passenger_sk,
+    COUNT(airplane_sk)            AS has_airplane_sk
+FROM dds.fact_flight_sales;
+```
+
+Это стандартная практика при **late-arriving dimensions** (опаздывающих измерениях):
+факт загрузился раньше, чем были готовы справочники, поэтому SK заполнены не были.
+После пересчёта все SK проставятся корректно.
 
 ---
 

@@ -20,15 +20,14 @@
 |------|-----------------------------------------------------------------|
 | DM   | `sales_report`                                                  |
 | DDS  | `fact_flight_sales`, `dim_airports` (SCD1), `dim_tariffs` (SCD1), `dim_calendar` |
-| ODS  | `bookings`, `tickets`, `segments`, `flights`, `boarding_passes`, `airports` |
-| STG  | `bookings`, `tickets`, `segments`, `flights`, `boarding_passes`, `airports` |
+| ODS  | `bookings`, `tickets`, `segments`, `flights`, `boarding_passes`, `airports`, `routes` |
+| STG  | весь слой: `bookings`, `tickets`, `segments`, `flights`, `boarding_passes`, `airports`, `airplanes`, `seats`, `routes` |
 
 ### Задание студенту
 
 | Слой | Таблицы                                                           | Что нового для студента                          |
 |------|-------------------------------------------------------------------|--------------------------------------------------|
-| STG  | `airplanes`, `seats`, `routes`                                    | Практика по аналогии с эталоном                  |
-| ODS  | `airplanes`, `seats`, `routes`                                    | Практика SCD1 UPSERT по аналогии                |
+| ODS  | `airplanes`, `seats`                                              | Практика TRUNCATE+INSERT по аналогии с эталоном  |
 | DDS  | `dim_airplanes` (SCD1), `dim_passengers` (SCD1), `dim_routes` (SCD2) | **SCD2 — ключевой вызов курсовой**          |
 | DM   | `airport_traffic`, `monthly_overview`, `route_performance`, `passenger_loyalty` | Разная сложность (от простой к сложной)  |
 
@@ -38,14 +37,13 @@
 
 Студенту рекомендуется (но не обязательно) двигаться в таком порядке:
 
-1. **STG** (airplanes, seats, routes) — разминка, по аналогии
-2. **ODS** (airplanes, seats, routes) — закрепление UPSERT
-3. **DDS** dim_airplanes, dim_passengers (SCD1) — новые измерения
-4. **DDS** dim_routes (**SCD2**) — ключевой вызов
-5. **DM** airport_traffic — простая витрина, похожа на sales_report
-6. **DM** route_performance — TRUNCATE+INSERT, SCD2-агрегация по BK
-7. **DM** monthly_overview — двухуровневая агрегация
-8. **DM** passenger_loyalty — самая сложная, пересчёт истории
+1. **ODS** (airplanes, seats) — практика TRUNCATE+INSERT
+2. **DDS** dim_airplanes, dim_passengers (SCD1) — новые измерения
+3. **DDS** dim_routes (**SCD2**) — ключевой вызов
+4. **DM** airport_traffic — простая витрина, похожа на sales_report
+5. **DM** route_performance — TRUNCATE+INSERT, SCD2-агрегация по BK
+6. **DM** monthly_overview — двухуровневая агрегация
+7. **DM** passenger_loyalty — самая сложная, пересчёт истории
 
 Порядок выстроен от простого к сложному. Каждый шаг опирается на опыт
 предыдущего.
@@ -83,14 +81,9 @@
 
 ```
 bookings_validate
-├── validate_stg
-│   ├── check_stg_airplanes_exists      (таблица создана, >0 строк)
-│   ├── check_stg_seats_exists
-│   └── check_stg_routes_exists
 ├── validate_ods
 │   ├── check_ods_airplanes_rowcount    (ODS >= STG по кол-ву уникальных BK)
 │   ├── check_ods_seats_rowcount
-│   ├── check_ods_routes_rowcount
 │   └── check_ods_no_null_pks           (PK not null)
 ├── validate_dds
 │   ├── check_dim_airplanes_exists

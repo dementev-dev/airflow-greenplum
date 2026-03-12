@@ -1,6 +1,10 @@
 # Схема БД DWH (Bookings → Greenplum)
 
-> **Статус:** Все слои реализованы (STG, ODS, DDS, DM).
+> **Статус:** Все слои реализованы в ветке `solution` (STG, ODS, DDS, DM).
+> На ветке `main` студенческие таблицы ODS (`airplanes`, `seats`), DDS-измерения
+> (`dim_airplanes`, `dim_passengers`, `dim_routes`) и студенческие DM-витрины
+> (`airport_traffic`, `route_performance`, `monthly_overview`, `passenger_loyalty`)
+> — заглушки (`SELECT 1;`). Данные появятся после реализации заданий.
 
 Архитектура хранилища данных (DWH) для учебного проекта Airflow + Greenplum.
 Источник — демо-БД `bookings` (Postgres). Документ даёт цельный взгляд «сверху»;
@@ -250,7 +254,9 @@ Degenerate keys: `book_ref`, `ticket_no`, `flight_id`, `book_date`, `seat_no`.
 ## Ключевые договорённости
 
 - **Нейминг полей**: [`naming_conventions.md`](naming_conventions.md)
-- **DQ-проверки**: SQL-скрипты с `RAISE EXCEPTION` (не отдельный DQ-слой)
+- **DQ-проверки**: SQL-скрипты с `RAISE EXCEPTION` (не отдельный DQ-слой).
+  На ветке `main` студенческие DQ-скрипты (`airplanes_dq.sql`, `seats_dq.sql`,
+  student dims/DM) — заглушки (`SELECT 1;`) без проверок.
 - **Инкремент STG**: для `tickets` опорная дата — из `bookings.book_date`
 - **Point-in-time JOIN**: факт ↔ `dim_routes` по `[valid_from, valid_to)`
 - **Суррогатные ключи**: `MAX(sk) + ROW_NUMBER()` (не SERIAL — GP-специфика)

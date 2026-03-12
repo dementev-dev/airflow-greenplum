@@ -123,8 +123,12 @@ DQ-проверки факта отражают эту логику:
 > В боевых системах для этого используют «строку-заглушку» (unknown member, SK = 0)
 > и отдельный процесс backfill.
 
-**Point-in-time join для SCD2.**
-Для `dim_routes` используется привязка по дате рейса:
+**Два пути lookup для аэропортов и маршрутов.**
+Аэропорты (`departure_airport_sk`, `arrival_airport_sk`) разрешаются через `ods.routes` →
+`dim_airports`. Аэропорты вылета/прилёта одинаковы во всех версиях маршрута, поэтому
+point-in-time логика не нужна — безопасно брать актуальную версию из ODS.
+
+`route_sk` и `airplane_sk` разрешаются через point-in-time join с SCD2 `dim_routes`:
 
 ```sql
 LEFT JOIN dds.dim_routes AS rte

@@ -115,6 +115,7 @@ graph LR
     ODS_Tickets -->|book_ref, passenger_id| FACT_Sales
     ODS_Bookings -->|book_date| FACT_Sales
     ODS_Flights -->|schedule, route_no| FACT_Sales
+    ODS_Routes -->|dep/arr airports| FACT_Sales
     ODS_Boarding -->|LEFT JOIN seat_no| FACT_Sales
 
     %% Dimensions to Fact
@@ -220,12 +221,12 @@ SK генерация: `MAX(sk) + ROW_NUMBER()` (безопасно при `conc
 
 `dds.fact_flight_sales` — зерно: 1 строка = 1 сегмент билета (`ticket_no` + `flight_id`).
 
-| FK | Источник | Примечание |
-|----|----------|------------|
+| FK | Lookup-путь | Примечание |
+|----|-------------|------------|
 | `calendar_sk` | `dim_calendar` | Дата вылета |
-| `departure_airport_sk` | `dim_airports` | Аэропорт вылета |
-| `arrival_airport_sk` | `dim_airports` | Аэропорт прилёта |
-| `airplane_sk` | `dim_airplanes` | Самолёт |
+| `departure_airport_sk` | `ods.routes` → `dim_airports` | Аэропорт вылета (эталонный справочник) |
+| `arrival_airport_sk` | `ods.routes` → `dim_airports` | Аэропорт прилёта (эталонный справочник) |
+| `airplane_sk` | `dim_routes` → `dim_airplanes` | Самолёт (point-in-time SCD2) |
 | `tariff_sk` | `dim_tariffs` | Тариф |
 | `passenger_sk` | `dim_passengers` | Пассажир |
 | `route_sk` | `dim_routes` | Версия маршрута (SCD2, point-in-time) |

@@ -168,13 +168,14 @@ DISTRIBUTED BY (ticket_no)
 
 ### 3.8. Политика NULL FK в факте
 
-FK суррогатные ключи разделены на три группы:
+FK суррогатные ключи разделены на четыре группы по источнику lookup:
 
-| Группа | FK | NULL допустим? | Причина |
-|--------|-----|---------------|---------|
-| **Обязательные** | `tariff_sk`, `passenger_sk` | Нет | Данные всегда есть в ODS (segments, tickets). NULL = баг загрузки. |
-| **Зависят от маршрута** | `route_sk`, `departure_airport_sk`, `arrival_airport_sk`, `airplane_sk` | Нет (в норме) | Маршрут должен быть в ODS. NULL = аномалия данных, DQ предупреждает. |
-| **Зависят от расписания** | `calendar_sk` | Допустим (редко) | `scheduled_departure` может быть NULL в ODS. DQ считает и логирует, но не фейлит. |
+| Группа | FK | Lookup-путь | NULL допустим? | Причина |
+|--------|-----|-------------|---------------|---------|
+| **Обязательные** | `tariff_sk`, `passenger_sk` | `dim_tariffs` / `dim_passengers` (SCD1) | Нет | Данные всегда есть в ODS. NULL = баг загрузки. |
+| **Эталонный справочник** | `departure_airport_sk`, `arrival_airport_sk` | `ods.routes` → `dim_airports` | Нет (в норме) | Аэропорты разрешаются через `ods.routes` (эталон), не через `dim_routes`. NULL = аномалия данных, DQ проверяет с порогом 1%. |
+| **Point-in-time SCD2** | `route_sk`, `airplane_sk` | `dim_routes` (SCD2 lookup) | Нет (в норме) | Point-in-time привязка к версии маршрута на дату рейса. NULL = аномалия, DQ предупреждает. |
+| **Расписание** | `calendar_sk` | `dim_calendar` | Допустим (редко) | `scheduled_departure` может быть NULL в ODS. DQ считает и логирует. |
 
 DQ-проверки явно контролируют каждую группу (см. секцию 6).
 
@@ -459,15 +460,27 @@ WITH fact_src AS (
     JOIN ods.tickets  AS tkt ON tkt.ticket_no = seg.ticket_no
     JOIN ods.bookings AS bkg ON bkg.book_ref  = tkt.book_ref
     JOIN ods.flights  AS flt ON flt.flight_id = seg.flight_id
+    -- Airport lookup через ods.routes (эталонный справочник).
+    -- Аэропорты вылета/прилёта одинаковы во всех версиях маршрута —
+    -- безопасно брать из ODS без point-in-time логики.
+    LEFT JOIN (
+        SELECT route_no, departure_airport, arrival_airport
+        FROM (
+            SELECT route_no, departure_airport, arrival_airport,
+                   ROW_NUMBER() OVER (PARTITION BY route_no ORDER BY validity DESC) AS rn
+            FROM ods.routes
+        ) ranked
+        WHERE rn = 1
+    ) AS ods_rte ON ods_rte.route_no = flt.route_no
     -- SCD2 point-in-time: версия маршрута, актуальная на дату вылета
     LEFT JOIN dds.dim_routes AS rte
         ON rte.route_bk = flt.route_no
         AND flt.scheduled_departure::DATE >= rte.valid_from
         AND (rte.valid_to IS NULL OR flt.scheduled_departure::DATE < rte.valid_to)
     LEFT JOIN dds.dim_calendar   AS cal ON cal.date_actual = flt.scheduled_departure::DATE
-    LEFT JOIN dds.dim_airports   AS dep ON dep.airport_bk = rte.departure_airport
-    LEFT JOIN dds.dim_airports   AS arr ON arr.airport_bk = rte.arrival_airport
-    LEFT JOIN dds.dim_airplanes  AS ap  ON ap.airplane_bk = rte.airplane_code
+    LEFT JOIN dds.dim_airports   AS dep ON dep.airport_bk = ods_rte.departure_airport  -- через ods.routes
+    LEFT JOIN dds.dim_airports   AS arr ON arr.airport_bk = ods_rte.arrival_airport    -- через ods.routes
+    LEFT JOIN dds.dim_airplanes  AS ap  ON ap.airplane_bk = rte.airplane_code          -- через dim_routes
     LEFT JOIN dds.dim_tariffs    AS tar ON tar.fare_conditions = seg.fare_conditions
     LEFT JOIN dds.dim_passengers AS pax ON pax.passenger_bk = tkt.passenger_id
     LEFT JOIN ods.boarding_passes AS bp
@@ -497,8 +510,9 @@ ANALYZE dds.fact_flight_sales;
 ### 5.5. Модель историчности факта
 
 Dimension SK фиксируются **при INSERT** и не перезаписываются:
-- `route_sk` — версия маршрута на дату `scheduled_departure` (point-in-time SCD2 lookup);
-- `departure_airport_sk`, `arrival_airport_sk`, `airplane_sk` — из той же версии маршрута;
+- `departure_airport_sk`, `arrival_airport_sk` — из `ods.routes` → `dim_airports` (эталонный справочник; аэропорты одинаковы для всех версий маршрута);
+- `route_sk` — версия маршрута на дату `scheduled_departure` (point-in-time SCD2 lookup через `dim_routes`);
+- `airplane_sk` — из той же point-in-time версии `dim_routes`;
 - `calendar_sk`, `tariff_sk`, `passenger_sk` — из текущих SCD1-измерений на момент INSERT.
 
 UPDATE факта обновляет только **мутабельные поля**: `is_boarded`, `seat_no`, `price`

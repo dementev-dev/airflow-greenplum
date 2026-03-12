@@ -33,4 +33,8 @@ TRUNCATE dds.dim_calendar,
          dds.fact_flight_sales;
 
 -- 4. Слой DM (Витрины данных)
-TRUNCATE dm.sales_report;
+TRUNCATE dm.sales_report,
+         dm.route_performance,
+         dm.airport_traffic,
+         dm.monthly_overview,
+         dm.passenger_loyalty;

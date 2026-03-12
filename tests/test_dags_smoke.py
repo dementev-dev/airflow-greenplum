@@ -239,8 +239,9 @@ def test_bookings_to_gp_ods_dag_structure():
     ), "airplanes не должен быть upstream для airports"
 
     # Барьеры по данным.
+    # На main routes не зависит от airplanes (ods.airplanes — студенческая заглушка).
+    # На ветке solution: _assert_reachable(dag, "dq_ods_airplanes", "dq_ods_routes")
     _assert_reachable(dag, "dq_ods_airports", "dq_ods_routes")
-    _assert_reachable(dag, "dq_ods_airplanes", "dq_ods_routes")
     _assert_reachable(dag, "dq_ods_airplanes", "dq_ods_seats")
     _assert_reachable(dag, "dq_ods_routes", "dq_ods_flights")
     _assert_reachable(dag, "dq_ods_flights", "dq_ods_segments")

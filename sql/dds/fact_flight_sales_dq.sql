@@ -7,7 +7,8 @@ DECLARE
     v_dup_count BIGINT;
     v_null_passenger BIGINT;
     v_null_tariff BIGINT;
-    v_null_route_related BIGINT;
+    v_null_airport BIGINT;
+    v_null_student BIGINT;
     v_null_calendar BIGINT;
     v_null_required BIGINT;
 BEGIN
@@ -62,15 +63,17 @@ BEGIN
             v_dup_count;
     END IF;
 
-    -- Ссылочная целостность: passenger_sk.
+    -- Учебный комментарий: passenger_sk будет NULL, пока вы не реализуете dim_passengers.
+    -- После реализации: TRUNCATE dds.fact_flight_sales → перезагрузка → все SK заполнены.
+    -- Полную версию DQ (с блокировкой) см. в ветке solution.
     SELECT COUNT(*)
     INTO v_null_passenger
     FROM dds.fact_flight_sales
     WHERE passenger_sk IS NULL;
 
     IF v_null_passenger <> 0 THEN
-        RAISE EXCEPTION
-            'DQ FAILED: в fact_flight_sales строки без passenger_sk: %',
+        RAISE NOTICE
+            'DQ INFO: студенческий SK (passenger) NULL: %. После реализации dim_passengers: TRUNCATE fact → перезагрузка.',
             v_null_passenger;
     END IF;
 
@@ -86,25 +89,40 @@ BEGIN
             v_null_tariff;
     END IF;
 
-    -- Route-related FK: допустимо при аномалиях, фейлим если > 1%.
+    -- departure_airport_sk и arrival_airport_sk заполняются через ods.routes (эталон).
+    -- NULL здесь — аномалия данных (пропущен маршрут в ODS), а не отсутствие студенческого кода.
+    -- Порог 1% — защита от единичных аномалий источника (аналогично calendar_sk).
     SELECT COUNT(*)
-    INTO v_null_route_related
+    INTO v_null_airport
     FROM dds.fact_flight_sales
-    WHERE route_sk IS NULL
-        OR departure_airport_sk IS NULL
-        OR arrival_airport_sk IS NULL
-        OR airplane_sk IS NULL;
+    WHERE departure_airport_sk IS NULL
+        OR arrival_airport_sk IS NULL;
 
-    IF v_null_route_related > 0 THEN
-        IF v_null_route_related * 100.0 / NULLIF(v_row_count, 0) > 1.0 THEN
+    IF v_null_airport > 0 THEN
+        IF v_null_airport * 100.0 / NULLIF(v_row_count, 0) > 1.0 THEN
             RAISE EXCEPTION
-                'DQ FAILED: в fact_flight_sales слишком много строк с NULL в route-related FK: % (>1%%)',
-                v_null_route_related;
+                'DQ FAILED: NULL airport_sk: % (>1%%)',
+                v_null_airport;
         ELSE
             RAISE NOTICE
-                'DQ WARNING: в fact_flight_sales строк с NULL в route-related FK: % (<=1%%, допустимо)',
-                v_null_route_related;
+                'DQ WARNING: NULL airport_sk: % (<=1%%, допустимо)',
+                v_null_airport;
         END IF;
+    END IF;
+
+    -- route_sk и airplane_sk будут NULL, пока вы не реализуете dim_routes.
+    -- Не блокируем pipeline.
+    -- Полную версию DQ (с блокировкой) см. в ветке solution.
+    SELECT COUNT(*)
+    INTO v_null_student
+    FROM dds.fact_flight_sales
+    WHERE route_sk IS NULL
+        OR airplane_sk IS NULL;
+
+    IF v_null_student > 0 THEN
+        RAISE NOTICE
+            'DQ INFO: студенческие SK (route/airplane) NULL: %. После реализации dim_routes: TRUNCATE fact → перезагрузка.',
+            v_null_student;
     END IF;
 
     -- Calendar: допустимо если scheduled_departure IS NULL, фейлим если > 1%.

@@ -263,7 +263,9 @@ with DAG(
     resolve_stg_batch_id >> load_ods_airports >> dq_ods_airports
     resolve_stg_batch_id >> load_ods_airplanes >> dq_ods_airplanes
 
-    [dq_ods_airports, dq_ods_airplanes] >> load_ods_routes >> dq_ods_routes
+    # На main routes не зависит от airplanes (ods.airplanes — студенческая заглушка).
+    # На ветке solution: [dq_ods_airports, dq_ods_airplanes] >> load_ods_routes
+    dq_ods_airports >> load_ods_routes >> dq_ods_routes
     dq_ods_airplanes >> load_ods_seats >> dq_ods_seats
 
     dq_ods_routes >> load_ods_flights >> dq_ods_flights

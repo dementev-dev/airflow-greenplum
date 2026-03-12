@@ -140,21 +140,25 @@ BEGIN
             v_orphan_arrival_count;
     END IF;
 
-    -- Ссылочная целостность: airplane_code должен существовать в ods.airplanes.
-    SELECT COUNT(*)
-    INTO v_orphan_airplane_count
-    FROM ods.routes AS r
-    WHERE NOT EXISTS (
-        SELECT 1
-        FROM ods.airplanes AS a
-        WHERE a.airplane_code = r.airplane_code
-    );
-
-    IF v_orphan_airplane_count <> 0 THEN
-        RAISE EXCEPTION
-            'DQ FAILED: в ods.routes найдены строки с невалидным airplane_code: %',
-            v_orphan_airplane_count;
-    END IF;
+    -- Проверка RI airplane_code → ods.airplanes закомментирована,
+    -- т.к. таблица ods.airplanes реализуется студентом.
+    -- После реализации — раскомментируйте этот блок.
+    -- Полную версию см. в ветке solution.
+    --
+    -- SELECT COUNT(*)
+    -- INTO v_orphan_airplane_count
+    -- FROM ods.routes AS r
+    -- WHERE NOT EXISTS (
+    --     SELECT 1
+    --     FROM ods.airplanes AS a
+    --     WHERE a.airplane_code = r.airplane_code
+    -- );
+    --
+    -- IF v_orphan_airplane_count <> 0 THEN
+    --     RAISE EXCEPTION
+    --         'DQ FAILED: в ods.routes найдены строки с невалидным airplane_code: %',
+    --         v_orphan_airplane_count;
+    -- END IF;
 
     RAISE NOTICE
         'DQ PASSED: ods.routes ок (_load_id=%): stg_batch_rows=%',

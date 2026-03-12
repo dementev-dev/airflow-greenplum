@@ -3,7 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SNAPSHOT_ENTITIES = ("airports", "airplanes", "routes", "seats")
+# На main airplanes/seats — заглушки (SELECT 1;), не содержат TRUNCATE-паттерн.
+# Полный список на ветке solution: ("airports", "airplanes", "routes", "seats")
+SNAPSHOT_ENTITIES = ("airports", "routes")
 
 
 def _read(path: str) -> str:

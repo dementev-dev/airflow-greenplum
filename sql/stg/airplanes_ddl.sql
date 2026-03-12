@@ -1,0 +1,38 @@
+-- DDL для слоя STG по таблице airplanes (справочник).
+-- Используется как из общего скрипта ddl_gp.sql (через \i),
+-- так и может выполняться отдельно при изменении схемы.
+
+-- Схема stg для сырого слоя DWH.
+CREATE SCHEMA IF NOT EXISTS stg;
+
+-- Внешняя таблица в схеме stg для чтения данных из bookings.airplanes_data через PXF.
+-- PXF не поддерживает тип JSONB - используем TEXT для всех колонок.
+DROP EXTERNAL TABLE IF EXISTS stg.airplanes_ext;
+CREATE EXTERNAL TABLE stg.airplanes_ext (
+    airplane_code TEXT,
+    model         TEXT,
+    range         TEXT,
+    speed         TEXT
+)
+LOCATION ('pxf://bookings.airplanes_data?PROFILE=JDBC&SERVER=bookings-db')
+FORMAT 'CUSTOM' (formatter='pxfwritable_import');
+
+-- Внутренняя таблица stg.airplanes — сырой слой, все бизнес-колонки как TEXT.
+CREATE TABLE IF NOT EXISTS stg.airplanes (
+    airplane_code      TEXT,
+    model             TEXT,
+    range             TEXT,
+    speed             TEXT,
+    event_ts          TIMESTAMP,
+    _load_ts          TIMESTAMP NOT NULL DEFAULT now(),
+    _load_id          TEXT        NOT NULL
+)
+WITH (appendonly=true, orientation=row, compresstype=zstd, compresslevel=1)
+-- Ключ распределения: airplane_code
+-- Обоснование: airplane_code — это уникальный идентификатор самолёта.
+-- Использование airplane_code обеспечивает:
+-- 1. Равномерное распределение данных по сегментам (airplane_code имеет высокую кардинальность)
+-- 2. Коллокацию данных airplanes и seats при JOIN по airplane_code
+-- 3. Оптимизацию запросов, которые фильтруют или группируют по airplane_code
+-- Примечание: JOIN с таблицей routes (распределённой по route_no) может требовать motion.
+DISTRIBUTED BY (airplane_code);

@@ -12,11 +12,31 @@ from __future__ import annotations
 Каждый запуск DAG работает как «шаг по времени вперёд»:
 - генератор в демо-БД bookings добавляет следующий учебный день после max(book_date);
 - загрузка в Greenplum берёт все строки, появившиеся после предыдущих батчей;
-- `run_id` используется как метка запуска (в `batch_id`, в логах и DQ).
+- `run_id` используется как метка запуска (в `_load_id`, в логах и DQ).
+
+Важно: для инкрементальных таблиц «пустое окно инкремента» допустимо (это не ошибка).
+
+Граф зависимостей (параллельный там, где данные независимы):
+
+    generate_bookings_day → load_bookings → check_bookings_dq
+        → load_tickets → check_tickets_dq
+            ├─ load_airports → check_airports_dq ─┐
+            │                                      ├─ load_routes → check_routes_dq
+            ├─ load_airplanes → check_airplanes_dq ┤       → load_flights → check_flights_dq
+            │                                      │           → load_segments → check_segments_dq
+            │                                      │               → load_boarding_passes → check_bp_dq ─┐
+            │                                      └─ load_seats → check_seats_dq ──────────────────────┤
+            │                                                                                            ▼
+            └──────────────────────────────────────────────────────────────────────────── finish_summary
+
+airports и airplanes грузятся параллельно (они не зависят друг от друга).
+routes зависит от обоих (DQ проверяет ссылочную целостность на airports и airplanes).
+seats зависит только от airplanes (DQ проверяет airplane_code → airplanes).
 """
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
+import pendulum
 from airflow.operators.python import PythonOperator
 from airflow.providers.postgres.operators.postgres import PostgresOperator
 
@@ -48,13 +68,14 @@ def _finish_summary() -> None:
 
 with DAG(
     dag_id="bookings_to_gp_stage",
-    start_date=datetime(2024, 1, 1),
+    start_date=pendulum.datetime(2017, 1, 1, tz="UTC"),
     schedule=None,
     catchup=False,
+    max_active_runs=1,
     template_searchpath="/sql",
     default_args=default_args,
     tags=["demo", "bookings", "greenplum", "stg"],
-    description="Учебный DAG: загрузка из bookings-db в stg.bookings (Greenplum)",
+    description="Учебный DAG: загрузка из bookings-db в слой stg (Greenplum) + DQ проверки",
 ) as dag:
     # 1. Генерируем один (или несколько стартовых) учебный день в демо-БД bookings
     generate_bookings_day = PostgresOperator(
@@ -78,10 +99,136 @@ with DAG(
         sql="stg/bookings_dq.sql",
     )
 
-    # 4. Финальный лог/сводка
+    # 4. Загружаем инкремент билетов из stg.tickets_ext в stg.tickets
+    load_tickets_to_stg = PostgresOperator(
+        task_id="load_tickets_to_stg",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/tickets_load.sql",
+    )
+
+    # 5. Проверяем качество данных для tickets
+    check_tickets_dq = PostgresOperator(
+        task_id="check_tickets_dq",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/tickets_dq.sql",
+    )
+
+    # Загрузка справочников (full load)
+    load_airports_to_stg = PostgresOperator(
+        task_id="load_airports_to_stg",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/airports_load.sql",
+    )
+
+    check_airports_dq = PostgresOperator(
+        task_id="check_airports_dq",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/airports_dq.sql",
+    )
+
+    load_airplanes_to_stg = PostgresOperator(
+        task_id="load_airplanes_to_stg",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/airplanes_load.sql",
+    )
+
+    check_airplanes_dq = PostgresOperator(
+        task_id="check_airplanes_dq",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/airplanes_dq.sql",
+    )
+
+    load_routes_to_stg = PostgresOperator(
+        task_id="load_routes_to_stg",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/routes_load.sql",
+    )
+
+    check_routes_dq = PostgresOperator(
+        task_id="check_routes_dq",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/routes_dq.sql",
+    )
+
+    load_seats_to_stg = PostgresOperator(
+        task_id="load_seats_to_stg",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/seats_load.sql",
+    )
+
+    check_seats_dq = PostgresOperator(
+        task_id="check_seats_dq",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/seats_dq.sql",
+    )
+
+    # Загрузка транзакций (инкремент)
+    load_flights_to_stg = PostgresOperator(
+        task_id="load_flights_to_stg",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/flights_load.sql",
+    )
+
+    check_flights_dq = PostgresOperator(
+        task_id="check_flights_dq",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/flights_dq.sql",
+    )
+
+    load_segments_to_stg = PostgresOperator(
+        task_id="load_segments_to_stg",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/segments_load.sql",
+    )
+
+    check_segments_dq = PostgresOperator(
+        task_id="check_segments_dq",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/segments_dq.sql",
+    )
+
+    load_boarding_passes_to_stg = PostgresOperator(
+        task_id="load_boarding_passes_to_stg",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/boarding_passes_load.sql",
+    )
+
+    check_boarding_passes_dq = PostgresOperator(
+        task_id="check_boarding_passes_dq",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="stg/boarding_passes_dq.sql",
+    )
+
+    # Финальный лог/сводка
     finish_summary = PythonOperator(
         task_id="finish_summary",
         python_callable=_finish_summary,
     )
 
-    generate_bookings_day >> load_bookings_to_stg >> check_row_counts >> finish_summary
+    # === Этап 1. Транзакции: bookings → tickets (последовательно, т.к. tickets зависят от bookings) ===
+    generate_bookings_day >> load_bookings_to_stg >> check_row_counts
+    check_row_counts >> load_tickets_to_stg >> check_tickets_dq
+
+    # === Этап 2. Справочники (параллельно, где данные независимы) ===
+    # airports и airplanes не зависят друг от друга — грузим параллельно.
+    check_tickets_dq >> load_airports_to_stg >> check_airports_dq
+    check_tickets_dq >> load_airplanes_to_stg >> check_airplanes_dq
+
+    # routes зависит от airports И airplanes (DQ проверяет ссылочную целостность).
+    [check_airports_dq, check_airplanes_dq] >> load_routes_to_stg >> check_routes_dq
+
+    # seats зависит только от airplanes (DQ проверяет ссылочную целостность).
+    check_airplanes_dq >> load_seats_to_stg >> check_seats_dq
+
+    # === Этап 3. Транзакции (последовательно, каждая зависит от предыдущей) ===
+    # flights зависят от routes (DQ проверяет ссылочную целостность route_no → routes).
+    check_routes_dq >> load_flights_to_stg >> check_flights_dq
+
+    # segments зависят от flights и tickets (DQ проверяет обе ссылки).
+    check_flights_dq >> load_segments_to_stg >> check_segments_dq
+
+    # boarding_passes зависят от segments и tickets (DQ проверяет обе ссылки).
+    check_segments_dq >> load_boarding_passes_to_stg >> check_boarding_passes_dq
+
+    # === Финал: ждём завершения ВСЕХ веток ===
+    [check_boarding_passes_dq, check_seats_dq] >> finish_summary

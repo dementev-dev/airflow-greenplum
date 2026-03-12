@@ -1,0 +1,38 @@
+-- DDL для слоя STG по таблице tickets.
+-- Используется как из общего скрипта ddl_gp.sql (через \i),
+-- так и может выполняться отдельно при изменении схемы.
+
+-- Схема stg для сырого слоя DWH.
+CREATE SCHEMA IF NOT EXISTS stg;
+
+-- Внешняя таблица в схеме stg для чтения данных из bookings.tickets через PXF.
+DROP EXTERNAL TABLE IF EXISTS stg.tickets_ext;
+CREATE EXTERNAL TABLE stg.tickets_ext (
+    ticket_no      TEXT,
+    book_ref       TEXT,
+    passenger_id   TEXT,
+    passenger_name TEXT,
+    outbound       TEXT
+)
+LOCATION ('pxf://bookings.tickets?PROFILE=JDBC&SERVER=bookings-db')
+FORMAT 'CUSTOM' (formatter='pxfwritable_import');
+
+-- Внутренняя таблица stg.tickets — сырой слой, все бизнес-колонки как TEXT.
+CREATE TABLE IF NOT EXISTS stg.tickets (
+    ticket_no          TEXT NOT NULL,
+    book_ref           TEXT NOT NULL,
+    passenger_id       TEXT,
+    passenger_name     TEXT,
+    outbound           TEXT,
+    event_ts           TIMESTAMP,
+    _load_ts           TIMESTAMP NOT NULL DEFAULT now(),
+    _load_id           TEXT        NOT NULL
+)
+WITH (appendonly=true, orientation=row, compresstype=zstd, compresslevel=1)
+-- Ключ распределения: book_ref
+-- Обоснование: book_ref — это основной бизнес-ключ для бронирований.
+-- Использование book_ref обеспечивает:
+-- 1. Коллокацию данных tickets и bookings при JOIN по book_ref
+-- 2. Равномерное распределение данных по сегментам (book_ref имеет высокую кардинальность)
+-- 3. Оптимизацию запросов, которые фильтруют или группируют по book_ref
+DISTRIBUTED BY (book_ref);

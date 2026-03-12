@@ -1,0 +1,14 @@
+--- a/install.sql
++++ b/install.sql
+@@ -24,8 +24,9 @@
+ -- use UTC to avoid daylight-saving problems
+ ALTER DATABASE demo SET timezone = 'Etc/UTC';
+
+--- connection string for dblink
+-ALTER DATABASE demo SET gen.connstr = 'dbname=demo';
++-- Строку подключения для dblink (gen.connstr) задаёт Makefile
++-- с credentials текущего пользователя БД. Не хардкодим здесь,
++-- иначе VACUUM и другие dblink-вызовы падают без пароля.
+
+ -- airlines company name
+ ALTER DATABASE demo SET gen.airlines_name = 'PostgresPro';

@@ -20,10 +20,15 @@ CREATE TABLE IF NOT EXISTS stg.bookings (
     book_ref          TEXT,
     book_date         TEXT,
     total_amount      TEXT,
-    src_created_at_ts TIMESTAMP,
-    load_dttm         TIMESTAMP NOT NULL DEFAULT now(),
-    batch_id          TEXT NOT NULL
+    event_ts          TIMESTAMP,
+    _load_ts          TIMESTAMP NOT NULL DEFAULT now(),
+    _load_id          TEXT NOT NULL
 )
-WITH (appendonly=true, orientation=row, compresstype=zlib, compresslevel=1)
+WITH (appendonly=true, orientation=row, compresstype=zstd, compresslevel=1)
+-- Ключ распределения: book_ref
+-- Обоснование: book_ref — это уникальный идентификатор бронирования.
+-- Использование book_ref обеспечивает:
+-- 1. Равномерное распределение данных по сегментам (book_ref имеет высокую кардинальность)
+-- 2. Коллокацию данных bookings и tickets при JOIN по book_ref
+-- 3. Оптимизацию запросов, которые фильтруют или группируют по book_ref
 DISTRIBUTED BY (book_ref);
-

@@ -1,0 +1,76 @@
+from __future__ import annotations
+
+"""
+Учебный DAG: создаёт/обновляет DM-слой (Data Mart) в Greenplum для домена bookings.
+
+Запускается вручную перед DAG загрузки `bookings_to_gp_dm` или после изменения DM DDL.
+Создаёт 5 DM-витрин: sales_report, route_performance, passenger_loyalty,
+airport_traffic, monthly_overview.
+
+На данном этапе реализованы все 5 витрин: sales_report, route_performance, passenger_loyalty, airport_traffic, monthly_overview.
+"""
+
+from datetime import timedelta
+
+import pendulum
+from airflow.providers.postgres.operators.postgres import PostgresOperator
+
+from airflow import DAG
+
+GREENPLUM_CONN_ID = "greenplum_conn"
+
+default_args = {"owner": "airflow", "retries": 1, "retry_delay": timedelta(seconds=30)}
+
+with DAG(
+    dag_id="bookings_dm_ddl",
+    start_date=pendulum.datetime(2017, 1, 1, tz="UTC"),
+    schedule=None,
+    catchup=False,
+    template_searchpath="/sql",
+    default_args=default_args,
+    tags=["demo", "greenplum", "ddl", "bookings", "dm"],
+    description="Учебный DDL DAG: создаёт/обновляет dm.* для bookings",
+) as dag:
+    # Эталонная витрина: sales_report
+    apply_dm_sales_report_ddl = PostgresOperator(
+        task_id="apply_dm_sales_report_ddl",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="dm/sales_report_ddl.sql",
+    )
+
+    # Витрина: Эффективность маршрутов (Этап 2)
+    apply_dm_route_performance_ddl = PostgresOperator(
+        task_id="apply_dm_route_performance_ddl",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="dm/route_performance_ddl.sql",
+    )
+
+    # Витрина: Лояльность пассажиров (Этап 3)
+    apply_dm_passenger_loyalty_ddl = PostgresOperator(
+        task_id="apply_dm_passenger_loyalty_ddl",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="dm/passenger_loyalty_ddl.sql",
+    )
+
+    # Витрина: Пассажиропоток аэропортов (Этап 4)
+    apply_dm_airport_traffic_ddl = PostgresOperator(
+        task_id="apply_dm_airport_traffic_ddl",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="dm/airport_traffic_ddl.sql",
+    )
+
+    # Витрина: Помесячная сводка (Этап 5)
+    apply_dm_monthly_overview_ddl = PostgresOperator(
+        task_id="apply_dm_monthly_overview_ddl",
+        postgres_conn_id=GREENPLUM_CONN_ID,
+        sql="dm/monthly_overview_ddl.sql",
+    )
+
+    # Линейная цепочка
+    (
+        apply_dm_sales_report_ddl
+        >> apply_dm_route_performance_ddl
+        >> apply_dm_passenger_loyalty_ddl
+        >> apply_dm_airport_traffic_ddl
+        >> apply_dm_monthly_overview_ddl
+    )

@@ -1,0 +1,45 @@
+-- Загрузка ODS по airports: Полная перезагрузка (TRUNCATE + INSERT).
+-- Почему: для справочников-снимков в Greenplum на AO-таблицах 
+-- эффективнее перетереть данные целиком, чем делать медленный UPDATE.
+
+TRUNCATE TABLE ods.airports;
+
+INSERT INTO ods.airports (
+    airport_code,
+    airport_name,
+    city,
+    country,
+    coordinates,
+    timezone,
+    _load_id,
+    _load_ts
+)
+WITH src AS (
+    -- Выбираем последний снимок из STG для текущего батча
+    SELECT
+        s.airport_code,
+        s.airport_name::json->>'ru' AS airport_name,
+        s.city::json->>'ru' AS city,
+        s.country::json->>'ru' AS country,
+        s.coordinates,
+        s.timezone,
+        ROW_NUMBER() OVER (
+            PARTITION BY s.airport_code
+            ORDER BY s._load_ts DESC, s.event_ts DESC NULLS LAST
+        ) AS rn
+    FROM stg.airports AS s
+    WHERE s._load_id = '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text
+)
+SELECT
+    s.airport_code,
+    s.airport_name,
+    s.city,
+    s.country,
+    s.coordinates,
+    s.timezone,
+    '{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'::text,
+    now()
+FROM src AS s
+WHERE s.rn = 1;
+
+ANALYZE ods.airports;

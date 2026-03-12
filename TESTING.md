@@ -28,21 +28,18 @@
 1. Открыть http://localhost:8080 (admin/admin).
 2. (опционально) Зайти в Admin → Connections и убедиться, что DAG’и видят подключения:
    - `greenplum_conn` и `bookings_db` задаются через переменные `AIRFLOW_CONN_...` в docker-compose и могут не отображаться в списке, но `airflow connections get greenplum_conn` / `bookings_db` внутри контейнера должны отрабатывать без ошибок.
-3. DAG `csv_to_greenplum`:
-   - Включить переключатель.
-   - Нажать «Trigger DAG».
-   - Контроль: все таски Success, в `data/` появился CSV, в логах `load_csv_to_greenplum` видно `INSERT`.
-   - В Greenplum (см. п.5) убедиться в наличии строк `(SELECT COUNT(*) ...)`.
-4. DAG `csv_to_greenplum_dq`:
-   - Запустить вручную после первого DAG.
-   - Проверить, что все 5 задач Success и логи содержат `Проверка пройдена`.
 
 - DAG `bookings_to_gp_stage` (полная проверка цепочки bookings → Greenplum STG):
-  - предварительно выполнить один раз: `make bookings-init` (установка демобазы `demo` в контейнере `bookings-db`) и `make ddl-gp` (создаёт `stg.bookings_ext` и `stg.bookings` в Greenplum);
-  - важно: DAG `bookings_stg_ddl` **не** создаёт базу `demo` в `bookings-db`; если вы делали `docker compose down -v` / `make clean`, `make bookings-init` обязателен;
+  - предварительно выполнить один раз: `make bookings-init` (быстрое восстановление демобазы `demo` из seed-дампа, ~18 сек) и `make ddl-gp` (создаёт STG/ODS/DDS слои в Greenplum, включая внешние `*_ext` через PXF);
+  - перед Trigger проверить, что в source реально есть данные (все значения должны быть `> 0`):
+    - `docker compose exec bookings-db psql -U bookings -d demo -At -c "SELECT COUNT(*) FROM bookings.bookings;"`
+    - `docker compose exec bookings-db psql -U bookings -d demo -At -c "SELECT COUNT(*) FROM bookings.airports_data;"`
+    - `docker compose exec bookings-db psql -U bookings -d demo -At -c "SELECT COUNT(*) FROM bookings.airplanes_data;"`
+  - если хотя бы один `COUNT(*) = 0`, не запускать DAG: повторить `make bookings-init`; если после этого `bookings.bookings` всё ещё пустая, выполнить `make bookings-generate-day` и снова проверить `COUNT(*)`;
+  - важно: DAG `bookings_stg_ddl` **не** создаёт базу `demo` в `bookings-db`; если вы делали `docker compose down -v` / `make clean`, `make bookings-init` обязателен (быстрое восстановление из seed-дампа);
   - включить DAG `bookings_to_gp_stage` и запустить `Trigger DAG`;
-  - убедиться, что все задачи (`generate_bookings_day`, `load_bookings_to_stg`, `check_row_counts`, `finish_summary`) завершились со статусом Success;
-  - при желании проверить данные: в `bookings-db` появился новый день, а в Greenplum в `stg.bookings` — строки с актуальным `batch_id` (см. пример запросов в разделе 5).
+  - убедиться, что все задачи завершились со статусом Success (включая загрузки справочников/транзакций и DQ);
+  - при желании проверить данные: в `bookings-db` появился новый день, а в Greenplum в `stg.bookings` — строки с актуальным `_load_id` (см. пример запросов в разделе 5).
 
 - (опционально, для менторов/разработчиков) Smoke-тест DAG через Airflow CLI без UI:
    - `docker compose -f docker-compose.yml exec airflow-webserver airflow dags test bookings_to_gp_stage 2024-01-01` — прогоняет `bookings_to_gp_stage` целиком в «off-line» режиме;
@@ -54,18 +51,13 @@
   - `docker compose exec greenplum bash -lc "su - gpadmin -c '/usr/local/pxf/bin/pxf cluster status'"`
 - Команды внутри psql:
   - `\dt public.*` — таблицы схему public.
-  - `SELECT COUNT(*) FROM public.orders;` — оценка объёма.
-  - `SELECT * FROM public.orders LIMIT 5;` — визуальная проверка.
-  - `SELECT order_id FROM public.orders GROUP BY 1 HAVING COUNT(*) > 1;` — поиск дублей.
   - (после настройки PXF) `SELECT COUNT(*) FROM public.ext_bookings_bookings;` — проверка чтения из демо-БД bookings через PXF.
   - (после настройки PXF) `SELECT * FROM public.ext_bookings_bookings LIMIT 5;` — визуальное сравнение с таблицей `bookings.bookings` в исходной БД.
 - Завершить `\q`.
 
 ## 6. Негативные сценарии и fallback
-- **Пустая таблица**: запустить `csv_to_greenplum_dq` до `csv_to_greenplum`. Ожидается ошибка на таске `check_orders_has_rows`.
 - **Проблемы с подключением**: временно изменить `GP_HOST` или `GP_PORT` на несуществующий, перезапустить `make up`, убедиться, что DAG падает с понятной ошибкой (`psycopg2.OperationalError`).
 - **Fallback без Airflow Connection**: установить `GP_USE_AIRFLOW_CONN=false`, перезапустить стек (`make down && make up`), удостовериться, что загрузка и DQ работают через ENV.
-- **Дубликаты**: дважды вызвать `csv_to_greenplum` — ожидаем, что количество строк в `public.orders` не увеличится на размер CSV, а DAG `csv_to_greenplum_dq` не найдёт дублей.
 - **PXF и демобаза bookings** (после настройки PXF и выполнения `make ddl-gp`): временно остановить `bookings-db` (`docker compose stop bookings-db`) и попробовать выполнить `SELECT COUNT(*) FROM public.ext_bookings_bookings;` в `make gp-psql` — ожидается ошибка подключения. Затем запустить `bookings-db` (`docker compose start bookings-db`) и убедиться, что запрос снова работает.
 
 ## 7. Быстрый reset (если «что-то сломалось»)
@@ -77,14 +69,12 @@
 ## 8. Снятие метрик и мониторинг
 - Контейнеры: `docker compose ps`, `docker stats` (по желанию).
 - Логи задач: в Airflow UI → конкретный таск → Log.
-- Хостовые CSV: каталог `data/` (можно открыть любой файл и убедиться в структуре).
 
 ## 9. Завершение работы
 - `make down` — выключает сервисы и удаляет контейнеры/сети (volumes сохраняются).
 - Полный сброс данных (удаляет volumes): `make clean`.
-- При необходимости сохранить данные: скопировать CSV из `data/` и сделать дампы до `make clean`.
 
 ## Текущий статус (пример успешного прогона)
-- `uv run pytest -q` — 11 passed, 2 smoke-теста DAG пропущены (Airflow не установлен в venv).
+- `uv run pytest -q` — 14 passed, 9 smoke-тестов DAG пропущены (Airflow не установлен в venv).
 - `make lint` — проходит (DAG‑файлы отформатированы black/isort).
-- Docker-стенд не запускался в рамках этой сессии; ожидается, что инструкции выше обеспечат полноценную проверку.
+- Полный ETL-цикл (STG→ODS→DDS→DM) проверен на стенде 2026-03-09: все DAG-и завершились с Success.

@@ -14,12 +14,11 @@ DECLARE
 BEGIN
     -- Проверяем, что демобаза установлена
     IF to_regclass('bookings.bookings') IS NULL THEN
-        RAISE EXCEPTION 'Таблица bookings.bookings не найдена. Сначала выполните make bookings-init.';
+        RAISE EXCEPTION 'Таблица bookings.bookings не найдена. Сначала выполните make bookings-init или make bookings-generate.';
     END IF;
 
-    -- В учебном стенде поддерживается только jobs=1, иначе генерация нестабильна.
-    IF v_jobs <> 1 THEN
-        RAISE EXCEPTION 'Поддерживается только bookings.jobs=1. Текущее значение: %. Установите BOOKINGS_JOBS=1 и выполните make bookings-init.', v_jobs;
+    IF v_jobs < 1 THEN
+        RAISE EXCEPTION 'bookings.jobs должен быть >= 1. Текущее значение: %.', v_jobs;
     END IF;
 
     -- Ищем последнюю сгенерированную дату
@@ -39,16 +38,31 @@ BEGIN
         CALL generate(v_start_date, v_end_date, v_jobs);
     ELSE
         v_end_date := v_start_date + interval '1 day';
+
+        -- Убираем VACUUM-ивенты из очереди: генератор demodb кладёт
+        -- VACUUM ANALYZE всей БД каждую неделю модельного времени.
+        -- На 500k+ строках это занимает минуты и бессмысленно для +1 дня.
+        DELETE FROM gen.events WHERE type = 'VACUUM';
+
         CALL continue(v_end_date, v_jobs);
     END IF;
+
+    -- continue() делает TRUNCATE gen.stat_jobs → AccessExclusiveLock.
+    -- Без COMMIT воркеры не могут INSERT INTO gen.stat_jobs → deadlock.
+    COMMIT;
 
     RAISE NOTICE 'Сгенерированы данные в bookings.bookings за интервал [% - %).',
         date_trunc('day', v_start_date),
         date_trunc('day', v_end_date);
 
-    -- Ждём завершения фоновых джобов генератора, чтобы данные успели записаться
-    WHILE busy() LOOP
-        PERFORM pg_sleep(1);
-    END LOOP;
+    -- Ждём завершения каждого воркера через dblink_is_busy() (см. комментарий
+    -- в bookings/generate_next_day.sql — busy() через pg_stat_activity ненадёжен).
+    IF v_jobs > 1 THEN
+        FOR i IN 1 .. v_jobs LOOP
+            WHILE dblink_is_busy('job' || i) = 1 LOOP
+                PERFORM pg_sleep(1);
+            END LOOP;
+        END LOOP;
+    END IF;
     PERFORM dblink_disconnect(unnest(dblink_get_connections()));
 END $$;

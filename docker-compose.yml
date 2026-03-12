@@ -2,6 +2,7 @@ x-airflow-common-env: &airflow-env
   TZ: ${TZ:-Europe/Moscow}
   AIRFLOW__CORE__LOAD_EXAMPLES: "False"
   AIRFLOW__CORE__EXECUTOR: LocalExecutor
+  AIRFLOW__API__AUTH_BACKENDS: "airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session"
   AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${PG_USER}:${PG_PASSWORD}@pgmeta:5432/${PG_DB}
   AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
   AIRFLOW_CONN_GREENPLUM_CONN: postgresql://${GP_USER}:${GP_PASSWORD}@greenplum:${GP_PORT:-5432}/${GP_DB}
@@ -10,7 +11,6 @@ x-airflow-common-env: &airflow-env
 x-airflow-common-volumes: &airflow-volumes
   - ./airflow/dags:/opt/airflow/dags
   - ./sql:/sql:ro
-  - airflow_data:/opt/airflow/data
   - airflow_logs:/opt/airflow/logs
 
 x-airflow-common-depends: &airflow-depends
@@ -109,7 +109,6 @@ services:
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./sql:/sql:ro
-      - airflow_data:/opt/airflow/data
       - airflow_logs:/opt/airflow/logs
       - ./airflow/requirements.txt:/opt/airflow/requirements.txt
     healthcheck:
@@ -134,7 +133,6 @@ services:
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./sql:/sql:ro
-      - airflow_data:/opt/airflow/data
       - airflow_logs:/opt/airflow/logs
       - ./airflow/requirements.txt:/opt/airflow/requirements.txt
     depends_on:
@@ -153,12 +151,11 @@ services:
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./sql:/sql:ro
-      - airflow_data:/opt/airflow/data
       - airflow_logs:/opt/airflow/logs
     command: >
       bash -lc "
         set -e;
-        mkdir -p /opt/airflow/data /opt/airflow/logs && chown -R airflow:root /opt/airflow/data /opt/airflow/logs;
+        mkdir -p /opt/airflow/logs && chown -R airflow:root /opt/airflow/logs;
         # Дожидаемся готовности БД ретрая миграции
         for i in {1..30}; do
           su -s /bin/bash airflow -c \"PATH='/home/airflow/.local/bin:$${PATH}' airflow db migrate\" && break || echo 'waiting for pgmeta' && sleep 3;
@@ -174,5 +171,4 @@ volumes:
   pgmeta:
   bookings_data:
   greenplum_data:
-  airflow_data:
   airflow_logs:

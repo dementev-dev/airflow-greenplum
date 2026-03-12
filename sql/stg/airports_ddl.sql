@@ -1,0 +1,41 @@
+-- DDL для слоя STG по таблице airports (справочник).
+-- Используется как из общего скрипта ddl_gp.sql (через \i),
+-- так и может выполняться отдельно при изменении схемы.
+
+-- Схема stg для сырого слоя DWH.
+CREATE SCHEMA IF NOT EXISTS stg;
+
+-- Внешняя таблица в схеме stg для чтения данных из bookings.airports_data через PXF.
+-- PXF не поддерживает типы JSONB, POINT - используем TEXT для всех колонок.
+DROP EXTERNAL TABLE IF EXISTS stg.airports_ext;
+CREATE EXTERNAL TABLE stg.airports_ext (
+    airport_code TEXT,
+    airport_name  TEXT,
+    city          TEXT,
+    country       TEXT,
+    coordinates   TEXT,
+    timezone      TEXT
+)
+LOCATION ('pxf://bookings.airports_data?PROFILE=JDBC&SERVER=bookings-db')
+FORMAT 'CUSTOM' (formatter='pxfwritable_import');
+
+-- Внутренняя таблица stg.airports — сырой слой, все бизнес-колонки как TEXT.
+CREATE TABLE IF NOT EXISTS stg.airports (
+    airport_code      TEXT,
+    airport_name      TEXT,
+    city              TEXT,
+    country           TEXT,
+    coordinates       TEXT,
+    timezone          TEXT,
+    event_ts          TIMESTAMP,
+    _load_ts          TIMESTAMP NOT NULL DEFAULT now(),
+    _load_id          TEXT        NOT NULL
+)
+WITH (appendonly=true, orientation=row, compresstype=zstd, compresslevel=1)
+-- Ключ распределения: airport_code
+-- Обоснование: airport_code — это уникальный идентификатор аэропорта.
+-- Использование airport_code обеспечивает:
+-- 1. Равномерное распределение данных по сегментам (airport_code имеет высокую кардинальность)
+-- 2. Оптимизацию запросов, которые фильтруют или группируют по airport_code
+-- Примечание: JOIN с таблицей routes (распределённой по route_no) может требовать motion.
+DISTRIBUTED BY (airport_code);

@@ -27,5 +27,10 @@
     <value>bookings</value>
   </property>
 
+  <property>
+    <name>jdbc.column.types</name>
+    <value>jsonb=TEXT,tstzrange=TEXT,_int4=TEXT</value>
+  </property>
+
 </configuration>
 

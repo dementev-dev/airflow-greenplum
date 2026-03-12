@@ -54,7 +54,7 @@ make gp-psql
 PXF (Platform Extension Framework) — компонент Greenplum для работы с внешними источниками.
 В этом стенде PXF используется для чтения таблицы `bookings.bookings` из Postgres прямо из Greenplum
 через внешнюю таблицу `stg.bookings_ext`. Поэтому загрузка в `stg.bookings` выглядит как обычный
-`INSERT ... SELECT` без промежуточных CSV.
+`INSERT ... SELECT` без промежуточных файлов.
 
 ## Greenplum + PXF: свой образ
 
@@ -82,7 +82,7 @@ docker compose ps       # проверить health
 - `PXF_SEED_OVERWRITE=1` — перезаписать конфиги при старте;
 - `PXF_SYNC_ON_START=1` — выполнить `pxf cluster sync` при старте.
 
-Подробнее: `docs/internal/pxf_bookings.md`.
+Подробнее: `docs/reference/pxf_bookings.md`.
 
 ## Airflow: свой образ
 
@@ -131,10 +131,5 @@ make fmt
 - `BOOKINGS_DB_USER`, `BOOKINGS_DB_PASSWORD`
 - `BOOKINGS_DB_PORT` — внешний порт (по умолчанию `5434`)
 - `BOOKINGS_START_DATE` — стартовая дата модельного времени
-- `BOOKINGS_INIT_DAYS` — сколько дней генерировать при первом `make bookings-init`
-- `BOOKINGS_JOBS` — число джобов генератора; в учебном стенде поддерживается только `1`
-
-### CSV pipeline (побочный пример)
-
-- `CSV_DIR` — путь к каталогу с CSV внутри контейнеров Airflow (по умолчанию `/opt/airflow/data`)
-- `CSV_ROWS` — количество строк, генерируемых DAG (по умолчанию `1000`)
+- `BOOKINGS_INIT_DAYS` — сколько дней генерировать при `make bookings-generate` (генерация с нуля)
+- `BOOKINGS_JOBS` — число джобов генератора (по умолчанию `1`)

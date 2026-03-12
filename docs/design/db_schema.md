@@ -310,6 +310,5 @@ Degenerate keys: `book_ref`, `ticket_no`, `flight_id`, `book_date`, `seat_no`.
 - [`bookings_dds_design.md`](bookings_dds_design.md) — дизайн DDS (Star Schema, SCD2)
 - [`bookings_dm_design.md`](bookings_dm_design.md) — дизайн DM (5 витрин)
 - [`naming_conventions.md`](naming_conventions.md) — нейминг полей
-- [`../reference/bookings_tz.md`](../reference/bookings_tz.md) — часовые пояса
-- [`../reference/pxf_bookings.md`](../reference/pxf_bookings.md) — настройка PXF
+- Часовые пояса и настройка PXF — в ветке `solution` (`docs/reference/`)
 - [`../assignment/analyst_spec.md`](../assignment/analyst_spec.md) — ТЗ от аналитика (курсовое задание)

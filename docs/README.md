@@ -20,26 +20,12 @@
 - [Дизайн-документ ODS](design/bookings_ods_design.md)
 - [Дизайн-документ DDS](design/bookings_dds_design.md)
 - [Дизайн-документ DM](design/bookings_dm_design.md)
-- [Архитектурные решения (ADR)](design/architecture_review.md)
-- [PRD: стратегия курсовой](design/PRD.md)
-- [Дизайн задания](design/assignment_design.md)
+
+> Полные дизайн-документы (PRD, assignment_design, архитектурные решения) — в ветке `solution`.
 
 ## Справочники (`reference/`)
 
 - [Как устроен Docker-стенд (образы, Connections, переменные окружения)](stack.md)
-- [PXF в этом проекте (проектная реализация)](reference/pxf_bookings.md)
-- [Про время/UTC в bookings](reference/bookings_tz.md)
 - [Известные проблемы bookings-db](reference/bookings_db_issues.md)
-- [Бенчмарк генерации данных](reference/bookings_generation_benchmark.md)
 - [QA-план отладки пайплайна](reference/qa-plan.md)
 - [Порядок запуска DAG-ов](dag_execution_order.md)
-- [End-to-end протокол тестирования](e2e-etl-test-protocol.md)
-- [Тестирование DAG-ов через API](agent-dag-testing.md)
-
-## Планы (`plans/`)
-
-Активные планы работ. После выполнения переносятся в `archive/`.
-
-## Архив (`archive/`)
-
-Выполненные планы, закрытые ревью. Ссылки внутри файлов могут быть устаревшими.

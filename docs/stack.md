@@ -82,7 +82,7 @@ docker compose ps       # проверить health
 - `PXF_SEED_OVERWRITE=1` — перезаписать конфиги при старте;
 - `PXF_SYNC_ON_START=1` — выполнить `pxf cluster sync` при старте.
 
-Подробнее: `docs/reference/pxf_bookings.md`.
+Подробнее: см. ветку `solution` (`docs/reference/pxf_bookings.md`).
 
 ## Airflow: свой образ
 

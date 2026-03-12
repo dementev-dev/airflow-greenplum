@@ -108,20 +108,19 @@ load_dds_dim_calendar → dq_dds_dim_calendar
 Три учебных приёма в этом скрипте:
 
 **Защитные LEFT JOIN (defensive coding).**
-Все JOIN-ы с измерениями — `LEFT JOIN`. DAG гарантирует, что все измерения загружены
-и прошли DQ **до** старта факта (жёсткие зависимости в графе). Поэтому в штатном режиме
-NULL SK не возникают. LEFT JOIN здесь — защита от data quality аномалий (например, если
-в `ods.routes` появится маршрут с несуществующим аэропортом).
+Все JOIN-ы с измерениями — `LEFT JOIN`. На ветке `solution` все измерения заполнены,
+и NULL SK не возникают в штатном режиме. На ветке `main` студенческие измерения
+(`dim_passengers`, `dim_routes`, `dim_airplanes`) — заглушки, поэтому соответствующие
+SK будут NULL до реализации студентом.
 
-DQ-проверки факта отражают эту логику:
-- `passenger_sk` и `tariff_sk` — **запрещены** NULL целиком (0 строк);
-- route-related FK (`route_sk`, `airport_sk`, `airplane_sk`) и `calendar_sk` —
-  допускается до **1%** NULL (NOTICE-предупреждение), при превышении — EXCEPTION.
+DQ-проверки факта на main:
+- `tariff_sk` — **запрещён** NULL (EXCEPTION);
+- `departure_airport_sk`, `arrival_airport_sk` (через `ods.routes`, эталон) — порог **1%** NULL (EXCEPTION);
+- `passenger_sk`, `route_sk`, `airplane_sk` (студенческие) — только **NOTICE** (100% NULL допустимо);
+- `calendar_sk` — порог **1%** NULL.
 
-> Это **не** паттерн late-arriving dimensions (опаздывающих измерений) в классическом
-> понимании: backfill NULL SK при повторном запуске не реализован.
-> В боевых системах для этого используют «строку-заглушку» (unknown member, SK = 0)
-> и отдельный процесс backfill.
+> После реализации всех измерений: `TRUNCATE dds.fact_flight_sales` → перезагрузка →
+> все SK заполнены. Полную версию DQ см. в ветке `solution`.
 
 **Два пути lookup для аэропортов и маршрутов.**
 Аэропорты (`departure_airport_sk`, `arrival_airport_sk`) разрешаются через `ods.routes` →

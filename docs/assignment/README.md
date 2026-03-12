@@ -12,8 +12,9 @@
 
 - SQL-скрипты: `sql/stg/`, `sql/ods/`, `sql/dds/`, `sql/dm/`
 - DAG-файлы: `airflow/dags/`
-- [Порядок запуска DAG-ов](../reference/dag_execution_order.md)
+- [Порядок запуска DAG-ов](../dag_execution_order.md)
 
 ## Для менторов
 
-Дизайн заданий и педагогическая логика: [docs/design/assignment_design.md](../design/assignment_design.md).
+Дизайн заданий и педагогическая логика — в ветке `solution`
+(`docs/design/assignment_design.md`).

@@ -77,7 +77,7 @@ UNION ALL SELECT 'stg.seats', COUNT(*) FROM stg.seats
 UNION ALL SELECT 'stg.boarding_passes', COUNT(*) FROM stg.boarding_passes
 ORDER BY 1;
 
--- ODS: все 9 таблиц не пустые
+-- ODS: эталонные таблицы не пустые (на main ods.airplanes и ods.seats пусты by design)
 SELECT 'ods.bookings' AS tbl, COUNT(*) FROM ods.bookings
 UNION ALL SELECT 'ods.tickets', COUNT(*) FROM ods.tickets
 UNION ALL SELECT 'ods.segments', COUNT(*) FROM ods.segments

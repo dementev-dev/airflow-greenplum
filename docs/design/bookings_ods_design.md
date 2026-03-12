@@ -512,7 +512,9 @@ ANALYZE ods.bookings;
 ### 6.4. Поведение при пустом батче
 
 - для инкрементальных таблиц (`bookings`, `tickets`, `flights`, `segments`, `boarding_passes`) пустой батч допустим;
-- для snapshot-справочников (`airports`, `airplanes`, `routes`, `seats`) пустой батч считаем ошибкой.
+- для snapshot-справочников (`airports`, `routes`) пустой батч считаем ошибкой.
+  На main `airplanes` и `seats` — студенческие заглушки (load/dq = `SELECT 1;`),
+  таблицы будут пустыми до реализации студентом.
 
 ---
 
@@ -531,7 +533,8 @@ ANALYZE ods.bookings;
 
 3. **Обязательные поля** не `NULL`/не пустые.
 
-4. **Батч не пустой** для snapshot-справочников (`airports`, `airplanes`, `routes`, `seats`): если STG-батч оказался пустым — это ошибка (источник недоступен или PXF не работает).
+4. **Батч не пустой** для эталонных snapshot-справочников (`airports`, `routes`): если STG-батч оказался пустым — это ошибка (источник недоступен или PXF не работает).
+   На main `airplanes_dq.sql` и `seats_dq.sql` — студенческие заглушки.
 
 5. **Ссылочная целостность** в ODS:
 - `tickets.book_ref -> bookings.book_ref`
@@ -617,7 +620,8 @@ tests/test_dags_smoke.py (+ smoke для 2 новых DAG)
 resolve_stg_batch_id
   ├-> load_ods_bookings  -> dq_ods_bookings -> load_ods_tickets -> dq_ods_tickets ──────────────────┐
   ├-> load_ods_airports  -> dq_ods_airports  ─┐                                                     │
-  ├-> load_ods_airplanes -> dq_ods_airplanes ─┼-> load_ods_routes -> dq_ods_routes                  │
+  ├-> load_ods_airplanes -> dq_ods_airplanes ─┐
+  │                                          ├-> load_ods_routes -> dq_ods_routes                  │
   └->                                        └-> load_ods_seats  -> dq_ods_seats                    │
                                                                                                      │
                                                   dq_ods_routes -> load_ods_flights -> dq_ods_flights │
@@ -631,7 +635,8 @@ resolve_stg_batch_id
 
 Зависимости (по FK):
 - `tickets` после `bookings` (FK: `book_ref`);
-- `routes` после `airports` и `airplanes` (FK: `departure_airport`, `arrival_airport`, `airplane_code`);
+- `routes` после `airports` (FK: `departure_airport`, `arrival_airport`).
+  На ветке `solution` также зависит от `airplanes` (FK: `airplane_code`);
 - `seats` после `airplanes` (FK: `airplane_code`);
 - `flights` после `routes` (FK: `route_no`);
 - `segments` после `flights` и `tickets` (FK: `flight_id`, `ticket_no`);

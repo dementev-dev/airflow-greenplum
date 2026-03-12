@@ -369,6 +369,66 @@ def test_bookings_dm_ddl_dag_structure():
     )
 
 
+class TestBookingsValidate:
+    """Smoke-тесты DAG bookings_validate."""
+
+    def test_dag_loads(self):
+        dag = _load_dag("airflow.dags.bookings_validate")
+        assert dag is not None
+
+    def test_expected_tasks(self):
+        dag = _load_dag("airflow.dags.bookings_validate")
+        expected = {
+            # ODS
+            "validate_ods.check_ods_airplanes_rowcount",
+            "validate_ods.check_ods_seats_rowcount",
+            "validate_ods.check_ods_no_dup_bk",
+            "validate_ods.check_ods_no_null_pks",
+            # DDS
+            "validate_dds.check_dim_airplanes_exists",
+            "validate_dds.check_dim_passengers_exists",
+            "validate_dds.check_dim_passengers_no_dup_bk",
+            "validate_dds.check_dim_routes_exists",
+            "validate_dds.scd2_backup",
+            "validate_dds.scd2_mutate",
+            "validate_dds.scd2_run_student_load",
+            "validate_dds.scd2_check",
+            "validate_dds.scd2_restore",
+            "validate_dds.check_dim_routes_no_gaps",
+            # DM
+            "validate_dm.check_airport_traffic_exists",
+            "validate_dm.check_route_performance_exists",
+            "validate_dm.check_monthly_overview_exists",
+            "validate_dm.check_passenger_loyalty_exists",
+        }
+        assert expected.issubset(dag.task_dict.keys())
+
+    def test_scd2_chain(self):
+        """SCD2 цепочка backup → mutate → load → check → restore."""
+        dag = _load_dag("airflow.dags.bookings_validate")
+        _assert_direct_edge(dag, "validate_dds.scd2_backup", "validate_dds.scd2_mutate")
+        _assert_direct_edge(
+            dag, "validate_dds.scd2_mutate", "validate_dds.scd2_run_student_load"
+        )
+        _assert_direct_edge(
+            dag, "validate_dds.scd2_run_student_load", "validate_dds.scd2_check"
+        )
+        _assert_direct_edge(dag, "validate_dds.scd2_check", "validate_dds.scd2_restore")
+
+    def test_no_gaps_after_restore(self):
+        """no_gaps должен выполняться после restore (на чистых данных)."""
+        dag = _load_dag("airflow.dags.bookings_validate")
+        _assert_direct_edge(
+            dag, "validate_dds.scd2_restore", "validate_dds.check_dim_routes_no_gaps"
+        )
+
+    def test_restore_trigger_rule(self):
+        """restore должен выполняться всегда (all_done), даже если check упал."""
+        dag = _load_dag("airflow.dags.bookings_validate")
+        restore_task = dag.task_dict["validate_dds.scd2_restore"]
+        assert restore_task.trigger_rule == "all_done"
+
+
 def test_bookings_to_gp_dm_dag_structure():
     """Проверка структуры DAG bookings_to_gp_dm."""
     dag = _load_dag("airflow.dags.bookings_to_gp_dm")

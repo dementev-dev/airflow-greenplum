@@ -1,5 +1,9 @@
 # airflow-dwh-gp-lab
 
+> Этот стенд можно использовать самостоятельно, но он также является курсовой работой
+> плана обучения [Data Engineering Roadmap](https://github.com/dementev-dev/de-roadmap).
+> Нужна помощь? Обратитесь к автору материалов — ментору [@dementev_dev](https://t.me/dementev_dev).
+
 Учебный стенд для лабораторных по Data Engineering: **Airflow** оркестрирует загрузку данных из демо‑БД
 **bookings** (Postgres) в **Greenplum**.
 
@@ -94,6 +98,12 @@ SELECT COUNT(*) FROM dm.route_performance;
 ```
 
 Подробнее про логику DAG и проверки — `docs/bookings_to_gp_stage.md`.
+
+7) Изучите готовую реализацию:
+
+Весь пайплайн `STG → ODS → DDS → DM` на этой ветке полностью реализован.
+Переходите к [навигатору по реализации](docs/assignment/README.md) —
+там описана структура, ключевые паттерны и рекомендуемый порядок изучения.
 
 ## DAG-и в стенде
 

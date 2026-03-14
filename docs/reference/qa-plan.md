@@ -6,6 +6,12 @@
 >
 > Аудитория документа: AI-агент (Sonnet) или человек, выполняющий отладку.
 >
+> **Ветка `main`:** на main часть загрузок — заглушки (`SELECT 1;`).
+> Пустые таблицы на main: `ods.airplanes`, `ods.seats`,
+> `dds.dim_airplanes`, `dds.dim_passengers`, `dds.dim_routes`,
+> `dm.route_performance`, `dm.passenger_loyalty`, `dm.airport_traffic`, `dm.monthly_overview`.
+> Ожидания ниже написаны для ветки `solution` (полная реализация).
+>
 > Зависимость: перед запуском этого плана нужно починить bookings-db
 > (см. `docs/reference/bookings_db_issues.md`).
 
@@ -89,7 +95,7 @@ UNION ALL SELECT 'ods.seats', COUNT(*) FROM ods.seats
 UNION ALL SELECT 'ods.boarding_passes', COUNT(*) FROM ods.boarding_passes
 ORDER BY 1;
 
--- DDS: все 7 таблиц не пустые
+-- DDS: все 7 таблиц не пустые (на main dim_airplanes, dim_passengers, dim_routes пусты by design)
 SELECT 'dds.dim_calendar' AS tbl, COUNT(*) FROM dds.dim_calendar
 UNION ALL SELECT 'dds.dim_airports', COUNT(*) FROM dds.dim_airports
 UNION ALL SELECT 'dds.dim_airplanes', COUNT(*) FROM dds.dim_airplanes
@@ -99,7 +105,7 @@ UNION ALL SELECT 'dds.dim_routes', COUNT(*) FROM dds.dim_routes
 UNION ALL SELECT 'dds.fact_flight_sales', COUNT(*) FROM dds.fact_flight_sales
 ORDER BY 1;
 
--- DM: все 5 витрин не пустые
+-- DM: все 5 витрин не пустые (на main только sales_report непуста, остальные 4 — заглушки)
 SELECT 'dm.sales_report' AS tbl, COUNT(*) FROM dm.sales_report
 UNION ALL SELECT 'dm.route_performance', COUNT(*) FROM dm.route_performance
 UNION ALL SELECT 'dm.passenger_loyalty', COUNT(*) FROM dm.passenger_loyalty
@@ -108,7 +114,8 @@ UNION ALL SELECT 'dm.monthly_overview', COUNT(*) FROM dm.monthly_overview
 ORDER BY 1;
 ```
 
-**Ожидание:** ВСЕ таблицы > 0 строк. Если какая-то пустая — это баг.
+**Ожидание (solution):** ВСЕ таблицы > 0 строк. Если какая-то пустая — это баг.
+**Ожидание (main):** Эталонные таблицы > 0; студенческие (см. список выше) = 0 до реализации заданий.
 
 #### B. Сквозная сверка количеств (STG → ODS)
 

@@ -7,6 +7,8 @@ from __future__ import annotations
 - весь запуск ODS работает с одним stg_batch_id;
 - для каждой сущности выполняем пару задач load -> dq;
 - загрузка реализована как SCD1 UPSERT (UPDATE изменившихся + INSERT новых).
+
+Эталон: airports, routes и 5 инкрементальных сущностей. airplanes, seats — задания (заглушки).
 """
 
 from datetime import timedelta

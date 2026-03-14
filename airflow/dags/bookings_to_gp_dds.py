@@ -8,6 +8,8 @@ from __future__ import annotations
 - для каждой сущности выполняем пару задач load -> dq;
 - для dim_routes применяем SCD2, для остальных измерений — SCD1 UPSERT;
 - факт грузим инкрементальным UPSERT по зерну (ticket_no, flight_id).
+
+Эталон: dim_airports, dim_tariffs, dim_calendar, fact_flight_sales. dim_routes, dim_passengers, dim_airplanes — задания (заглушки).
 """
 
 from datetime import timedelta

@@ -9,7 +9,8 @@
 - Определяет `stg_batch_id` — последний согласованный батч, по которому все 4 snapshot-справочника
   (`airports`, `airplanes`, `routes`, `seats`) уже приехали в STG.
 - Загружает 9 таблиц ODS: `bookings`, `tickets`, `airports`, `airplanes`, `routes`, `seats`,
-  `flights`, `segments`, `boarding_passes`.
+  `flights`, `segments`, `boarding_passes` (на ветке `main` загрузка `airplanes` и `seats` —
+  заглушки; реализуйте их по ТЗ в `docs/assignment/analyst_spec.md`).
 - Для каждой таблицы выполняет пару задач `load → dq`.
 - Snapshot-справочники фильтруются по `stg_batch_id`, транзакционные таблицы — по HWM (`_load_ts`).
 - Для snapshot-справочников дополнительно синхронизирует ключи (удаляет из ODS записи,
@@ -97,9 +98,9 @@ resolve_stg_batch_id
 | 2 | `load_ods_bookings` → `dq_ods_bookings` | `sql/ods/bookings_load.sql`, `sql/ods/bookings_dq.sql` | HWM (инкремент) |
 | 3 | `load_ods_tickets` → `dq_ods_tickets` | `sql/ods/tickets_load.sql`, `sql/ods/tickets_dq.sql` | HWM (инкремент) |
 | 4 | `load_ods_airports` → `dq_ods_airports` | `sql/ods/airports_load.sql`, `sql/ods/airports_dq.sql` | snapshot по `stg_batch_id` |
-| 5 | `load_ods_airplanes` → `dq_ods_airplanes` | `sql/ods/airplanes_load.sql`, `sql/ods/airplanes_dq.sql` | snapshot по `stg_batch_id` |
+| 5 | `load_ods_airplanes` → `dq_ods_airplanes` | `sql/ods/airplanes_load.sql`, `sql/ods/airplanes_dq.sql` | snapshot по `stg_batch_id` ⚠️ заглушка на main |
 | 6 | `load_ods_routes` → `dq_ods_routes` | `sql/ods/routes_load.sql`, `sql/ods/routes_dq.sql` | snapshot по `stg_batch_id` |
-| 7 | `load_ods_seats` → `dq_ods_seats` | `sql/ods/seats_load.sql`, `sql/ods/seats_dq.sql` | snapshot по `stg_batch_id` |
+| 7 | `load_ods_seats` → `dq_ods_seats` | `sql/ods/seats_load.sql`, `sql/ods/seats_dq.sql` | snapshot по `stg_batch_id` ⚠️ заглушка на main |
 | 8 | `load_ods_flights` → `dq_ods_flights` | `sql/ods/flights_load.sql`, `sql/ods/flights_dq.sql` | HWM (инкремент) |
 | 9 | `load_ods_segments` → `dq_ods_segments` | `sql/ods/segments_load.sql`, `sql/ods/segments_dq.sql` | HWM (инкремент) |
 | 10 | `load_ods_boarding_passes` → `dq_ods_boarding_passes` | `sql/ods/boarding_passes_load.sql`, `sql/ods/boarding_passes_dq.sql` | HWM (инкремент) |
@@ -117,6 +118,9 @@ resolve_stg_batch_id
 > Почему не UPSERT? Эти таблицы хранятся в формате **AO Row** (`appendonly=true`),
 > который не поддерживает эффективный row-level UPDATE (вызывает bloat).
 > Для маленьких справочников (~100–300 строк) полная перезагрузка быстрее и чище.
+
+> На ветке `main` загрузка `airplanes` и `seats` — заглушки.
+> Паттерн TRUNCATE + INSERT описан выше; используйте `airports_load.sql` как образец.
 
 **Транзакционные таблицы** (`bookings`, `tickets`, `flights`, `segments`, `boarding_passes`) —
 **SCD1 UPSERT**:

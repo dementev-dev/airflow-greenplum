@@ -7,7 +7,7 @@ from __future__ import annotations
 Создаёт 5 DM-витрин: sales_report, route_performance, passenger_loyalty,
 airport_traffic, monthly_overview.
 
-На данном этапе реализованы все 5 витрин: sales_report, route_performance, passenger_loyalty, airport_traffic, monthly_overview.
+DDL создаёт все 5 витрин. Эталон: sales_report. Остальные — задания.
 """
 
 from datetime import timedelta

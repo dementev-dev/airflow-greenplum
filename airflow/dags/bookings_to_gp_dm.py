@@ -9,7 +9,7 @@ from __future__ import annotations
 - все витрины загружаются параллельно (не зависят друг от друга);
 - sales_report использует UPSERT (heap-таблица), route_performance — Full Rebuild (AO Column).
 
-На данном этапе реализованы все 5 витрин: sales_report, route_performance, passenger_loyalty, airport_traffic, monthly_overview.
+Эталон: sales_report. Остальные 4 витрины — задания (заглушки SELECT 1;).
 """
 
 from datetime import timedelta

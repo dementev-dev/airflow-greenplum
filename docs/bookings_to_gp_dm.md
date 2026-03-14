@@ -1,6 +1,7 @@
 # DAG `bookings_to_gp_dm`: `dds` → `dm` в Greenplum
 
 Этот DAG — учебный пример загрузки слоя **DM** (Data Mart / витрины) из текущего состояния **DDS**.
+Эталон: витрина `sales_report`. Остальные 4 витрины — задания (заглушки `SELECT 1;` на ветке `main`).
 Все 5 витрин загружаются **параллельно** и демонстрируют разные стратегии загрузки —
 это ключевая учебная ценность данного DAG.
 
@@ -8,13 +9,13 @@
 
 Загружает 5 витрин параллельно, для каждой — пара `load → dq`:
 
-| Витрина | Зерно (grain) | Паттерн загрузки |
-|---------|---------------|------------------|
-| `dm.sales_report` | (flight_date, departure_airport_sk, arrival_airport_sk, tariff_sk) | Инкрементальный UPSERT (HWM по датам) |
-| `dm.route_performance` | route_bk | Full Rebuild (TRUNCATE + INSERT) |
-| `dm.passenger_loyalty` | passenger_sk | Инкрементальный UPSERT (HWM по затронутым ключам) |
-| `dm.airport_traffic` | (traffic_date, airport_sk) | Инкрементальный UPSERT (HWM по датам) |
-| `dm.monthly_overview` | (year_actual, month_actual, airplane_sk) | Инкрементальный UPSERT (HWM по месяцам) |
+| Витрина | Зерно (grain) | Паттерн загрузки | Статус на main |
+|---------|---------------|------------------|----------------|
+| `dm.sales_report` | (flight_date, departure_airport_sk, arrival_airport_sk, tariff_sk) | Инкрементальный UPSERT (HWM по датам) | Эталон |
+| `dm.route_performance` | route_bk | Full Rebuild (TRUNCATE + INSERT) | Задание (заглушка) |
+| `dm.passenger_loyalty` | passenger_sk | Инкрементальный UPSERT (HWM по затронутым ключам) | Задание (заглушка) |
+| `dm.airport_traffic` | (traffic_date, airport_sk) | Инкрементальный UPSERT (HWM по датам) | Задание (заглушка) |
+| `dm.monthly_overview` | (year_actual, month_actual, airplane_sk) | Инкрементальный UPSERT (HWM по месяцам) | Задание (заглушка) |
 
 ## Что должно быть готово перед запуском
 
@@ -68,6 +69,9 @@ start_dm
 - **NULLIF** для защиты от деления на ноль (`boarding_rate = boarded / NULLIF(sold, 0)`);
 - **Денормализация**: города и коды аэропортов тянутся в витрину из измерений.
 
+> **Задание.** На ветке `main` этот скрипт — заглушка (`SELECT 1;`).
+> Реализуйте по описанию ниже и ТЗ в `analyst_spec.md`.
+
 ### 2) `load_dm_route_performance` → `dq_dm_route_performance`
 
 - **SQL:** `sql/dm/route_performance_load.sql`, `sql/dm/route_performance_dq.sql`
@@ -89,6 +93,9 @@ start_dm
 Метрики: `avg_load_factor = total_boarded / (total_flights * total_seats)`,
 `avg_ticket_price = total_revenue / total_tickets`.
 
+> **Задание.** На ветке `main` этот скрипт — заглушка (`SELECT 1;`).
+> Реализуйте по описанию ниже и ТЗ в `analyst_spec.md`.
+
 ### 3) `load_dm_passenger_loyalty` → `dq_dm_passenger_loyalty`
 
 - **SQL:** `sql/dm/passenger_loyalty_load.sql`, `sql/dm/passenger_loyalty_dq.sql`
@@ -105,6 +112,9 @@ start_dm
 - Фильтрация `passenger_sk IS NOT NULL` — защита от неконсистентных фактов (NULL SK
   при data quality аномалиях в измерениях).
 
+> **Задание.** На ветке `main` этот скрипт — заглушка (`SELECT 1;`).
+> Реализуйте по описанию ниже и ТЗ в `analyst_spec.md`.
+
 ### 4) `load_dm_airport_traffic` → `dq_dm_airport_traffic`
 
 - **SQL:** `sql/dm/airport_traffic_load.sql`, `sql/dm/airport_traffic_dq.sql`
@@ -115,6 +125,9 @@ start_dm
 Учебный приём — **Dual-role dimension через UNION ALL**: один билет превращается
 в два «события» (вылет из одного аэропорта и прилёт в другой).
 Это позволяет собрать единую статистику аэропорта (departures + arrivals) в одном проходе.
+
+> **Задание.** На ветке `main` этот скрипт — заглушка (`SELECT 1;`).
+> Реализуйте по описанию ниже и ТЗ в `analyst_spec.md`.
 
 ### 5) `load_dm_monthly_overview` → `dq_dm_monthly_overview`
 
@@ -145,19 +158,16 @@ make gp-psql
 
 ```sql
 SELECT COUNT(*) FROM dm.sales_report;
-SELECT COUNT(*) FROM dm.route_performance;
-SELECT COUNT(*) FROM dm.passenger_loyalty;
-SELECT COUNT(*) FROM dm.airport_traffic;
-SELECT COUNT(*) FROM dm.monthly_overview;
+SELECT COUNT(*) FROM dm.route_performance;   -- будет непусто после реализации задания
+SELECT COUNT(*) FROM dm.passenger_loyalty;   -- будет непусто после реализации задания
+SELECT COUNT(*) FROM dm.airport_traffic;     -- будет непусто после реализации задания
+SELECT COUNT(*) FROM dm.monthly_overview;    -- будет непусто после реализации задания
 
 -- Инвариант sales_report: посаженных не больше, чем продано
 SELECT COUNT(*) FROM dm.sales_report WHERE tickets_sold < passengers_boarded;
-
--- Нет дублей по бизнес-ключу route_performance
-SELECT route_bk, COUNT(*) FROM dm.route_performance GROUP BY route_bk HAVING COUNT(*) > 1;
 ```
 
-Ожидаемо: все витрины непусты, инварианты соблюдены, дублей нет.
+Ожидаемо: `dm.sales_report` непуста. Остальные — после реализации заданий.
 
 ## Типичные ошибки
 

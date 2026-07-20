@@ -6,6 +6,7 @@
 
 - [Быстрый старт и команды](../README.md)
 - [Учебные задания](assignment/README.md)
+- [Как читать пайплайн по скрипту загрузки](design/reading_the_pipeline.md)
 - [План тестирования и проверки](../TESTING.md)
 - [Главный учебный DAG: bookings → stg](bookings_to_gp_stage.md)
 - [Учебный DAG: stg -> ods](bookings_to_gp_ods.md)
@@ -16,6 +17,7 @@
 
 - [Единые конвенции нейминга DWH (служебные поля и SCD)](design/naming_conventions.md)
 - [Схема БД всех слоёв DWH](design/db_schema.md)
+- [Как читать пайплайн по скрипту загрузки](design/reading_the_pipeline.md)
 - [Дизайн-документ STG](design/bookings_stg_design.md)
 - [Дизайн-документ ODS](design/bookings_ods_design.md)
 - [Дизайн-документ DDS](design/bookings_dds_design.md)
@@ -28,4 +30,5 @@
 - [Как устроен Docker-стенд (образы, Connections, переменные окружения)](stack.md)
 - [Известные проблемы bookings-db](reference/bookings_db_issues.md)
 - [QA-план отладки пайплайна](reference/qa-plan.md)
+- [Классы DQ-проверок](reference/dq_taxonomy.md)
 - [Порядок запуска DAG-ов](dag_execution_order.md)

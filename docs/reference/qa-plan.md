@@ -14,6 +14,7 @@
 >
 > Зависимость: перед запуском этого плана нужно починить bookings-db
 > (см. `docs/reference/bookings_db_issues.md`).
+> Классы проверок для разбора ошибок: [`dq_taxonomy.md`](dq_taxonomy.md).
 
 ---
 

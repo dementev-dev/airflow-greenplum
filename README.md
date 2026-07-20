@@ -151,6 +151,8 @@ make clean              # полный reset: удалить контейнер�
 ## Документация
 
 - [Учебные задания](docs/assignment/README.md)
+- [Схема DWH: четыре уровня приближения](docs/design/db_schema.md)
+- [Как читать пайплайн по скрипту загрузки](docs/design/reading_the_pipeline.md)
 - [План тестирования/проверок и негативные кейсы](TESTING.md)
 - [Дополнительные заметки и технические детали](docs/README.md)
 - [Детали по STG DAG](docs/bookings_to_gp_stage.md)

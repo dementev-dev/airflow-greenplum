@@ -7,156 +7,87 @@
 > — заглушки (`SELECT 1;`). Данные появятся после реализации заданий.
 
 Архитектура хранилища данных (DWH) для учебного проекта Airflow + Greenplum.
-Источник — демо-БД `bookings` (Postgres). Документ даёт цельный взгляд «сверху»;
-детали реализации — в дизайн-документах слоёв.
+Источник — демо-БД `bookings` (Postgres). Одна диаграмма отвечает на один вопрос:
+карта, которая показывает всё сразу, не даёт ясного ответа ни на один из них.
+
+Понять, как устроен проект → лесенка ниже.
+
+Пишете свой load-скрипт и хотите свериться → [`reading_the_pipeline.md`](reading_the_pipeline.md).
+
+Какие DQ-проверки писать → [`dq_taxonomy.md`](../reference/dq_taxonomy.md).
+
+Точечный вопрос «что кормит X?» → полная карта в конце.
 
 ---
 
-## Полная схема потоков данных (Data Lineage)
+## Как устроен поток целиком?
+
+Здесь показано движение данных через пять слоёв DWH.
 
 ```mermaid
 graph LR
-    %% Стили
-    classDef source fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
-    classDef stg fill:#fff9c4,stroke:#fbc02d,stroke-width:2px;
-    classDef ods fill:#e0f2f1,stroke:#00695c,stroke-width:2px;
-    classDef dim fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
-    classDef fact fill:#ffccbc,stroke:#bf360c,stroke-width:4px;
-    classDef dm fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
-
-    %% 1. Source
-    subgraph Source_Postgres [Source: Postgres Bookings]
-        direction TB
-        SRC_Airports[airports_data]:::source
-        SRC_Airplanes[airplanes_data]:::source
-        SRC_Routes[routes]:::source
-        SRC_Seats[seats]:::source
-        SRC_Bookings[bookings]:::source
-        SRC_Tickets[tickets]:::source
-        SRC_Flights[flights]:::source
-        SRC_Segments[segments]:::source
-        SRC_Boarding[boarding_passes]:::source
-    end
-
-    %% 2. STAGING (Load 1-to-1, AO-Row)
-    subgraph STG_Layer [Layer: STG Staging]
-        direction TB
-        STG_Airports[stg.airports]:::stg
-        STG_Airplanes[stg.airplanes]:::stg
-        STG_Routes[stg.routes]:::stg
-        STG_Seats[stg.seats]:::stg
-        STG_Bookings[stg.bookings]:::stg
-        STG_Tickets[stg.tickets]:::stg
-        STG_Flights[stg.flights]:::stg
-        STG_Segments[stg.segments]:::stg
-        STG_Boarding[stg.boarding_passes]:::stg
-    end
-
-    %% Links Source to STG
-    SRC_Airports --> STG_Airports
-    SRC_Airplanes --> STG_Airplanes
-    SRC_Routes --> STG_Routes
-    SRC_Seats --> STG_Seats
-    SRC_Bookings --> STG_Bookings
-    SRC_Tickets --> STG_Tickets
-    SRC_Flights --> STG_Flights
-    SRC_Segments --> STG_Segments
-    SRC_Boarding --> STG_Boarding
-
-    %% 3. ODS (3NF, Clean, Type)
-    subgraph ODS_Layer [Layer: ODS Operational Core]
-        direction TB
-        ODS_Airports[ods.airports]:::ods
-        ODS_Airplanes[ods.airplanes]:::ods
-        ODS_Routes[ods.routes]:::ods
-        ODS_Seats[ods.seats]:::ods
-        ODS_Bookings[ods.bookings]:::ods
-        ODS_Tickets[ods.tickets]:::ods
-        ODS_Flights[ods.flights]:::ods
-        ODS_Segments[ods.segments]:::ods
-        ODS_Boarding[ods.boarding_passes]:::ods
-    end
-
-    %% Links STG to ODS
-    STG_Airports --> ODS_Airports
-    STG_Airplanes --> ODS_Airplanes
-    STG_Routes --> ODS_Routes
-    STG_Seats --> ODS_Seats
-    STG_Bookings --> ODS_Bookings
-    STG_Tickets --> ODS_Tickets
-    STG_Flights --> ODS_Flights
-    STG_Segments --> ODS_Segments
-    STG_Boarding --> ODS_Boarding
-
-    %% 4. DDS (Star Schema)
-    subgraph DDS_Layer [Layer: DDS Star Schema]
-        direction TB
-        DIM_Calendar[dds.dim_calendar]:::dim
-        DIM_Airports[dds.dim_airports]:::dim
-        DIM_Airplanes[dds.dim_airplanes]:::dim
-        DIM_Tariffs[dds.dim_tariffs]:::dim
-        DIM_Passengers[dds.dim_passengers]:::dim
-        DIM_Routes[dds.dim_routes SCD2]:::dim
-        FACT_Sales[dds.fact_flight_sales]:::fact
-    end
-
-    %% ODS to DDS Dimensions
-    ODS_Airports --> DIM_Airports
-    ODS_Airplanes --> DIM_Airplanes
-    ODS_Seats -.->|total_seats| DIM_Airplanes
-    ODS_Segments -.->|DISTINCT| DIM_Tariffs
-    ODS_Tickets -->|Unique passengers| DIM_Passengers
-    ODS_Routes -->|SCD2 hashdiff| DIM_Routes
-    DIM_Airports -.->|cities| DIM_Routes
-    DIM_Airplanes -.->|model, seats| DIM_Routes
-
-    %% ODS to Fact
-    ODS_Segments -->|Main stream| FACT_Sales
-    ODS_Tickets -->|book_ref, passenger_id| FACT_Sales
-    ODS_Bookings -->|book_date| FACT_Sales
-    ODS_Flights -->|schedule, route_no| FACT_Sales
-    ODS_Routes -->|dep/arr airports| FACT_Sales
-    ODS_Boarding -->|LEFT JOIN seat_no| FACT_Sales
-
-    %% Dimensions to Fact
-    DIM_Calendar -->|calendar_sk| FACT_Sales
-    DIM_Airports -->|dep/arr _sk| FACT_Sales
-    DIM_Airplanes -->|airplane_sk| FACT_Sales
-    DIM_Tariffs -->|tariff_sk| FACT_Sales
-    DIM_Passengers -->|passenger_sk| FACT_Sales
-    DIM_Routes -->|route_sk| FACT_Sales
-
-    %% 5. DM (Vitrines)
-    subgraph DM_Layer [Layer: DM Data Marts]
-        direction TB
-        DM_Sales[dm.sales_report]:::dm
-        DM_Traffic[dm.airport_traffic]:::dm
-        DM_Route[dm.route_performance]:::dm
-        DM_Monthly[dm.monthly_overview]:::dm
-        DM_Loyalty[dm.passenger_loyalty]:::dm
-    end
-
-    %% DDS to DM
-    FACT_Sales --> DM_Sales
-    FACT_Sales --> DM_Traffic
-    FACT_Sales --> DM_Route
-    FACT_Sales --> DM_Monthly
-    FACT_Sales --> DM_Loyalty
-    DIM_Airports -.-> DM_Sales
-    DIM_Airports -.-> DM_Traffic
-    DIM_Tariffs -.-> DM_Sales
-    DIM_Tariffs -.-> DM_Loyalty
-    DIM_Calendar -.-> DM_Sales
-    DIM_Calendar -.-> DM_Traffic
-    DIM_Calendar -.-> DM_Route
-    DIM_Calendar -.-> DM_Monthly
-    DIM_Calendar -.-> DM_Loyalty
-    DIM_Routes -.-> DM_Route
-    DIM_Routes -.-> DM_Monthly
-    DIM_Routes -.-> DM_Loyalty
-    DIM_Airplanes -.-> DM_Monthly
-    DIM_Passengers -.-> DM_Loyalty
+    SRC["Source<br/>Postgres bookings"] --> STG["STG<br/>сырые данные"]
+    STG --> ODS["ODS<br/>очищенные данные и типы"]
+    ODS --> DDS["DDS<br/>факты и измерения"]
+    DDS --> DM["DM<br/>витрины для бизнес-вопросов"]
 ```
+
+## Как выглядит звезда?
+
+Здесь показан факт и шесть его измерений.
+
+```mermaid
+graph TD
+    CAL["dds.dim_calendar"] --> FACT["dds.fact_flight_sales"]
+    AIRPORT["dds.dim_airports"] --> FACT
+    AIRPLANE["dds.dim_airplanes"] --> FACT
+    TARIFF["dds.dim_tariffs"] --> FACT
+    PASSENGER["dds.dim_passengers"] --> FACT
+    ROUTE["dds.dim_routes<br/>SCD2"] --> FACT
+```
+
+## Как собирается факт?
+
+Здесь показаны таблицы, которые `fact_src` читает при сборке факта.
+Сплошные стрелки обозначают `INNER JOIN`. Пунктирные стрелки обозначают `LEFT JOIN`.
+
+```mermaid
+graph LR
+    SEG["ods.segments"] -->|"Main stream: grain, price"| FACT["dds.fact_flight_sales"]
+    TKT["ods.tickets"] -->|"book_ref, passenger_id"| FACT
+    BKG["ods.bookings"] -->|"book_date"| FACT
+    FLT["ods.flights"] -->|"schedule, route_no"| FACT
+    ODS_RTE["ods.routes"] -.->|"dep/arr airports"| FACT
+    CAL["dds.dim_calendar"] -.->|"calendar_sk"| FACT
+    AIRPORT["dds.dim_airports"] -.->|"dep/arr _sk"| FACT
+    AIRPLANE["dds.dim_airplanes"] -.->|"airplane_sk"| FACT
+    TARIFF["dds.dim_tariffs"] -.->|"tariff_sk"| FACT
+    PASSENGER["dds.dim_passengers"] -.->|"passenger_sk"| FACT
+    ROUTE["dds.dim_routes"] -.->|"route_sk"| FACT
+    BOARDING["ods.boarding_passes"] -.->|"LEFT JOIN seat_no"| FACT
+```
+
+`ods.routes` оставлен отдельным узлом: через него факт находит аэропорты
+вылета и прилёта, не завися от студенческого `dim_routes`. Схема показывает
+замысел загрузки. На ветке `main` поля `route_sk`, `airplane_sk` и
+`passenger_sk` могут быть `NULL`, пока студент не реализовал измерения.
+Почему это не всегда ошибка, объяснено в [справочнике DQ](../reference/dq_taxonomy.md#null--не-всегда-ошибка).
+
+## Что кормит витрины?
+
+Здесь показано, во что расходятся строки факта.
+
+```mermaid
+graph LR
+    FACT["dds.fact_flight_sales"] -->|"день × аэропорты × тариф"| SALES["dm.sales_report<br/>выручка и посадка"]
+    FACT -->|"день × аэропорт"| TRAFFIC["dm.airport_traffic<br/>пассажиропоток"]
+    FACT -->|"route_bk"| ROUTE["dm.route_performance<br/>эффективность маршрута"]
+    FACT -->|"месяц × airplane_sk"| MONTHLY["dm.monthly_overview<br/>динамика по самолётам"]
+    FACT -->|"passenger_sk"| LOYALTY["dm.passenger_loyalty<br/>профиль лояльности"]
+```
+
+Измерения уточняют даты, аэропорты, тарифы, маршруты, самолёты и пассажиров,
+но основной поток во все пять витрин начинается с `fact_flight_sales`.
 
 ---
 
@@ -310,5 +241,159 @@ Degenerate keys: `book_ref`, `ticket_no`, `flight_id`, `book_date`, `seat_no`.
 - [`bookings_dds_design.md`](bookings_dds_design.md) — дизайн DDS (Star Schema, SCD2)
 - [`bookings_dm_design.md`](bookings_dm_design.md) — дизайн DM (5 витрин)
 - [`naming_conventions.md`](naming_conventions.md) — нейминг полей
+- [`reading_the_pipeline.md`](reading_the_pipeline.md) — как читать связи из скрипта загрузки
+- [`../reference/dq_taxonomy.md`](../reference/dq_taxonomy.md) — классы DQ-проверок и допустимые NULL
 - Часовые пояса и настройка PXF — в ветке `solution` (`docs/reference/`)
 - [`../assignment/analyst_spec.md`](../assignment/analyst_spec.md) — ТЗ от аналитика (курсовое задание)
+
+---
+
+## Полная карта lineage (справочная)
+
+Здесь собран цельный взгляд «сверху». Эта карта нужна для точечного поиска:
+например, «что кормит X?» или «куда идут данные из X?». Читать весь пайплайн
+по ней подряд не нужно.
+
+```mermaid
+graph LR
+    %% Стили
+    classDef source fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    classDef stg fill:#fff9c4,stroke:#fbc02d,stroke-width:2px;
+    classDef ods fill:#e0f2f1,stroke:#00695c,stroke-width:2px;
+    classDef dim fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
+    classDef fact fill:#ffccbc,stroke:#bf360c,stroke-width:4px;
+    classDef dm fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
+
+    %% 1. Source
+    subgraph Source_Postgres [Source: Postgres Bookings]
+        direction TB
+        SRC_Airports[airports_data]:::source
+        SRC_Airplanes[airplanes_data]:::source
+        SRC_Routes[routes]:::source
+        SRC_Seats[seats]:::source
+        SRC_Bookings[bookings]:::source
+        SRC_Tickets[tickets]:::source
+        SRC_Flights[flights]:::source
+        SRC_Segments[segments]:::source
+        SRC_Boarding[boarding_passes]:::source
+    end
+
+    %% 2. STAGING (Load 1-to-1, AO-Row)
+    subgraph STG_Layer [Layer: STG Staging]
+        direction TB
+        STG_Airports[stg.airports]:::stg
+        STG_Airplanes[stg.airplanes]:::stg
+        STG_Routes[stg.routes]:::stg
+        STG_Seats[stg.seats]:::stg
+        STG_Bookings[stg.bookings]:::stg
+        STG_Tickets[stg.tickets]:::stg
+        STG_Flights[stg.flights]:::stg
+        STG_Segments[stg.segments]:::stg
+        STG_Boarding[stg.boarding_passes]:::stg
+    end
+
+    %% Links Source to STG
+    SRC_Airports --> STG_Airports
+    SRC_Airplanes --> STG_Airplanes
+    SRC_Routes --> STG_Routes
+    SRC_Seats --> STG_Seats
+    SRC_Bookings --> STG_Bookings
+    SRC_Tickets --> STG_Tickets
+    SRC_Flights --> STG_Flights
+    SRC_Segments --> STG_Segments
+    SRC_Boarding --> STG_Boarding
+
+    %% 3. ODS (3NF, Clean, Type)
+    subgraph ODS_Layer [Layer: ODS Operational Core]
+        direction TB
+        ODS_Airports[ods.airports]:::ods
+        ODS_Airplanes[ods.airplanes]:::ods
+        ODS_Routes[ods.routes]:::ods
+        ODS_Seats[ods.seats]:::ods
+        ODS_Bookings[ods.bookings]:::ods
+        ODS_Tickets[ods.tickets]:::ods
+        ODS_Flights[ods.flights]:::ods
+        ODS_Segments[ods.segments]:::ods
+        ODS_Boarding[ods.boarding_passes]:::ods
+    end
+
+    %% Links STG to ODS
+    STG_Airports --> ODS_Airports
+    STG_Airplanes --> ODS_Airplanes
+    STG_Routes --> ODS_Routes
+    STG_Seats --> ODS_Seats
+    STG_Bookings --> ODS_Bookings
+    STG_Tickets --> ODS_Tickets
+    STG_Flights --> ODS_Flights
+    STG_Segments --> ODS_Segments
+    STG_Boarding --> ODS_Boarding
+
+    %% 4. DDS (Star Schema)
+    subgraph DDS_Layer [Layer: DDS Star Schema]
+        direction TB
+        DIM_Calendar[dds.dim_calendar]:::dim
+        DIM_Airports[dds.dim_airports]:::dim
+        DIM_Airplanes[dds.dim_airplanes]:::dim
+        DIM_Tariffs[dds.dim_tariffs]:::dim
+        DIM_Passengers[dds.dim_passengers]:::dim
+        DIM_Routes[dds.dim_routes SCD2]:::dim
+        FACT_Sales[dds.fact_flight_sales]:::fact
+    end
+
+    %% ODS to DDS Dimensions
+    ODS_Airports --> DIM_Airports
+    ODS_Airplanes --> DIM_Airplanes
+    ODS_Seats -.->|total_seats| DIM_Airplanes
+    ODS_Segments -.->|DISTINCT| DIM_Tariffs
+    ODS_Tickets -->|Unique passengers| DIM_Passengers
+    ODS_Routes -->|SCD2 hashdiff| DIM_Routes
+    DIM_Airports -.->|cities| DIM_Routes
+    DIM_Airplanes -.->|model, seats| DIM_Routes
+
+    %% ODS to Fact
+    ODS_Segments -->|Main stream| FACT_Sales
+    ODS_Tickets -->|book_ref, passenger_id| FACT_Sales
+    ODS_Bookings -->|book_date| FACT_Sales
+    ODS_Flights -->|schedule, route_no| FACT_Sales
+    ODS_Routes -->|dep/arr airports| FACT_Sales
+    ODS_Boarding -->|LEFT JOIN seat_no| FACT_Sales
+
+    %% Dimensions to Fact
+    DIM_Calendar -->|calendar_sk| FACT_Sales
+    DIM_Airports -->|dep/arr _sk| FACT_Sales
+    DIM_Airplanes -->|airplane_sk| FACT_Sales
+    DIM_Tariffs -->|tariff_sk| FACT_Sales
+    DIM_Passengers -->|passenger_sk| FACT_Sales
+    DIM_Routes -->|route_sk| FACT_Sales
+
+    %% 5. DM (Vitrines)
+    subgraph DM_Layer [Layer: DM Data Marts]
+        direction TB
+        DM_Sales[dm.sales_report]:::dm
+        DM_Traffic[dm.airport_traffic]:::dm
+        DM_Route[dm.route_performance]:::dm
+        DM_Monthly[dm.monthly_overview]:::dm
+        DM_Loyalty[dm.passenger_loyalty]:::dm
+    end
+
+    %% DDS to DM
+    FACT_Sales --> DM_Sales
+    FACT_Sales --> DM_Traffic
+    FACT_Sales --> DM_Route
+    FACT_Sales --> DM_Monthly
+    FACT_Sales --> DM_Loyalty
+    DIM_Airports -.-> DM_Sales
+    DIM_Airports -.-> DM_Traffic
+    DIM_Tariffs -.-> DM_Sales
+    DIM_Tariffs -.-> DM_Loyalty
+    DIM_Calendar -.-> DM_Sales
+    DIM_Calendar -.-> DM_Traffic
+    DIM_Calendar -.-> DM_Route
+    DIM_Calendar -.-> DM_Monthly
+    DIM_Calendar -.-> DM_Loyalty
+    DIM_Routes -.-> DM_Route
+    DIM_Routes -.-> DM_Monthly
+    DIM_Routes -.-> DM_Loyalty
+    DIM_Airplanes -.-> DM_Monthly
+    DIM_Passengers -.-> DM_Loyalty
+```

@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Карта DWH авиаперевозок</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f7f7f5;
+      --panel: #ffffff;
+      --ink: #272a2d;
+      --muted: #6b7177;
+      --line: #8c9298;
+      --soft: #e6e8e9;
+      --accent: #b54a2a;
+      --accent-soft: #f5ded7;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font: 15px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    header { padding: 22px 26px 12px; }
+    h1 { margin: 0 0 5px; font-size: 25px; }
+    .lead { margin: 0; color: var(--muted); }
+    .controls {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 8px 26px 16px;
+    }
+    .switcher { display: flex; flex-wrap: wrap; gap: 6px; }
+    button {
+      border: 1px solid #aeb3b7;
+      border-radius: 18px;
+      background: var(--panel);
+      color: var(--ink);
+      padding: 6px 13px;
+      font: inherit;
+      cursor: pointer;
+    }
+    button[aria-pressed="true"] {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: #71301e;
+    }
+    button:focus-visible, [tabindex="0"]:focus-visible {
+      outline: 3px solid #d79078;
+      outline-offset: 2px;
+    }
+    .legend { display: flex; flex-wrap: wrap; gap: 8px 20px; color: var(--muted); }
+    .legend-item { display: inline-flex; align-items: center; gap: 7px; }
+    .legend-icon { display: block; width: 50px; height: 20px; flex: none; }
+    main {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 370px;
+      gap: 16px;
+      padding: 0 18px 24px;
+      align-items: start;
+    }
+    .map-scroll {
+      overflow-x: auto;
+      border: 1px solid #d7d9da;
+      border-radius: 10px;
+      background: var(--panel);
+    }
+    #map { display: block; width: 100%; min-width: 1040px; height: auto; }
+    .layer-title { font-size: 15px; font-weight: 700; text-anchor: middle; }
+    .layer-caption { font-size: 11px; fill: var(--muted); text-anchor: middle; }
+    .zone-caption { font-size: 12px; fill: var(--muted); }
+    .column-guide { stroke: #eef0f1; stroke-width: 1; }
+    .edge-line {
+      fill: none;
+      stroke: var(--line);
+      stroke-width: 1.8;
+      marker-end: url(#arrowhead);
+      transition: opacity .15s, stroke .15s, stroke-width .15s;
+    }
+    .edge-line.dashed { stroke-dasharray: 8 6; }
+    .edge-line.dotted { stroke-dasharray: 2 6; stroke-linecap: round; }
+    .edge-hit { fill: none; stroke: transparent; stroke-width: 14; cursor: pointer; }
+    .node { cursor: pointer; transition: opacity .15s; }
+    .node rect, .legend-node rect {
+      fill: #f1f2f2;
+      stroke: #858b90;
+      stroke-width: 1.2;
+      rx: 7;
+      transition: fill .15s, stroke .15s, stroke-width .15s;
+    }
+    .node text {
+      fill: var(--ink);
+      font: 14px ui-monospace, SFMono-Regular, Consolas, monospace;
+      text-anchor: middle;
+      pointer-events: none;
+    }
+    .node .stream-mark { fill: var(--muted); font: 11px system-ui, sans-serif; }
+    .is-filtered, .is-context-dim { opacity: .16; }
+    .is-path:not(.is-filtered), .is-hover:not(.is-filtered) { opacity: 1; }
+    .is-path .edge-line, .edge.is-path .edge-line {
+      stroke: var(--accent); stroke-width: 2.8; marker-end: url(#arrowhead-active);
+    }
+    .node.is-path rect { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2; }
+    .node.is-hover rect { fill: #faefeb; stroke: #d79078; }
+    .edge.is-hover .edge-line { stroke: #d79078; stroke-width: 2.2; }
+    .node.is-selected rect { stroke-width: 3; }
+    .edge.is-selected .edge-line { stroke-width: 4; }
+    aside {
+      min-height: 470px; max-height: calc(100vh - 32px); overflow-y: auto; position: sticky; top: 16px;
+      padding: 20px;
+      border: 1px solid #d7d9da;
+      border-radius: 10px;
+      background: var(--panel);
+    }
+    @media (max-width: 900px) { main { grid-template-columns: minmax(0, 1fr); } aside { min-height: 0; max-height: none; position: static; } .map-scroll { max-height: 50vh; overflow: auto; } }
+    aside h2 { margin: 0 0 3px; font-size: 20px; overflow-wrap: anywhere; }
+    .meta { margin: 0 0 18px; color: var(--muted); }
+    .card-section { margin-top: 17px; }
+    .card-section h3 { margin: 0 0 5px; font-size: 13px; }
+    .card-section p { margin: 0; }
+    .card-section ul { margin: 5px 0 0; padding-left: 20px; }
+    .card-section li + li { margin-top: 5px; }
+    code { font: .92em ui-monospace, SFMono-Regular, Consolas, monospace; }
+    a { color: #8a351e; text-underline-offset: 2px; }
+    .hint { color: var(--muted); font-size: 13px; }
+    .edge[hidden] { display: none; }
+    .node.student rect, .legend-node.student rect { stroke-dasharray: 5 3; }
+    .node.student .stream-mark { fill: #875a14; }
+    .edge.expected .edge-line, .legend-arrow.expected .edge-line { stroke-dasharray: 5 4; }
+    .node.is-upstream rect, .legend-node.is-upstream rect { fill: #e3eff5; stroke: #307c9a; }
+    .node.is-downstream rect, .legend-node.is-downstream rect { fill: #e7f1e5; stroke: #527a43; }
+    .node.is-selected rect, .legend-node.is-selected rect { fill: var(--accent-soft); stroke: var(--accent); }
+    .relation-button { border-radius: 5px; padding: 5px 7px; text-align: left; width: 100%; margin-top: 5px; font-size: 13px; }
+    .badge { font-size: 13px; padding: 3px 8px; border-radius: 4px; background: #eef1ed; display: inline-block; }
+    .badge.student { background: #fff1cf; color: #775018; }
+    .navigation { margin: 8px 0; }
+    code { overflow-wrap: anywhere; }
+    summary { cursor: pointer; font-weight: 600; }
+    #view-hint { margin: 0; max-width: 1050px; }
+    noscript { display: block; padding: 20px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1 id="page-title"></h1>
+    <p class="lead" id="lead"></p>
+    <p class="navigation"><a href="__GUIDE_URL__" target="_blank" rel="noopener noreferrer">Руководство: от бронирования до витрины (Gitea)</a> · Учебная ветка main</p>
+  </header>
+  <div class="controls">
+    <div class="switcher" id="switcher" aria-label="Вид связей"></div>
+    <p id="view-hint" class="hint"></p>
+    <div class="legend" aria-label="Обозначения стрелок">
+      <span class="legend-item">
+        <svg class="legend-icon legend-arrow" viewBox="0 0 50 20" aria-hidden="true"><path class="edge-line" d="M 2 10 H 43"/></svg>
+        <span id="ready-edge-legend">Готовая загрузка</span>
+      </span>
+      <span class="legend-item">
+        <svg class="legend-icon legend-arrow expected" viewBox="0 0 50 20" aria-hidden="true"><path class="edge-line" d="M 2 10 H 43"/></svg>
+        <span id="expected-edge-legend">Загрузка по ТЗ</span>
+      </span>
+      <span class="legend-item">
+        <svg class="legend-icon legend-arrow is-path" viewBox="0 0 50 20" aria-hidden="true"><path class="edge-line" d="M 2 10 H 43"/></svg>
+        <span>Выделенные связи</span>
+      </span>
+    </div>
+    <div class="legend" aria-label="Обозначения таблиц">
+      <span class="legend-item">
+        <svg class="legend-icon legend-node" viewBox="0 0 50 20" aria-hidden="true"><rect x="4" y="2" width="40" height="16"/></svg>
+        <span>Готовая таблица</span>
+      </span>
+      <span class="legend-item">
+        <svg class="legend-icon legend-node student" viewBox="0 0 50 20" aria-hidden="true"><rect x="4" y="2" width="40" height="16"/></svg>
+        <span>Учебная заглушка</span>
+      </span>
+      <span class="legend-item">
+        <svg class="legend-icon legend-node is-upstream" viewBox="0 0 50 20" aria-hidden="true"><rect x="4" y="2" width="40" height="16"/></svg>
+        <span id="upstream-legend">Источники</span>
+      </span>
+      <span class="legend-item">
+        <svg class="legend-icon legend-node is-downstream" viewBox="0 0 50 20" aria-hidden="true"><rect x="4" y="2" width="40" height="16"/></svg>
+        <span id="downstream-legend">Потребители</span>
+      </span>
+      <span class="legend-item">
+        <svg class="legend-icon legend-node is-selected" viewBox="0 0 50 20" aria-hidden="true"><rect x="4" y="2" width="40" height="16"/></svg>
+        <span>Выбранная таблица</span>
+      </span>
+    </div>
+  </div>
+  <main>
+    <div class="map-scroll">
+      <svg id="map" viewBox="0 0 1250 725" role="group" aria-label="Путь данных через слои хранилища"></svg>
+    </div>
+    <aside id="details" aria-live="polite" aria-label="Карточка выбранного объекта"></aside>
+  </main>
+  <noscript>Для интерактивной карты включите JavaScript. Объяснение модели доступно в <a href="__GUIDE_URL__">руководстве в Gitea</a>.</noscript>
+  <script>
+    const MAP = /*__MAP_DATA__*/;
+    const NS = "http://www.w3.org/2000/svg";
+    const state = { view: "flow", selected: null };
+    const nodeById = new Map(MAP.nodes.map(node => [node.id, node]));
+    const edgeById = new Map(MAP.edges.map(edge => [edge.id, edge]));
+    const positions = new Map();
+    const svg = document.getElementById("map");
+    const details = document.getElementById("details");
+    const statusLabel = {ready: "Готовая загрузка", student: "Задание · загрузка и DQ — заглушки", source: "Источник · демо-БД"};
+    function svgElement(name, attributes = {}) {
+      const element = document.createElementNS(NS, name);
+      Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, value));
+      return element;
+    }
+    function layerTitle(layerId) { return MAP.layers.find((layer) => layer.id === layerId)?.title ?? ""; }
+
+    function appendRichText(parent, value) {
+      value.split("`").forEach((part, index) => {
+        const element = index % 2 ? document.createElement("code") : document.createTextNode(part);
+        if (index % 2) element.textContent = part;
+        parent.append(element);
+      });
+    }
+    function addSection(title, value) {
+      if (!value || (Array.isArray(value) && !value.length)) return;
+      const section = document.createElement("section");
+      section.className = "card-section";
+      const heading = document.createElement("h3");
+      heading.textContent = title;
+      section.append(heading);
+      if (Array.isArray(value)) {
+        const list = document.createElement("ul");
+        value.forEach((item) => {
+          const row = document.createElement("li");
+          appendRichText(row, item);
+          list.append(row);
+        });
+        section.append(list);
+      } else {
+        const paragraph = document.createElement("p");
+        appendRichText(paragraph, value);
+        section.append(paragraph);
+      }
+      details.append(section);
+    }
+    function addLinks(links) {
+      if (!links?.length) return;
+      const section = document.createElement("section");
+      section.className = "card-section";
+      const heading = document.createElement("h3");
+      heading.textContent = "Ссылки";
+      const list = document.createElement("ul");
+      links.forEach((item) => {
+        const row = document.createElement("li");
+        const link = document.createElement("a");
+        // Выбор таблицы остается в локальной карте; файлы открываются в Gitea.
+        link.href = item.url.startsWith("#") ? item.url : new URL(item.url, new URL("docs/design/", MAP.repository_url)).href;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = item.label;
+        row.append(link);
+        list.append(row);
+      });
+      section.append(heading, list);
+      details.append(section);
+    }
+
+    function renderIntro(message = "") {
+      details.replaceChildren();
+      const heading = document.createElement("h2");
+      heading.textContent = message || "Начните с билета";
+      details.append(heading);
+      addSection("Маршрут чтения", "Один билет может включать несколько перелетов. Выберите bookings.tickets, затем проследите сегменты до факта и витрины sales_report.");
+      addSection("Как исследовать", "Выбор таблицы подсвечивает ее окружение: источники и потребителей в потоке данных, родителей и потомков в связях по ключам. Их положение остается прежним. Соседние связи доступны кнопками в карточке. Повторный выбор, Esc или «Общий вид» снимает выделение.");
+      addSection("Что показывает карта", "Стрелки описывают данные. Порядок задач Airflow смотрите отдельно по ссылке на DAG в карточке. Пунктирная стрелка означает ожидаемую загрузку из задания.");
+      addSection("Вход через PXF", "Внешние stg.*_ext показаны внутри карточек STG: они читают Postgres, но сами не хранят копию данных.");
+      addSection("Ключи", "Все ключи и связи здесь логические. DDL таблиц DWH не объявляет PRIMARY KEY, UNIQUE и FOREIGN KEY. DISTRIBUTED BY задает размещение, а не уникальность.");
+      addLinks([{label: "Открыть руководство о модели", url: "db_schema.md"}]);
+    }
+    function relationButtons(node) {
+      const section = document.createElement("section");
+      section.className = "card-section";
+      const h = document.createElement("h3"); h.textContent = "Связи рядом с таблицей";
+      section.append(h);
+      const edges = MAP.edges.filter(e => e.mode === state.view && (e.from === node.id || e.to === node.id));
+      edges.forEach(edge => {
+        const b = document.createElement("button"); b.className = "relation-button";
+        const neighbor = edge.from === node.id ? edge.to : edge.from;
+        b.textContent = `${edge.from === node.id ? "→" : "←"} ${neighbor}: ${edge.label}`;
+        b.dataset.edge = edge.id;
+        b.addEventListener("click", () => selectItem("edge", edge.id));
+        section.append(b);
+      });
+      if (!edges.length) {
+        const p = document.createElement("p"); p.textContent = "В этом виде рядом нет связей. Переключите вид, чтобы увидеть путь загрузки."; section.append(p);
+      }
+      details.append(section);
+    }
+    function renderNodeCard(node) {
+      details.replaceChildren();
+      const heading = document.createElement("h2"); heading.textContent = node.name;
+      const meta = document.createElement("p"); meta.className = `badge ${node.status}`; meta.textContent = statusLabel[node.status];
+      details.append(heading, meta);
+      addSection("Назначение", node.what);
+      addSection("Одна строка", node.grain);
+      addSection("Логические ключи", node.keys);
+
+      addSection(node.status === "student" ? "Ожидаемый результат по ТЗ" : "Как наполняется", node.fill);
+      if (node.parts.length) addSection("Вход через PXF", node.parts.map(id => `\`${id}\` — внешняя таблица для чтения Postgres, без локального хранения. Ее определение находится в том же DDL.`));
+      const fields = document.createElement("details"); fields.className = "card-section";
+      const summary = document.createElement("summary"); summary.textContent = `Важные поля (${node.fields.length})`;
+      const list = document.createElement("ul");
+      node.fields.forEach(field => {
+        const li = document.createElement("li"); appendRichText(li, "`" + field.name + "` — " + field.meaning); list.append(li);
+      });
+      fields.append(summary,list); details.append(fields);
+      relationButtons(node);
+      const dag = {stg:"stage",ods:"ods",dds:"dds",dm:"dm"}[node.layer];
+      addLinks([...node.links, ...(dag ? [{label:"DAG · порядок задач",url:`../../airflow/dags/bookings_to_gp_${dag}.py`}] : []), {label:"Ссылка на эту таблицу",url:`#node=${node.id}&view=${state.view}`}]);
+    }
+    function renderEdgeCard(edge) {
+      details.replaceChildren();
+      const heading = document.createElement("h2"); heading.textContent = edge.label; details.append(heading);
+      addSection("Таблицы", "`" + edge.from + "` → `" + edge.to + "`");
+      addSection("Вид связи", edge.mode === "flow" ? (edge.status === "student" ? "Ожидаемый поток по ТЗ; загрузка пока не реализована." : "Чтение и преобразование данных в готовом SQL.") : "Логическое сопоставление строк по ключам. Это не зависимость задач Airflow и не объявленное ограничение БД.");
+      addSection("Что связывает", edge.join);
+      addSection("Участвующие поля", edge.refs.map(r => `\`${r.node}\`: ${r.columns.map(c => "`"+c+"`").join(", ")}`));
+      [edge.from, edge.to].forEach(id => {
+        const b = document.createElement("button"); b.className = "relation-button"; b.textContent = `Открыть ${id}`;
+        b.addEventListener("click", () => selectItem("node", id)); details.append(b);
+      });
+      addLinks(edge.links);
+    }
+    function layoutMap() {
+      MAP.layers.forEach((layer, index) => {
+        MAP.nodes.filter(node => node.layer === layer.id).forEach(node => {
+          positions.set(node.id, {x: 20 + index * 250, y: 72 + node.order * 70, width: 195, height: 48});
+        });
+      });
+    }
+    function edgePath(edge, offset) {
+      const a = positions.get(edge.from), b = positions.get(edge.to);
+      const y1 = a.y + a.height / 2 + offset, y2 = b.y + b.height / 2 + offset;
+      if (a.x === b.x) {
+        const x = a.x + a.width, bend = x + 20 + Math.abs(a.y - b.y) * .08 + offset;
+        return `M ${x} ${y1} C ${bend} ${y1}, ${bend} ${y2}, ${x} ${y2}`;
+      }
+      const x1 = a.x + a.width, x2 = b.x, bend = Math.max(18, (x2 - x1) / 2);
+      return `M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`;
+    }
+    function drawMap() {
+      const defs = svgElement("defs");
+      [["arrowhead", "#8c9298"], ["arrowhead-active", "#b54a2a"]].forEach(([id, fill]) => {
+        const marker = svgElement("marker", {id, viewBox:"0 0 8 8", refX:"7", refY:"4", markerWidth:"6", markerHeight:"6", orient:"auto"});
+        marker.append(svgElement("path", {d:"M 0 0 L 8 4 L 0 8 z", fill})); defs.append(marker);
+      });
+      svg.append(defs);
+      MAP.layers.forEach((layer,index) => {
+        const center = 117.5 + index * 250;
+        const title = svgElement("text", {x:center, y:27, class:"layer-title"}); title.textContent = layer.title;
+        const caption = svgElement("text", {x:center, y:47, class:"layer-caption"}); caption.textContent = layer.caption;
+        svg.append(title,caption);
+      });
+      MAP.edges.forEach(edge => {
+        const siblings = MAP.edges.filter(e => e.from === edge.from && e.to === edge.to && e.mode === edge.mode);
+        const offset = (siblings.indexOf(edge) - (siblings.length - 1) / 2) * 13;
+        const group = svgElement("g", {class:`edge ${edge.status === "student" ? "expected" : ""}`, "data-id":edge.id, tabindex:"0", role:"button", "aria-label":`${edge.label}: ${edge.from} → ${edge.to}`});
+        const d = edgePath(edge,offset);
+        group.append(svgElement("path", {d,class:"edge-line"}),svgElement("path", {d,class:"edge-hit"}));
+        bindSelection(group,"edge",edge.id); svg.append(group);
+      });
+      MAP.nodes.forEach(node => {
+        const p = positions.get(node.id);
+        const g = svgElement("g", {class:`node ${node.status}`, "data-id":node.id, tabindex:"0", role:"button", "aria-label":`${node.name}: ${statusLabel[node.status]}`});
+        g.append(svgElement("rect",p));
+        const label = svgElement("text", {x:p.x+p.width/2,y:p.y+21}); label.textContent = node.name;
+        const mark = svgElement("text", {x:p.x+p.width/2,y:p.y+38,class:"stream-mark"}); mark.textContent = {ready:"готово",student:"задание",source:"источник"}[node.status];
+        g.append(label,mark); bindSelection(g,"node",node.id); svg.append(g);
+      });
+    }
+    function bindSelection(element,type,id) {
+      element.addEventListener("click", () => selectItem(type,id));
+      element.addEventListener("keydown", event => {
+        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); selectItem(type,id); }
+      });
+    }
+    function walk(nodeId,direction) {
+      const nodes = new Set([nodeId]), edges = new Set(), queue = [nodeId];
+      while (queue.length) {
+        const current = queue.shift();
+        MAP.edges.filter(e => e.mode === state.view).forEach(edge => {
+          if ((direction === "in" ? edge.to : edge.from) !== current) return;
+          edges.add(edge.id);
+          const next = direction === "in" ? edge.from : edge.to;
+          if (!nodes.has(next)) { nodes.add(next); queue.push(next); }
+        });
+      }
+      return {nodes,edges};
+    }
+    function updateHighlights() {
+      let upstream = new Set(), downstream = new Set(), activeEdges = new Set(), activeNodes = new Set();
+      if (state.selected?.type === "node") {
+        const a = walk(state.selected.id,"in"), b = walk(state.selected.id,"out");
+        upstream = a.nodes; downstream = b.nodes;
+        activeNodes = new Set([...upstream,...downstream]); activeEdges = new Set([...a.edges,...b.edges]);
+      } else if (state.selected?.type === "edge") {
+        const edge = edgeById.get(state.selected.id);
+        activeNodes = new Set([edge.from,edge.to]); activeEdges.add(edge.id);
+      }
+      svg.querySelectorAll(".node").forEach(el => {
+        const id = el.dataset.id, selected = state.selected?.type === "node" && state.selected.id === id;
+        el.classList.toggle("is-context-dim", Boolean(state.selected) && !activeNodes.has(id));
+        el.classList.toggle("is-upstream", upstream.has(id)); el.classList.toggle("is-downstream", downstream.has(id));
+        el.classList.toggle("is-selected", selected); el.setAttribute("aria-pressed",String(selected));
+      });
+      svg.querySelectorAll(".edge").forEach(el => {
+        const edge = edgeById.get(el.dataset.id), visible = edge.mode === state.view;
+        el.toggleAttribute("hidden", !visible); el.setAttribute("tabindex",visible ? "0" : "-1");
+        el.setAttribute("aria-hidden",String(!visible));
+        el.classList.toggle("is-context-dim",Boolean(state.selected) && !activeEdges.has(edge.id));
+        el.classList.toggle("is-path",activeEdges.has(edge.id));
+        const selected = state.selected?.type === "edge" && state.selected.id === edge.id;
+        el.classList.toggle("is-selected", selected); el.setAttribute("aria-pressed",String(selected));
+      });
+    }
+    function renderState(message = "") {
+      document.querySelectorAll("[data-view]").forEach(b => b.setAttribute("aria-pressed",String(b.dataset.view === state.view)));
+      document.getElementById("upstream-legend").textContent = state.view === "flow" ? "Источники" : "Связанные родители";
+      document.getElementById("downstream-legend").textContent = state.view === "flow" ? "Потребители" : "Связанные потомки";
+      document.getElementById("ready-edge-legend").textContent = state.view === "flow" ? "Готовая загрузка" : "Связь по ключам";
+      document.getElementById("expected-edge-legend").textContent = state.view === "flow" ? "Загрузка по ТЗ" : "Связь с учебной заглушкой";
+      document.getElementById("view-hint").textContent = state.view === "flow" ? "Стрелка: откуда загрузчик читает данные и куда записывает результат. Календарь генерируется отдельно." : "Стрелка: от родительской строки к связанным строкам. Например, от бронирования к билетам. Это не порядок загрузки и не физические FK.";
+      if (state.selected?.type === "node") renderNodeCard(nodeById.get(state.selected.id));
+      else if (state.selected?.type === "edge") renderEdgeCard(edgeById.get(state.selected.id));
+      else renderIntro(message);
+      details.scrollTop = 0; updateHighlights();
+    }
+    function saveAddress() {
+      const p = new URLSearchParams();
+      if (state.selected) p.set(state.selected.type,state.selected.id);
+      if (state.view !== "flow") p.set("view",state.view);
+      const hash = p.toString();
+      if (location.hash.slice(1) !== hash) location.hash = hash;
+      renderState();
+    }
+    function selectItem(type,id) {
+      const repeated = state.selected?.type === type && state.selected.id === id;
+      state.selected = repeated ? null : {type,id}; saveAddress();
+    }
+    function readAddress() {
+      const p = new URLSearchParams(location.hash.slice(1));
+      state.view = p.get("view") === "keys" ? "keys" : "flow";
+      state.selected = null;
+      if (nodeById.has(p.get("node"))) state.selected = {type:"node",id:p.get("node")};
+      else if (edgeById.has(p.get("edge"))) {
+        const edge = edgeById.get(p.get("edge")); state.view = edge.mode; state.selected = {type:"edge",id:edge.id};
+      }
+      renderState(!state.selected && (p.has("node") || p.has("edge")) ? "Объект по ссылке не найден. Выберите таблицу на карте." : "");
+    }
+    function renderControls() {
+      const switcher = document.getElementById("switcher");
+      [["flow","Поток данных"],["keys","Связи по ключам"]].forEach(([id,label]) => {
+        const b = document.createElement("button"); b.textContent = label; b.dataset.view = id;
+        b.addEventListener("click", () => {
+          state.view = id;
+          if (state.selected?.type === "edge") state.selected = {type:"node",id:edgeById.get(state.selected.id).to};
+          saveAddress();
+        }); switcher.append(b);
+      });
+      const clear = document.createElement("button"); clear.textContent = "Общий вид"; clear.id = "clear-selection";
+      clear.addEventListener("click", () => {state.selected = null; saveAddress();}); switcher.append(clear);
+    }
+    document.getElementById("page-title").textContent = MAP.title;
+    document.getElementById("lead").textContent = MAP.lead;
+    layoutMap(); drawMap(); renderControls(); readAddress();
+    window.addEventListener("hashchange",readAddress);
+    document.addEventListener("keydown",event => {
+      if (event.key === "Escape" && state.selected) {state.selected = null; saveAddress();}
+    });
+  </script>
+</body>
+</html>

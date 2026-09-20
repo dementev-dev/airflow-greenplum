@@ -103,8 +103,9 @@ SELECT COUNT(*) FROM dm.sales_report;
 оно проведет от билетов и сегментов к факту и витрине. Рядом держите
 [интерактивную карту](docs/design/architecture-map.html) — локальный файл
 `docs/design/architecture-map.html` нужно открыть в браузере; в Gitea HTML
-показывается как исходный текст. Затем переходите к
-[учебным заданиям](docs/assignment/README.md).
+показывается как исходный текст. Затем разберите
+[готовую загрузку справочника](docs/design/reading_the_pipeline.md#ods-airports)
+и переходите к [первому заданию ODS](docs/assignment/README.md#первая-загрузка-ods).
 
 ## DAG-и в стенде
 
@@ -154,10 +155,10 @@ make clean              # полный reset: удалить контейнер�
 
 ## Документация
 
-- [Учебные задания](docs/assignment/README.md)
 - [Структура DWH: от бронирования до витрины](docs/design/db_schema.md)
+- [От карты к SQL загрузки](docs/design/reading_the_pipeline.md)
+- [Учебные задания: порядок работы и проверка](docs/assignment/README.md)
 - [Интерактивная карта таблиц и связей](docs/design/architecture-map.html)
-- [Как читать пайплайн по скрипту загрузки](docs/design/reading_the_pipeline.md)
 - [План тестирования/проверок и негативные кейсы](TESTING.md)
 - [Дополнительные заметки и технические детали](docs/README.md)
 - [Детали по STG DAG](docs/bookings_to_gp_stage.md)

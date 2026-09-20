@@ -10,8 +10,9 @@ from __future__ import annotations
 import argparse
 import json
 import re
+from html import escape
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
+from urllib.parse import unquote, urljoin, urlsplit
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
@@ -34,6 +35,15 @@ def headings(text: str) -> set[str]:
 
 def validate(data: dict) -> None:
     """Сверить объекты, поля, статусы, входы готовых SQL и локальные ссылки."""
+    repository = urlsplit(data["repository_url"])
+    if (
+        repository.scheme != "https"
+        or not repository.netloc
+        or not repository.path.endswith("/src/")
+        or repository.query
+        or repository.fragment
+    ):
+        raise ValueError("Укажите HTTPS-адрес репозитория Gitea с окончанием /src/")
     nodes = {node["id"]: node for node in data["nodes"]}
     if len(nodes) != len(data["nodes"]):
         raise ValueError("Повторяется идентификатор объекта")
@@ -140,7 +150,10 @@ def main() -> int:
         if template.count(MARKER) != 1:
             raise ValueError("В шаблоне должен быть ровно один маркер данных")
         payload = json.dumps(data, ensure_ascii=False, indent=2).replace("<", "\\u003c")
-        result = NOTICE + template.replace(MARKER, payload)
+        guide_url = urljoin(data["repository_url"], "docs/design/db_schema.md")
+        result = NOTICE + template.replace(MARKER, payload).replace(
+            "__GUIDE_URL__", escape(guide_url, quote=True)
+        )
         if args.check:
             if not OUTPUT.exists() or OUTPUT.read_text(encoding="utf-8") != result:
                 raise ValueError(

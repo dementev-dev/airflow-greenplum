@@ -147,7 +147,7 @@
   <header>
     <h1 id="page-title"></h1>
     <p class="lead" id="lead"></p>
-    <p class="navigation"><a href="db_schema.md">Руководство: от бронирования до витрины</a> · Учебная ветка main</p>
+    <p class="navigation"><a href="__GUIDE_URL__" target="_blank" rel="noopener noreferrer">Руководство: от бронирования до витрины (Gitea)</a> · Учебная ветка main</p>
   </header>
   <div class="controls">
     <div class="switcher" id="switcher" aria-label="Вид связей"></div>
@@ -195,7 +195,7 @@
     </div>
     <aside id="details" aria-live="polite" aria-label="Карточка выбранного объекта"></aside>
   </main>
-  <noscript>Для интерактивной карты включите JavaScript. Объяснение модели доступно в <a href="db_schema.md">руководстве</a>.</noscript>
+  <noscript>Для интерактивной карты включите JavaScript. Объяснение модели доступно в <a href="__GUIDE_URL__">руководстве в Gitea</a>.</noscript>
   <script>
     const MAP = /*__MAP_DATA__*/;
     const NS = "http://www.w3.org/2000/svg";
@@ -252,7 +252,8 @@
       links.forEach((item) => {
         const row = document.createElement("li");
         const link = document.createElement("a");
-        link.href = item.url;
+        // Выбор таблицы остается в локальной карте; файлы открываются в Gitea.
+        link.href = item.url.startsWith("#") ? item.url : new URL(item.url, new URL("docs/design/", MAP.repository_url)).href;
         link.target = "_blank";
         link.rel = "noopener noreferrer";
         link.textContent = item.label;

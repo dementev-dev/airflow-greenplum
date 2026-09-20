@@ -1,6 +1,7 @@
 {
   "title": "Хранилище авиаперевозок",
   "lead": "От бронирования до витрины: выберите таблицу или связь.",
+  "repository_url": "https://git.dementev.space/ddmitry/airflow-greenplum/src/",
   "layers": [
     {
       "id": "source",

@@ -52,11 +52,9 @@
       outline: 3px solid #d79078;
       outline-offset: 2px;
     }
-    .legend { display: flex; flex-wrap: wrap; gap: 15px; color: var(--muted); }
+    .legend { display: flex; flex-wrap: wrap; gap: 8px 20px; color: var(--muted); }
     .legend-item { display: inline-flex; align-items: center; gap: 7px; }
-    .legend-line { width: 34px; border-top: 2px solid var(--line); }
-    .legend-line.dashed { border-top-style: dashed; }
-    .legend-line.dotted { border-top-style: dotted; }
+    .legend-icon { display: block; width: 50px; height: 20px; flex: none; }
     main {
       display: grid;
       grid-template-columns: minmax(0, 1fr) 370px;
@@ -70,7 +68,7 @@
       border-radius: 10px;
       background: var(--panel);
     }
-    svg { display: block; width: 100%; min-width: 1040px; height: auto; }
+    #map { display: block; width: 100%; min-width: 1040px; height: auto; }
     .layer-title { font-size: 15px; font-weight: 700; text-anchor: middle; }
     .layer-caption { font-size: 11px; fill: var(--muted); text-anchor: middle; }
     .zone-caption { font-size: 12px; fill: var(--muted); }
@@ -86,7 +84,7 @@
     .edge-line.dotted { stroke-dasharray: 2 6; stroke-linecap: round; }
     .edge-hit { fill: none; stroke: transparent; stroke-width: 14; cursor: pointer; }
     .node { cursor: pointer; transition: opacity .15s; }
-    .node rect {
+    .node rect, .legend-node rect {
       fill: #f1f2f2;
       stroke: #858b90;
       stroke-width: 1.2;
@@ -129,12 +127,12 @@
     a { color: #8a351e; text-underline-offset: 2px; }
     .hint { color: var(--muted); font-size: 13px; }
     .edge[hidden] { display: none; }
-    .node.student rect { stroke-dasharray: 5 3; }
+    .node.student rect, .legend-node.student rect { stroke-dasharray: 5 3; }
     .node.student .stream-mark { fill: #875a14; }
-    .edge.expected .edge-line { stroke-dasharray: 5 4; }
-    .node.is-upstream rect { fill: #e3eff5; stroke: #307c9a; }
-    .node.is-downstream rect { fill: #e7f1e5; stroke: #527a43; }
-    .node.is-selected rect { fill: var(--accent-soft); stroke: var(--accent); }
+    .edge.expected .edge-line, .legend-arrow.expected .edge-line { stroke-dasharray: 5 4; }
+    .node.is-upstream rect, .legend-node.is-upstream rect { fill: #e3eff5; stroke: #307c9a; }
+    .node.is-downstream rect, .legend-node.is-downstream rect { fill: #e7f1e5; stroke: #527a43; }
+    .node.is-selected rect, .legend-node.is-selected rect { fill: var(--accent-soft); stroke: var(--accent); }
     .relation-button { border-radius: 5px; padding: 5px 7px; text-align: left; width: 100%; margin-top: 5px; font-size: 13px; }
     .badge { font-size: 13px; padding: 3px 8px; border-radius: 4px; background: #eef1ed; display: inline-block; }
     .badge.student { background: #fff1cf; color: #775018; }
@@ -154,9 +152,41 @@
   <div class="controls">
     <div class="switcher" id="switcher" aria-label="Вид связей"></div>
     <p id="view-hint" class="hint"></p>
-    <div class="legend" aria-label="Обозначения">
-      <span>Сплошная рамка: готово</span><span>Пунктирная рамка: задание</span>
-      <span id="upstream-legend">Синий: источники</span><span id="downstream-legend">Зеленый: потребители</span><span>Оранжевый: выбор</span>
+    <div class="legend" aria-label="Обозначения стрелок">
+      <span class="legend-item">
+        <svg class="legend-icon legend-arrow" viewBox="0 0 50 20" aria-hidden="true"><path class="edge-line" d="M 2 10 H 43"/></svg>
+        <span id="ready-edge-legend">Готовая загрузка</span>
+      </span>
+      <span class="legend-item">
+        <svg class="legend-icon legend-arrow expected" viewBox="0 0 50 20" aria-hidden="true"><path class="edge-line" d="M 2 10 H 43"/></svg>
+        <span id="expected-edge-legend">Загрузка по ТЗ</span>
+      </span>
+      <span class="legend-item">
+        <svg class="legend-icon legend-arrow is-path" viewBox="0 0 50 20" aria-hidden="true"><path class="edge-line" d="M 2 10 H 43"/></svg>
+        <span>Выделенные связи</span>
+      </span>
+    </div>
+    <div class="legend" aria-label="Обозначения таблиц">
+      <span class="legend-item">
+        <svg class="legend-icon legend-node" viewBox="0 0 50 20" aria-hidden="true"><rect x="4" y="2" width="40" height="16"/></svg>
+        <span>Готовая таблица</span>
+      </span>
+      <span class="legend-item">
+        <svg class="legend-icon legend-node student" viewBox="0 0 50 20" aria-hidden="true"><rect x="4" y="2" width="40" height="16"/></svg>
+        <span>Учебная заглушка</span>
+      </span>
+      <span class="legend-item">
+        <svg class="legend-icon legend-node is-upstream" viewBox="0 0 50 20" aria-hidden="true"><rect x="4" y="2" width="40" height="16"/></svg>
+        <span id="upstream-legend">Источники</span>
+      </span>
+      <span class="legend-item">
+        <svg class="legend-icon legend-node is-downstream" viewBox="0 0 50 20" aria-hidden="true"><rect x="4" y="2" width="40" height="16"/></svg>
+        <span id="downstream-legend">Потребители</span>
+      </span>
+      <span class="legend-item">
+        <svg class="legend-icon legend-node is-selected" viewBox="0 0 50 20" aria-hidden="true"><rect x="4" y="2" width="40" height="16"/></svg>
+        <span>Выбранная таблица</span>
+      </span>
     </div>
   </div>
   <main>
@@ -393,9 +423,11 @@
     }
     function renderState(message = "") {
       document.querySelectorAll("[data-view]").forEach(b => b.setAttribute("aria-pressed",String(b.dataset.view === state.view)));
-      document.getElementById("upstream-legend").textContent = state.view === "flow" ? "Синий: источники" : "Синий: связанные родители";
-      document.getElementById("downstream-legend").textContent = state.view === "flow" ? "Зеленый: потребители" : "Зеленый: связанные потомки";
-      document.getElementById("view-hint").textContent = state.view === "flow" ? "Стрелка: откуда загрузчик читает данные и куда записывает результат. Пунктир — ожидается по ТЗ. Календарь генерируется отдельно." : "Стрелка: от родительской строки к связанным строкам. Например, от бронирования к билетам. Это не порядок загрузки и не физические FK.";
+      document.getElementById("upstream-legend").textContent = state.view === "flow" ? "Источники" : "Связанные родители";
+      document.getElementById("downstream-legend").textContent = state.view === "flow" ? "Потребители" : "Связанные потомки";
+      document.getElementById("ready-edge-legend").textContent = state.view === "flow" ? "Готовая загрузка" : "Связь по ключам";
+      document.getElementById("expected-edge-legend").textContent = state.view === "flow" ? "Загрузка по ТЗ" : "Связь с учебной заглушкой";
+      document.getElementById("view-hint").textContent = state.view === "flow" ? "Стрелка: откуда загрузчик читает данные и куда записывает результат. Календарь генерируется отдельно." : "Стрелка: от родительской строки к связанным строкам. Например, от бронирования к билетам. Это не порядок загрузки и не физические FK.";
       if (state.selected?.type === "node") renderNodeCard(nodeById.get(state.selected.id));
       else if (state.selected?.type === "edge") renderEdgeCard(edgeById.get(state.selected.id));
       else renderIntro(message);

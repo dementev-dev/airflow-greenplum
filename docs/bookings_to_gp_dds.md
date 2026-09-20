@@ -1,196 +1,144 @@
-# DAG `bookings_to_gp_dds`: `ods` → `dds` в Greenplum
+# Загрузка ODS → DDS: `bookings_to_gp_dds`
 
-Этот DAG — учебный пример загрузки аналитического слоя **DDS** (Star Schema) из текущего состояния **ODS**.
-Здесь сосредоточены ключевые паттерны аналитического хранилища: SCD1, SCD2 с hashdiff,
-point-in-time join, защитные LEFT JOIN для устойчивости к data quality аномалиям.
+DAG наполняет измерения и собирает `dds.fact_flight_sales`.
+Одна строка факта соответствует сегменту билета: `(ticket_no, flight_id)`.
+У одного билета может быть несколько таких строк.
+Сборка показана [на карте](design/architecture-map.html#node=dds.fact_flight_sales)
+и в [разборе SQL](design/reading_the_pipeline.md#fact-flight-sales).
+Карту открывайте [локально](design/db_schema.md#как-открыть-карту).
 
-## Что делает DAG
+## Перед запуском
 
-- Загружает 6 измерений DDS:
-  - `dds.dim_calendar` — статическое измерение дат (Full Rebuild);
-  - `dds.dim_airports`, `dds.dim_airplanes`, `dds.dim_tariffs`, `dds.dim_passengers` — SCD1 UPSERT;
-  - `dds.dim_routes` — **SCD2** с `hashdiff`, `valid_from`, `valid_to` + денормализация.
-- Загружает факт `dds.fact_flight_sales` — инкрементальный UPSERT по зерну `(ticket_no, flight_id)`.
+Дождитесь успешных STG и ODS. Таблицы DDS должны быть созданы через
+`bookings_dds_ddl` или общий `make ddl-gp`.
+Затем в Airflow UI запустите `bookings_to_gp_dds` целиком.
+DDS читает состояние ODS; передавать `stg_batch_id` ему не нужно.
 
-> На ветке `main` измерения `dim_routes`, `dim_passengers`, `dim_airplanes` —
-> заглушки. Эталон: `dim_calendar`, `dim_airports`, `dim_tariffs`, `fact_flight_sales`.
-- Для каждой таблицы выполняет пару задач `load → dq`.
-- Использует `_load_id = {{ run_id }}`. DDS не требует `stg_batch_id`, потому что читает
-  текущее состояние ODS.
+| Объект | Что уже выполняется на `main` |
+|---|---|
+| `dim_calendar` | Заполнение датами с 2016-01-01 по 2030-12-31, только если таблица пуста |
+| `dim_airports` | Обновление изменившихся атрибутов и вставка новых аэропортов с постоянными SK |
+| `dim_tariffs` | Добавление новых классов обслуживания из `ods.segments` |
+| `fact_flight_sales` | Обновление существующих сегментов и вставка новых пар `(ticket_no, flight_id)` |
+| `dim_airplanes`, `dim_passengers`, `dim_routes` | Загрузки и DQ пока содержат `SELECT 1;`; требования находятся в [части 2 ТЗ](assignment/analyst_spec.md#часть-2-dds-слой-detailed-data-store--измерения) |
 
-## Что должно быть готово перед запуском
+До выполнения заданий три студенческих измерения остаются пустыми.
+Готовый факт при этом загружается: отсутствующие ключи измерений сохраняются
+как `NULL`, чтобы можно было изучить цепочку до написания собственного SQL.
 
-1) Стенд поднят:
+## Порядок задач
 
-```bash
-make up
-```
+В [DAG](../airflow/dags/bookings_to_gp_dds.py) сначала выполняется
+`load_dds_dim_calendar → dq_dds_dim_calendar`. Затем:
 
-2) STG и ODS уже загружены:
+1. Параллельно могут загружаться `dim_airports`, `dim_airplanes`, `dim_tariffs`
+   и `dim_passengers`; у каждого измерения своя следующая DQ-задача.
+2. `load_dds_dim_routes` ждет `dq_dds_dim_airports` и `dq_dds_dim_airplanes`,
+   затем выполняется `dq_dds_dim_routes`.
+3. `load_dds_fact_flight_sales` ждет DQ всех пяти измерений после календаря.
+4. `dq_dds_fact_flight_sales → finish_dds_summary` завершают запуск.
 
-- выполнены DAG-и `bookings_to_gp_stage` и `bookings_to_gp_ods`;
-- DDL-объекты созданы (`bookings_dds_ddl` или `make ddl-gp`).
+Это порядок задач Airflow. Источники строк и поля соединений показаны
+на карте отдельно от него.
 
-## Как запустить
+## Как работают готовые загрузки
 
-1) Откройте Airflow UI: http://localhost:8080.
-2) Если запускаете DDS впервые — выполните `bookings_dds_ddl`.
-3) Запустите `bookings_to_gp_dds`.
+[dim_calendar_load.sql](../sql/dds/dim_calendar_load.sql) проверяет
+`NOT EXISTS (SELECT 1 FROM dds.dim_calendar LIMIT 1)`. Если есть хотя бы одна
+строка, скрипт не вставляет даты. Повторный запуск не пересоздает календарь
+и не дополняет частично заполненную таблицу.
+[Его DQ](../sql/dds/dim_calendar_dq.sql) проверяет также покрытие дат рейсов ODS.
 
-## Граф зависимостей
+[dim_airports_load.sql](../sql/dds/dim_airports_load.sql) сохраняет SK
+существующего аэропорта, обновляет изменившиеся атрибуты через
+`IS DISTINCT FROM` и вставляет новые бизнес-ключи.
+[dim_tariffs_load.sql](../sql/dds/dim_tariffs_load.sql) только добавляет
+недостающие значения `fare_conditions`.
+Метки измененных строк относятся к текущему запуску DDS;
+календарь не содержит `_load_id` и `_load_ts`.
 
-```
-load_dds_dim_calendar → dq_dds_dim_calendar
-    ├─ load_dds_dim_airports  → dq_dds_dim_airports  ─┐
-    │                                                   ├─ load_dds_dim_routes
-    ├─ load_dds_dim_airplanes → dq_dds_dim_airplanes ─┘     └─ dq_dds_dim_routes
-    │                                                               │
-    ├─ load_dds_dim_tariffs   → dq_dds_dim_tariffs                  │
-    │                                                               │
-    └─ load_dds_dim_passengers → dq_dds_dim_passengers              │
-                                                                    │
-       все 5 dq_dds_dim_* ─────────────────────────────────────────┘
-           └─ load_dds_fact_flight_sales
-                └─ dq_dds_fact_flight_sales
-                     └─ finish_dds_summary
-```
+В [fact_flight_sales_load.sql](../sql/dds/fact_flight_sales_load.sql)
+есть две операции:
 
-Ключевой момент: `dim_routes` зависит от `dim_airports` и `dim_airplanes` (денормализация),
-а факт ждёт завершения **всех** пяти измерений.
+- `UPDATE` меняет цену, место, признак посадки и метки загрузки, если эти
+  бизнес-поля изменились. SK измерений остаются прежними.
+- `INSERT` собирает данные из ODS и измерений для пар
+  `(ticket_no, flight_id)`, которых еще нет в факте.
 
-## Как это работает внутри (по шагам)
+Факт не отбирает дельту по HWM. Скрипт читает ODS и сопоставляет бизнес-ключи
+с уже записанными строками.
 
-### 1) `load_dds_dim_calendar` → `dq_dds_dim_calendar`
+Аэропорты вылета и прилета находятся через `ods.routes → dim_airports`.
+Из ODS выбирается строка с наибольшим `validity` для `route_no`; сортировка
+идет по TEXT, дата рейса в этом отборе не участвует.
+`route_sk` определяется отдельно: по дате вылета в полуоткрытом интервале
+`[valid_from, valid_to)` измерения `dim_routes`. Из найденной версии берется
+код модели для поиска `airplane_sk`.
+[Разбор соединений](design/reading_the_pipeline.md#fact-joins) показывает,
+какие строки сохраняет `LEFT JOIN` и что происходит при отсутствии измерения.
 
-- **SQL:** `sql/dds/dim_calendar_load.sql`, `sql/dds/dim_calendar_dq.sql`
-- **Паттерн:** Full Rebuild — каждый запуск пересоздаёт календарь целиком.
-  Измерение маленькое и детерминированное, дельту считать нет смысла.
+## Учебные измерения
 
-### 2–5) SCD1-измерения (параллельно после calendar)
+Начните с [моделей самолетов](assignment/analyst_spec.md#21-ddsdim_airplanes-scd1)
+и [пассажиров](assignment/analyst_spec.md#22-ddsdim_passengers-scd1), затем
+переходите к [версиям маршрута](assignment/analyst_spec.md#23-ddsdim_routes-scd2).
+Поля, hashdiff и алгоритм SCD2 определены в ТЗ.
 
-| # | Задача | SQL-файлы | Что загружает |
-|---|--------|-----------|---------------|
-| 2 | `load_dds_dim_airports` → `dq_dds_dim_airports` | `sql/dds/dim_airports_load.sql`, `sql/dds/dim_airports_dq.sql` | Аэропорты (код, город, координаты) |
-| 3 | `load_dds_dim_airplanes` → `dq_dds_dim_airplanes` | `sql/dds/dim_airplanes_load.sql`, `sql/dds/dim_airplanes_dq.sql` | Самолёты (код, модель, кол-во мест) ⚠️ заглушка на main |
-| 4 | `load_dds_dim_tariffs` → `dq_dds_dim_tariffs` | `sql/dds/dim_tariffs_load.sql`, `sql/dds/dim_tariffs_dq.sql` | Тарифы (класс обслуживания) |
-| 5 | `load_dds_dim_passengers` → `dq_dds_dim_passengers` | `sql/dds/dim_passengers_load.sql`, `sql/dds/dim_passengers_dq.sql` | Пассажиры (ID, имя, контакты) ⚠️ заглушка на main |
+У маршрута изменение версионируемых атрибутов создает новую строку.
+Описательные поля из других измерений обновляются только у открытых версий
+(`valid_to IS NULL`), без новой версии; закрытые версии сохраняют свои значения.
+Это правило также записано в [алгоритме ТЗ](assignment/analyst_spec.md#алгоритм-scd2-пошагово).
 
-Паттерн загрузки — SCD1 UPSERT: TEMP TABLE → UPDATE (IS DISTINCT FROM) → INSERT.
+После реализации измерений выполните
+[пересчет факта и витрин](assignment/analyst_spec.md#пересчёт-факта-после-реализации-измерений).
+Обычный повторный запуск DDS не заполнит SK в старых строках факта,
+поскольку его `UPDATE` эти поля не меняет.
 
-> **Задание.** На ветке `main` этот скрипт — заглушка (`SELECT 1;`).
-> Описание ниже — спецификация того, что нужно реализовать. Образец SCD2 — в ветке `solution`.
+## Проверка результата
 
-### 6) `load_dds_dim_routes` → `dq_dds_dim_routes` (SCD2)
-
-- **SQL:** `sql/dds/dim_routes_load.sql`, `sql/dds/dim_routes_dq.sql`
-- **Паттерн:** SCD2 — самый нетривиальный паттерн в проекте. Работает в 3 фазы:
-
-**Фаза 1. Hashdiff и закрытие старых версий.**
-Скрипт считает MD5-хеш от шести бизнес-атрибутов маршрута (`departure_airport`, `arrival_airport`,
-`airplane_code`, `days_of_week`, `departure_time`, `duration`).
-Если хеш текущей версии в DDS не совпадает с хешем из ODS — старая версия закрывается
-(`valid_to = CURRENT_DATE`). Также закрываются маршруты, исчезнувшие из ODS.
-
-**Фаза 2. Вставка новых версий.**
-Для изменённых и совершенно новых маршрутов создаётся новая строка.
-`valid_from` выставляется в `1900-01-01` для первой версии маршрута и `CURRENT_DATE` для версии 2+.
-Суррогатный ключ (`route_sk`) генерируется через `MAX(route_sk) + ROW_NUMBER()`.
-
-> **Важно:** такая генерация SK безопасна только при `max_active_runs=1` (Airflow гарантирует
-> последовательный запуск). В боевых системах используют sequence.
-
-**Фаза 3. Обновление денормализованных атрибутов.**
-`dim_routes` хранит денормализованные SCD1-атрибуты из `dim_airports` (города)
-и `dim_airplanes` (модель, кол-во мест). Если, например, город переименовали —
-фаза 3 обновляет **все** версии маршрута (и текущие, и исторические),
-при этом `_load_id` и `_load_ts` не перезаписываются (lineage версий сохраняется).
-
-### 7) `load_dds_fact_flight_sales` → `dq_dds_fact_flight_sales`
-
-- **SQL:** `sql/dds/fact_flight_sales_load.sql`, `sql/dds/fact_flight_sales_dq.sql`
-- **Зерно:** `(ticket_no, flight_id)` — один билет на один рейс.
-- **Паттерн:** инкрементальный UPSERT.
-
-Три учебных приёма в этом скрипте:
-
-**Защитные LEFT JOIN (defensive coding).**
-Все JOIN-ы с измерениями — `LEFT JOIN`. На ветке `solution` все измерения заполнены,
-и NULL SK не возникают в штатном режиме. На ветке `main` студенческие измерения
-(`dim_passengers`, `dim_routes`, `dim_airplanes`) — заглушки, поэтому соответствующие
-SK будут NULL до реализации студентом.
-
-DQ-проверки факта на main:
-- `tariff_sk` — **запрещён** NULL (EXCEPTION);
-- `departure_airport_sk`, `arrival_airport_sk` (через `ods.routes`, эталон) — порог **1%** NULL (EXCEPTION);
-- `passenger_sk`, `route_sk`, `airplane_sk` (студенческие) — только **NOTICE** (100% NULL допустимо);
-- `calendar_sk` — порог **1%** NULL.
-
-> После реализации всех измерений: `TRUNCATE dds.fact_flight_sales` → перезагрузка →
-> все SK заполнены. Полную версию DQ см. в ветке `solution`.
-
-**Два пути lookup для аэропортов и маршрутов.**
-Аэропорты (`departure_airport_sk`, `arrival_airport_sk`) разрешаются через `ods.routes` →
-`dim_airports`. Аэропорты вылета/прилёта одинаковы во всех версиях маршрута, поэтому
-point-in-time логика не нужна — безопасно брать актуальную версию из ODS.
-
-`route_sk` и `airplane_sk` разрешаются через point-in-time join с SCD2 `dim_routes`:
-
-```sql
-LEFT JOIN dds.dim_routes AS rte
-    ON rte.route_bk = flt.route_no
-    AND flt.scheduled_departure::DATE >= rte.valid_from
-    AND (rte.valid_to IS NULL OR flt.scheduled_departure::DATE < rte.valid_to)
-```
-
-Это гарантирует, что факт привязывается к той версии маршрута, которая была актуальна
-на дату рейса.
-
-**UPDATE мутабельных полей.**
-UPDATE обновляет только `seat_no`, `price`, `is_boarded` (данные, которые реально
-могут измениться — посадка пассажира, корректировка цены). SK измерений не перезаписываются —
-они зафиксированы на момент вставки.
-
-### 8) `finish_dds_summary`
-
-Ждёт завершения DQ факта и логирует сводку.
-
-## Как проверить результат
-
-```bash
-make gp-psql
-```
+В `make gp-psql` выполните:
 
 ```sql
 SELECT COUNT(*) FROM dds.dim_calendar;
 SELECT COUNT(*) FROM dds.dim_airports;
 SELECT COUNT(*) FROM dds.dim_tariffs;
-SELECT COUNT(*) FROM dds.fact_flight_sales;
 
--- Проверка: кол-во строк факта ≈ кол-во строк ODS segments
 SELECT
     (SELECT COUNT(*) FROM dds.fact_flight_sales) AS fact_rows,
-    (SELECT COUNT(*) FROM ods.segments) AS ods_rows;
+    (SELECT COUNT(*) FROM ods.segments) AS segment_rows;
 
--- dim_routes, dim_passengers, dim_airplanes — заглушки на main.
--- Проверки ниже станут осмысленны после реализации задания.
-SELECT COUNT(*) FROM dds.dim_routes;
-
--- Проверка SCD2 (после реализации dim_routes):
--- текущие версии маршрутов (valid_to IS NULL)
-SELECT COUNT(*) AS current_versions,
-       (SELECT COUNT(*) FROM dds.dim_routes) AS total_versions
-FROM dds.dim_routes
-WHERE valid_to IS NULL;
+SELECT ticket_no, flight_id, departure_airport_sk, arrival_airport_sk,
+       route_sk, airplane_sk, passenger_sk, price, is_boarded
+FROM dds.fact_flight_sales
+ORDER BY ticket_no, flight_id
+LIMIT 10;
 ```
 
-Ожидаемо: `fact_rows ≈ ods_rows`, `dim_calendar` и `dim_airports` непусты.
-`dim_routes` — после реализации задания: `current_versions ≤ total_versions`.
+На подготовленном стенде готовые измерения и факт непусты.
+`fact_rows` должен точно совпасть с `segment_rows`.
+[Готовая DQ факта](../sql/dds/fact_flight_sales_dq.sql) также ищет дубли
+по паре ключей и проверяет обязательные поля.
 
-## Типичные ошибки
+На учебной ветке `NULL` в `passenger_sk`, `route_sk` и `airplane_sk`
+вызывает только `NOTICE`. `NULL` в `tariff_sk` вызывает ошибку;
+для строк с отсутствующим аэропортом и для `calendar_sk` допустима доля
+не выше 1%. Эти послабления не заменяют проверку заполнения ключей после задания.
 
-- `relation "dds..." does not exist`:
-  - не применён DDS DDL (`bookings_dds_ddl` или `make ddl-gp`).
-- DQ падает на `dim_routes`:
-  - проверьте согласованность `ods.routes` (дубли/аномальные версии) и перезапустите DAG.
-- DQ падает на `fact_flight_sales` по coverage:
-  - проверьте, что ODS DAG завершился успешно без пропуска задач.
+Свои `*_dq.sql` реализуйте по ТЗ и
+[справочнику DQ](reference/dq_taxonomy.md). Для дополнительной проверки DDS
+используйте `validate_dds` в `bookings_validate`, соблюдая
+[порядок запуска и восстановления](assignment/README.md#запуск-и-проверка).
+Далее переходите к [DM](bookings_to_gp_dm.md).
+
+## Если загрузка не прошла
+
+- Нет `dds.*`: выполните `bookings_dds_ddl`.
+- DQ календаря сообщает о непокрытых датах: сравните даты вылета ODS
+  с диапазоном и содержимым `dim_calendar`. Повторный запуск загрузки
+  непустого календаря не заполнит пропуски.
+- Число строк факта отличается от ODS: проверьте ключи билета, бронирования
+  и рейса, затем соединения в `fact_src`. Потеря строки на `INNER JOIN`
+  и размножение строк из-за нескольких подходящих версий дают разные причины
+  одного расхождения.
+- Ошибка в вашей DQ маршрутов: проверьте открытые версии, интервалы и hashdiff
+  по ТЗ. Успешная заглушка `SELECT 1;` этих свойств не проверяет.

@@ -8,40 +8,45 @@
 2. [От карты к SQL загрузки](design/reading_the_pipeline.md#ods-airports):
    разбор готового справочника ODS. Сборка факта понадобится позже, перед DDS.
 3. [Учебные задания](assignment/README.md): файлы для работы, порядок запуска
-   и проверка результата. Поля и бизнес-правила находятся в [ТЗ](assignment/analyst_spec.md).
+   и [самопроверка](assignment/README.md#запуск-и-проверка).
+   Поля и бизнес-правила находятся в [ТЗ](assignment/analyst_spec.md).
 
 ## Найти деталь во время работы
 
 [Интерактивная карта](design/architecture-map.html) ведет от таблицы к ее
 источникам, потребителям, SQL и пункту задания.
-
-Карту открывайте из локальной копии: `docs/design/architecture-map.html` в браузере.
-Сервер не нужен. Просмотр исходного HTML в Gitea не показывает карту.
+Откройте локальный файл `docs/design/architecture-map.html` в браузере;
+просмотр исходного HTML в Gitea не показывает карту.
 [Руководство](design/db_schema.md#как-открыть-карту) объясняет открытие и адресные ссылки.
 
-Если вопрос о запуске или проверке, откройте нужный материал:
+| Вопрос | Основной документ |
+|---|---|
+| В каком порядке запускать слои? | [Порядок запуска DAG](dag_execution_order.md) |
+| Что делает загрузка и где искать ошибку? | Руководства [STG](bookings_to_gp_stage.md), [ODS](bookings_to_gp_ods.md), [DDS](bookings_to_gp_dds.md), [DM](bookings_to_gp_dm.md) |
+| Какие поля и преобразования нужны в моем задании? | [ТЗ](assignment/analyst_spec.md) |
+| Как называются служебные поля и что означают метки времени? | [Соглашения об именах](design/naming_conventions.md) |
+| Какие проверки включить в DQ? | [Классы DQ-проверок](reference/dq_taxonomy.md) |
+| Как устроены контейнеры, Connections и настройки? | [Справочник стенда](stack.md) |
 
-- [Порядок запуска DAG](dag_execution_order.md) и [план проверки стенда](../TESTING.md).
-- Руководства загрузок: [STG](bookings_to_gp_stage.md), [ODS](bookings_to_gp_ods.md),
-  [DDS](bookings_to_gp_dds.md), [DM](bookings_to_gp_dm.md).
-- [Соглашения об именах](design/naming_conventions.md) и [классы DQ-проверок](reference/dq_taxonomy.md).
+## Проверки разработки и диагностика
 
-## Дизайн (`design/`)
+[TESTING.md](../TESTING.md) описывает проверки изменений репозитория:
+pytest, линтеры, проверку карты и прогоны стенда. Для выполнения первого
+задания достаточно самопроверки из его инструкции.
 
-- [Единые конвенции нейминга DWH (служебные поля и SCD)](design/naming_conventions.md)
-- [Структура DWH и маршрут по карте](design/db_schema.md)
-- [От карты к SQL загрузки](design/reading_the_pipeline.md)
-- [Дизайн-документ STG](design/bookings_stg_design.md)
-- [Дизайн-документ ODS](design/bookings_ods_design.md)
-- [Дизайн-документ DDS](design/bookings_dds_design.md)
-- [Дизайн-документ DM](design/bookings_dm_design.md)
+Для углубленного разбора доступны
+[исторический QA-план](reference/qa-plan.md) с многодневными и негативными
+сценариями полной реализации и [заметки о генераторе Bookings](reference/bookings_db_issues.md).
+QA-план требует отдельного тестового стенда и сверки с текущими SQL.
 
-> Полные дизайн-документы (PRD, assignment_design, архитектурные решения) — в ветке `solution`.
+## История разработки
 
-## Справочники (`reference/`)
+Планы слоев сохранены по прежним адресам:
+[STG](design/bookings_stg_design.md), [ODS](design/bookings_ods_design.md),
+[DDS](design/bookings_dds_design.md), [DM](design/bookings_dm_design.md).
+В них остаются исходные обоснования, варианты SQL и последовательность
+создания файлов. В начале каждого плана есть переход к действующему руководству.
+Для реализации учебных загрузок используйте ТЗ и готовые SQL-примеры.
 
-- [Как устроен Docker-стенд (образы, Connections, переменные окружения)](stack.md)
-- [Известные проблемы bookings-db](reference/bookings_db_issues.md)
-- [QA-план отладки пайплайна](reference/qa-plan.md)
-- [Классы DQ-проверок](reference/dq_taxonomy.md)
-- [Порядок запуска DAG-ов](dag_execution_order.md)
+Полные материалы проектирования (PRD, дизайн заданий, архитектурные решения)
+находятся в ветке `solution`.

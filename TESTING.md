@@ -1,80 +1,118 @@
-# План тестирования (для студентов)
+# Проверка изменений репозитория
 
-Этот документ — пошаговый чек‑лист, как проверить, что всё работает: от «быстрых локальных проверок» до запуска стенда в Docker и просмотра данных в Greenplum. Подходит начинающим: просто выполняйте шаги по порядку.
+Этот документ предназначен для работы над кодом, документацией и стендом.
+Если вы выполняете учебное задание, начните с
+[его самопроверки](docs/assignment/README.md#запуск-и-проверка): там объяснены
+`*_dq.sql`, группы `bookings_validate` и порядок восстановления после SCD2-теста.
 
-Если что‑то пошло не так, смотрите раздел «Быстрый reset» ниже.
+## Локальные проверки
 
-## 1. Быстрая проверка окружения
-- `uv sync` — подтягиваем Python и зависимости из `pyproject.toml`/`uv.lock`.
-- Проверяем версию uv: `uv --version` (ожидаем ≥ 0.9).
-- Убедитесь, что `docker compose version` доступна и Docker запущен.
+Из корня репозитория:
 
-## 2. Локальные автоматические проверки (без Docker)
-- `make test` — короткие unit-тесты (`tests/test_greenplum_helpers.py`, `tests/test_dags_smoke.py`).
-  - Smoke-тесты DAG автоматически `skip`, если Airflow не установлен в venv, поэтому прогонится за миллисекунды.
-- `make lint` — black/isort в режиме проверки (после `make fmt` должен проходить без ошибок).
-- `make fmt` — автоисправление форматирования; полезно запускать перед пушем.
-- (опционально) `uv run pytest -q -k dags_smoke` — только DAG smoke.
+```bash
+uv sync
+make lint
+make test
+```
 
-## 3. Подготовка Docker-стенда
-- `cp .env.example .env` (если файла ещё нет) и проверьте переменные:
-  - `GP_PORT` — внутренний порт Greenplum в Docker-сети (по умолчанию 5432, менять не нужно); внешний порт для подключения с хоста фиксирован на `5435`, поэтому локальный PostgreSQL на 5432 не помешает.
-  - `GP_USE_AIRFLOW_CONN=true` при желании использовать Airflow Connection; `false` — fallback на ENV.
-- Если меняли `airflow/requirements.txt` или `Dockerfile.airflow`, выполните `make build` перед `make up`.
-- `make up` — поднимаем все сервисы. Важно дождаться статуса `healthy` у `pgmeta` и `greenplum` (`docker compose ps`); `greenplum` считается `healthy` только когда поднят и Greenplum, и PXF.
-- `make logs` — следим, пока webserver и scheduler не перейдут в рабочее состояние (`Listening at: http://0.0.0.0:8080`).
+`make lint` проверяет Black и isort для `airflow/` и `tests/`.
+`make fmt` исправляет форматирование в этих каталогах.
+Тесты находятся в трех файлах:
 
-## 4. Smoke тесты DAG в Airflow UI
-1. Открыть http://localhost:8080 (admin/admin).
-2. (опционально) Зайти в Admin → Connections и убедиться, что DAG’и видят подключения:
-   - `greenplum_conn` и `bookings_db` задаются через переменные `AIRFLOW_CONN_...` в docker-compose и могут не отображаться в списке, но `airflow connections get greenplum_conn` / `bookings_db` внутри контейнера должны отрабатывать без ошибок.
+- [test_ods_sql_contract.py](tests/test_ods_sql_contract.py) проверяет
+  контракты SQL справочников ODS по исходным файлам.
+- [test_dags_smoke.py](tests/test_dags_smoke.py) проверяет структуру DAG.
+  Если импорт `airflow` не предоставляет `DAG`, проверки пропускаются.
+  Смотрите причины пропусков: `uv run pytest -q -rs`.
+- [test_ods_snapshot_integration.py](tests/test_ods_snapshot_integration.py)
+  по умолчанию пропускается; отдельный запуск описан ниже.
 
-- DAG `bookings_to_gp_stage` (полная проверка цепочки bookings → Greenplum STG):
-  - предварительно выполнить один раз: `make bookings-init` (быстрое восстановление демобазы `demo` из seed-дампа, ~18 сек) и `make ddl-gp` (создаёт STG/ODS/DDS слои в Greenplum, включая внешние `*_ext` через PXF);
-  - перед Trigger проверить, что в source реально есть данные (все значения должны быть `> 0`):
-    - `docker compose exec bookings-db psql -U bookings -d demo -At -c "SELECT COUNT(*) FROM bookings.bookings;"`
-    - `docker compose exec bookings-db psql -U bookings -d demo -At -c "SELECT COUNT(*) FROM bookings.airports_data;"`
-    - `docker compose exec bookings-db psql -U bookings -d demo -At -c "SELECT COUNT(*) FROM bookings.airplanes_data;"`
-  - если хотя бы один `COUNT(*) = 0`, не запускать DAG: повторить `make bookings-init`; если после этого `bookings.bookings` всё ещё пустая, выполнить `make bookings-generate-day` и снова проверить `COUNT(*)`;
-  - важно: DAG `bookings_stg_ddl` **не** создаёт базу `demo` в `bookings-db`; если вы делали `docker compose down -v` / `make clean`, `make bookings-init` обязателен (быстрое восстановление из seed-дампа);
-  - включить DAG `bookings_to_gp_stage` и запустить `Trigger DAG`;
-  - убедиться, что все задачи завершились со статусом Success (включая загрузки справочников/транзакций и DQ);
-  - при желании проверить данные: в `bookings-db` появился новый день, а в Greenplum в `stg.bookings` — строки с актуальным `_load_id` (см. пример запросов в разделе 5).
+Успешный pytest с пропущенными smoke-тестами не подтверждает работоспособность
+DAG в Airflow. Число выполненных и пропущенных тестов указывайте в отчете.
 
-- (опционально, для менторов/разработчиков) Smoke-тест DAG через Airflow CLI без UI:
-   - `docker compose -f docker-compose.yml exec airflow-webserver airflow dags test bookings_to_gp_stage 2024-01-01` — прогоняет `bookings_to_gp_stage` целиком в «off-line» режиме;
-   - `docker compose -f docker-compose.yml exec airflow-webserver airflow dags trigger bookings_to_gp_stage` — создаёт реальный запуск DAG (логи и статус можно смотреть либо через UI, либо командой `airflow tasks list`/`airflow tasks logs` внутри контейнера).
+Для документации проверьте относительные ссылки и якоря, имена файлов,
+таблиц и задач. Для карты выполните:
 
-## 5. Проверка данных в Greenplum
-- `make gp-psql` — запустить psql в контейнере от имени `gpadmin`.
-- (опционально) Проверить, что PXF действительно запущен:
-  - `docker compose exec greenplum bash -lc "su - gpadmin -c '/usr/local/pxf/bin/pxf cluster status'"`
-- Команды внутри psql:
-  - `\dt public.*` — таблицы схему public.
-  - (после настройки PXF) `SELECT COUNT(*) FROM public.ext_bookings_bookings;` — проверка чтения из демо-БД bookings через PXF.
-  - (после настройки PXF) `SELECT * FROM public.ext_bookings_bookings LIMIT 5;` — визуальное сравнение с таблицей `bookings.bookings` в исходной БД.
-- Завершить `\q`.
+```bash
+uv run docs/design/architecture-map/render.py --check
+git diff --check
+```
 
-## 6. Негативные сценарии и fallback
-- **Проблемы с подключением**: временно изменить `GP_HOST` или `GP_PORT` на несуществующий, перезапустить `make up`, убедиться, что DAG падает с понятной ошибкой (`psycopg2.OperationalError`).
-- **Fallback без Airflow Connection**: установить `GP_USE_AIRFLOW_CONN=false`, перезапустить стек (`make down && make up`), удостовериться, что загрузка и DQ работают через ENV.
-- **PXF и демобаза bookings** (после настройки PXF и выполнения `make ddl-gp`): временно остановить `bookings-db` (`docker compose stop bookings-db`) и попробовать выполнить `SELECT COUNT(*) FROM public.ext_bookings_bookings;` в `make gp-psql` — ожидается ошибка подключения. Затем запустить `bookings-db` (`docker compose start bookings-db`) и убедиться, что запрос снова работает.
+Сборщик сверяет карту с DDL, загрузками и ссылками. Действия в браузере
+проверяются отдельно по [чек-листу карты](docs/design/architecture-map/README.md#проверка-в-браузере).
 
-## 7. Быстрый reset (если «что-то сломалось»)
-- Перезапустить стенд:
-  - Мягкий вариант (сохранить данные): `make stop`, затем `make up`.
-  - Полный reset (очистить данные в Docker-томах): `make clean`, затем `make up` (Greenplum/Airflow/bookings будут подняты и инициализированы с нуля).
-- Иногда Greenplum не стартует после «грязных» остановок (из‑за старых внутренних файлов). Лечение: всегда делайте `make down` перед повторным `make up`.
+## Проверка на стенде
 
-## 8. Снятие метрик и мониторинг
-- Контейнеры: `docker compose ps`, `docker stats` (по желанию).
-- Логи задач: в Airflow UI → конкретный таск → Log.
+Подготовьте стенд по [README](README.md) и проверьте его состояние:
 
-## 9. Завершение работы
-- `make down` — выключает сервисы и удаляет контейнеры/сети (volumes сохраняются).
-- Полный сброс данных (удаляет volumes): `make clean`.
+```bash
+make up
+docker compose ps
+```
 
-## Текущий статус (пример успешного прогона)
-- `uv run pytest -q` — 14 passed, 9 smoke-тестов DAG пропущены (Airflow не установлен в venv).
-- `make lint` — проходит (DAG‑файлы отформатированы black/isort).
-- Полный ETL-цикл (STG→ODS→DDS→DM) проверен на стенде 2026-03-09: все DAG-и завершились с Success.
+Порты берутся из `.env`: `AIRFLOW_WEB_PORT`, `GP_HOST_PORT`, `BOOKINGS_DB_PORT`.
+Для локальных подключений используйте их, а для Greenplum внутри Docker-сети
+применяется `GP_PORT` (по умолчанию 5432).
+Загрузки используют Airflow Connections из Compose;
+подробности находятся в [справочнике стенда](docs/stack.md).
+
+Если изменились `Dockerfile.airflow` или `airflow/requirements.txt`, перед
+`make up` выполните `make build`. Инициализация Bookings нужна при создании
+стенда: `make bookings-init` пересоздает исходную базу из seed-дампа.
+Не используйте ее для обычной проверки SQL на существующих данных.
+
+Выполните DDL и загрузки по [порядку DAG](docs/dag_execution_order.md).
+В Airflow откройте Graph и Log задач измененного слоя; в Greenplum
+(`make gp-psql`) выполните проверки из его руководства:
+[STG](docs/bookings_to_gp_stage.md#проверка-результата),
+[ODS](docs/bookings_to_gp_ods.md#проверка-результата),
+[DDS](docs/bookings_to_gp_dds.md#проверка-результата),
+[DM](docs/bookings_to_gp_dm.md#проверка-результата).
+
+Для проверки чтения через PXF используйте действующую внешнюю таблицу:
+
+```sql
+SELECT COUNT(*) FROM stg.bookings_ext;
+SELECT * FROM stg.bookings_ext LIMIT 5;
+```
+
+Сравнить источник можно через `make bookings-psql`.
+При ошибке соединения начните с `docker compose ps` и логов нужного сервиса,
+затем проверьте настройки из `docs/stack.md`.
+
+## Дополнительные прогоны
+
+Интеграционный тест снимка ODS требует работающего Greenplum и базы `gp_dwh`:
+
+```bash
+RUN_ODS_INTEGRATION=1 uv run pytest -q tests/test_ods_snapshot_integration.py
+```
+
+Он создает, затем удаляет служебные таблицы
+`public.it_stg_airports_ods` и `public.it_ods_airports_ods`.
+Используйте тестовый стенд, где эти имена не заняты нужными данными.
+Тест проверяет замену снимка, преобразование названий и DQ готового `airports`;
+задания `airplanes` и `seats` он не проверяет.
+
+`make e2e-etl` запускает DDL и два прохода STG → ODS → DDS → DM через API Airflow.
+Скрипт использует `localhost:8080`; при другом `AIRFLOW_WEB_PORT` проходите
+цепочку вручную. Каждый STG добавляет учебный день. Финальные SQL выводят
+счетчики, но не превращают все неверные значения в ошибку завершения скрипта:
+результаты нужно прочитать с учетом заглушек `main`.
+
+`make e2e-smoke` начинает с `make clean` и **удаляет все Docker-тома стенда**,
+затем инициализирует Bookings и выполняет E2E. Запускайте его только там,
+где данные можно потерять. Обычный `make down` сохраняет тома;
+`make stop`, затем `make up` подходят для перезапуска с сохранением данных.
+
+[Исторический QA-план](docs/reference/qa-plan.md) сохраняет многодневные,
+негативные и граничные сценарии полной реализации. Это материал для
+подготовки отдельной диагностики: перед выполнением сверяйте его SQL
+с текущей веткой и учитывайте операции очистки данных.
+
+## Что указать в отчете
+
+Укажите коммит, команды и результаты, включая пропуски тестов.
+Разделите чтение исходников, проверки ссылок, действия в браузере и реальные
+загрузки. Для запуска на стенде сохраните Run ID и логи проверенных задач.
+Если ETL или интерфейс не проверялись, укажите это прямо.

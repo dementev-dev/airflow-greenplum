@@ -94,7 +94,8 @@ SELECT COUNT(*) FROM dm.sales_report;
 -- Остальные DDS/DM-таблицы пока пусты — вы реализуете их в задании.
 ```
 
-Подробнее про логику DAG и проверки — `docs/bookings_to_gp_stage.md`.
+Порядок повторных запусков и переходов между слоями описан в
+[руководстве по запуску DAG](docs/dag_execution_order.md).
 
 7) Разберитесь в данных и приступайте к заданию:
 
@@ -115,7 +116,7 @@ SELECT COUNT(*) FROM dm.sales_report;
   routes, seats, flights, segments, boarding_passes; включая внешние `*_ext` через PXF);
 - `bookings_to_gp_stage` — генерирует учебный день в `bookings-db`, затем загружает данные в STG и выполняет DQ‑проверки.
 - `bookings_ods_ddl` — создаёт/обновляет ODS-таблицы по домену bookings.
-- `bookings_to_gp_ods` — загружает данные из STG в ODS (SCD1 UPSERT) и выполняет DQ‑проверки.
+- `bookings_to_gp_ods` — заменяет снимки справочников и обновляет транзакционные таблицы ODS из STG; выполняет DQ-проверки.
 - `bookings_dds_ddl` — создаёт/обновляет DDS-таблицы (`dim_*`, `fact_flight_sales`) по домену bookings.
 - `bookings_to_gp_dds` — загружает данные из ODS в DDS (SCD1/SCD2 + факт) и выполняет DQ‑проверки.
 - `bookings_dm_ddl` — создаёт/обновляет DM-витрины (sales_report, route_performance, passenger_loyalty, airport_traffic, monthly_overview).
@@ -159,12 +160,13 @@ make clean              # полный reset: удалить контейнер�
 - [От карты к SQL загрузки](docs/design/reading_the_pipeline.md)
 - [Учебные задания: порядок работы и проверка](docs/assignment/README.md)
 - [Интерактивная карта таблиц и связей](docs/design/architecture-map.html)
-- [План тестирования/проверок и негативные кейсы](TESTING.md)
 - [Дополнительные заметки и технические детали](docs/README.md)
 - [Детали по STG DAG](docs/bookings_to_gp_stage.md)
 - [Детали по ODS DAG](docs/bookings_to_gp_ods.md)
 - [Детали по DDS DAG](docs/bookings_to_gp_dds.md)
 - [Детали по DM DAG](docs/bookings_to_gp_dm.md)
+
+Для работы над репозиторием: [проверки разработки и стенда](TESTING.md).
 
 ## Типичные проблемы и решения
 

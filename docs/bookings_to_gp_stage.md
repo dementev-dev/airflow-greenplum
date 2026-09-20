@@ -1,155 +1,107 @@
-# DAG `bookings_to_gp_stage`: `bookings-db` → `stg` в Greenplum
+# Загрузка Bookings → STG: `bookings_to_gp_stage`
 
-Этот DAG — основной учебный пример в стенде. Он показывает путь данных из источника **Postgres**
-(`bookings-db`, демо‑БД `demo`) в сырой слой **STG** в **Greenplum** с инкрементальной загрузкой
-и простыми проверками качества данных.
+DAG читает девять таблиц Bookings через внешние таблицы PXF и сохраняет
+строки в Greenplum. Весь STG, включая DQ, уже реализован на `main`.
+Смысл бронирования, билета и сегмента разобран в
+[руководстве о структуре](design/db_schema.md); на карте начните со
+[stg.bookings](design/architecture-map.html#node=stg.bookings).
+Карту открывайте [локально в браузере](design/db_schema.md#как-открыть-карту).
 
-## Что делает DAG
+## Перед запуском
 
-- В источнике (`bookings-db`) генерирует следующий учебный день данных в `bookings.bookings`
-  (генератор всегда “шагает” вперёд от `max(book_date)`).
-- В Greenplum загружает инкремент в `stg.bookings` через внешнюю таблицу `stg.bookings_ext`, используя PXF.
-- Сверяет количество строк между источником (за окно инкремента) и загруженным батчем.
-- Загружает инкремент в `stg.tickets` через внешнюю таблицу `stg.tickets_ext`, используя PXF.
-- Запускает DQ‑проверки для `stg.tickets` (количество, ссылочная целостность, обязательные поля).
-- Загружает справочники (full load): `stg.airports`, `stg.airplanes`, `stg.routes`, `stg.seats` + DQ.
-- Загружает транзакции: `stg.flights` (инкремент), `stg.segments` (инкремент), `stg.boarding_passes` (инкремент через tickets/bookings) + DQ.
+Выполните подготовку из [быстрого старта](../README.md#быстрый-старт-основной-сценарий-bookings--stg--ods--dds--dm):
+стенд должен работать, база `demo` содержать исходные данные,
+а DAG `bookings_stg_ddl` создать внутренние таблицы `stg.*` и внешние `stg.*_ext`.
+Альтернатива DDL DAG: `make ddl-gp`, который создает все четыре слоя.
 
-## Что должно быть готово перед запуском
+Подключения `bookings_db` и `greenplum_conn` заданы через `AIRFLOW_CONN_...`
+в Compose и могут не отображаться в списке Connections.
+Порты, учетные данные и настройка PXF описаны в [справочнике стенда](stack.md).
 
-1) Стек поднят:
+В Airflow UI (по умолчанию http://localhost:8080) запустите
+`bookings_to_gp_stage` через Trigger DAG и дождитесь завершения всех задач.
+Каждый полный запуск добавляет следующий учебный день в источник.
+Дата запуска Airflow не задает день генерируемых данных.
 
-```bash
-make up
-```
+## Какие строки загружаются
 
-2) Демо‑БД bookings установлена и содержит данные:
+[generate_bookings_day](../sql/src/bookings_generate_day_if_missing.sql)
+вызывает `continue(...)` до конца следующего дня после `MAX(book_date)`.
+Для пустой установленной базы он вызывает `generate(...)`, используя настройки
+`bookings.start_date`, `bookings.init_days` и `bookings.jobs`.
+Эти настройки задаются при инициализации Bookings.
 
-```bash
-make bookings-init
-```
+Внешняя таблица `*_ext` читает источник; внутренний STG хранит полученные строки.
+Бизнес-поля сохраняются как TEXT. `_load_id` равен `run_id` запуска STG,
+`_load_ts` фиксирует время записи. Опорное `event_ts` зависит от таблицы:
 
-3) В Greenplum созданы STG‑объекты (внешние `*_ext` через PXF и внутренние таблицы слоя `stg`)
-для всех таблиц потока: `bookings`, `tickets`, `airports`, `airplanes`, `routes`, `seats`, `flights`,
-`segments`, `boarding_passes` (выберите один вариант):
+| Таблицы | Отбор строк | Готовый SQL |
+|---|---|---|
+| `bookings` | Новые `book_date` | [bookings_load.sql](../sql/stg/bookings_load.sql) |
+| `tickets`, `segments`, `boarding_passes` | По `book_date` связанного бронирования через билеты | [tickets](../sql/stg/tickets_load.sql), [segments](../sql/stg/segments_load.sql), [boarding_passes](../sql/stg/boarding_passes_load.sql) |
+| `flights` | Новые `scheduled_departure` | [flights_load.sql](../sql/stg/flights_load.sql) |
+| `airports`, `airplanes`, `routes`, `seats` | Полный снимок при каждом запуске; `event_ts = now()` | [airports](../sql/stg/airports_load.sql), [airplanes](../sql/stg/airplanes_load.sql), [routes](../sql/stg/routes_load.sql), [seats](../sql/stg/seats_load.sql) |
 
-- учебный вариант: запустить DAG `bookings_stg_ddl` в Airflow UI;
-- технический шорткат: `make ddl-gp`.
+У каждой инкрементальной таблицы своя нижняя граница:
+`MAX(event_ts)` по предыдущим батчам этой таблицы. Верхней границы нет.
+`NOT EXISTS` не дает повторно вставить тот же ключ в текущий `_load_id`.
+У справочников сохраняются снимки разных запусков, поэтому повторение
+бизнес-ключа между батчами ожидаемо.
 
-4) Airflow Connections:
+Такой инкремент не перечитывает все старые строки источника: например,
+изменение рейса с датой ниже границы само по себе в новый STG-батч не попадет.
+Для проверки повторяемости загрузки учитывайте и генератор:
+повторный запуск `generate_bookings_day` снова продвинет источник на день.
 
-- `bookings_db` — подключение к источнику `bookings-db`;
-- `greenplum_conn` — подключение к Greenplum.
+## Порядок задач
 
-По умолчанию они задаются через переменные окружения `AIRFLOW_CONN_...` в `docker-compose.yml`,
-поэтому могут не отображаться в UI — для `PostgresOperator` это нормально.
+В [DAG](../airflow/dags/bookings_to_gp_stage.py) после каждой загрузки стоит DQ.
+Ниже стрелки показывают порядок выполнения задач Airflow.
+Связи строк по ключам смотрите на карте.
 
-## Как запустить
+1. `generate_bookings_day → load_bookings_to_stg → check_row_counts`.
+2. `load_tickets_to_stg → check_tickets_dq`.
+3. После билетов параллельно могут выполняться загрузки аэропортов и моделей.
+   `load_routes_to_stg` ждет `check_airports_dq` и `check_airplanes_dq`;
+   `load_seats_to_stg` ждет только `check_airplanes_dq`.
+4. После проверки маршрутов идет цепочка
+   `flights → segments → boarding_passes`, у каждой таблицы своя DQ-задача.
+5. `finish_summary` ждет `check_boarding_passes_dq` и `check_seats_dq`.
 
-1) Откройте Airflow UI: http://localhost:8080 (admin/admin).
-2) Запустите DAG `bookings_to_gp_stage` вручную (Trigger DAG).
-3) Дождитесь статуса Success у всех задач.
+Инкрементальные DQ допускают пустое окно: выводят `NOTICE` и завершаются успешно.
+Пустой источник справочника считается ошибкой. Сверки выполняются для текущего
+батча; примеры: [bookings_dq.sql](../sql/stg/bookings_dq.sql) и
+[airports_dq.sql](../sql/stg/airports_dq.sql).
 
-## Как это работает внутри (по шагам)
+## Проверка результата
 
-1) `generate_bookings_day`
-
-- выполняет `sql/src/bookings_generate_day_if_missing.sql` в `bookings-db`;
-- если `bookings.bookings` пустая — вызывает `generate(...)` на `BOOKINGS_INIT_DAYS`;
-- иначе — вызывает `continue(...)`, добавляя ровно один следующий день.
-
-2) `load_bookings_to_stg`
-
-- выполняет `sql/stg/bookings_load.sql` в Greenplum;
-- берёт строки из `stg.bookings_ext`, которые попадают в новое окно инкремента;
-- вставляет их в `stg.bookings`, добавляя тех.колонки:
-  - `event_ts` (опорная метка времени для инкремента),
-  - `_load_ts`,
-  - `_load_id={{ run_id }}`.
-
-3) `check_row_counts`
-
-- выполняет `sql/stg/bookings_dq.sql` в Greenplum;
-- считает количество строк в источнике за то же окно инкремента и сравнивает с количеством строк,
-  вставленных в `stg.bookings` для текущего `_load_id`;
-- при расхождении делает `RAISE EXCEPTION` с понятным текстом.
-
-4) `load_tickets_to_stg`
-
-- выполняет `sql/stg/tickets_load.sql` в Greenplum;
-- так как в `bookings.tickets` нет явной временной колонки, окно инкремента берётся по `book_date`
-  из связанной внешней таблицы `stg.bookings_ext` (JOIN по `book_ref`);
-- вставляет строки в `stg.tickets`, добавляя `event_ts`, `_load_ts` и `_load_id={{ run_id }}`.
-
-5) `check_tickets_dq`
-
-- выполняет `sql/stg/tickets_dq.sql` в Greenplum;
-- проверяет количество строк в том же окне инкремента, а также ссылочную целостность и обязательные поля;
-- при проблемах делает `RAISE EXCEPTION`, чтобы DAG падал “красным”.
-
-6) Справочники (full load, параллельно где возможно)
-
-Справочники загружаются “снэпшотом” (все строки) и затем проверяются DQ-скриптом.
-Порядок определяется зависимостями данных — **airports** и **airplanes** грузятся **параллельно**,
-потому что не зависят друг от друга:
-
-```
-check_tickets_dq
-    ├─ load_airports  → check_airports_dq  ─┐
-    │                                        ├─ load_routes → check_routes_dq
-    └─ load_airplanes → check_airplanes_dq ─┤
-                                             └─ load_seats  → check_seats_dq
-```
-
-- `load_airports_to_stg` → `check_airports_dq` (`sql/stg/airports_load.sql`, `sql/stg/airports_dq.sql`)
-- `load_airplanes_to_stg` → `check_airplanes_dq` (`sql/stg/airplanes_load.sql`, `sql/stg/airplanes_dq.sql`)
-- `load_routes_to_stg` → `check_routes_dq` (`sql/stg/routes_load.sql`, `sql/stg/routes_dq.sql`) — зависит от **airports** и **airplanes** (DQ проверяет ссылочную целостность)
-- `load_seats_to_stg` → `check_seats_dq` (`sql/stg/seats_load.sql`, `sql/stg/seats_dq.sql`) — зависит от **airplanes** (DQ проверяет `airplane_code → airplanes`)
-
-7) Транзакции
-
-- `load_flights_to_stg` → `check_flights_dq` (инкремент по `scheduled_departure`) — зависит от **routes**
-- `load_segments_to_stg` → `check_segments_dq` (инкремент по `book_date` через tickets/bookings) — зависит от **flights**
-- `load_boarding_passes_to_stg` → `check_boarding_passes_dq` (инкремент по `book_date` через tickets/bookings) — зависит от **segments**
-
-Ветка `seats` работает параллельно с веткой `routes → flights → segments → boarding_passes`.
-Обе ветки сходятся на `finish_summary`.
-
-Важно: для инкрементальных таблиц “пустое окно инкремента” допустимо — загрузка и DQ логируют `NOTICE` и завершаются успешно.
-Для snapshot-справочников (airports/airplanes/routes/seats) пустой источник считается ошибкой (DQ делает `RAISE EXCEPTION`).
-
-8) `finish_summary`
-
-- ждёт завершения **обеих** параллельных веток (`check_boarding_passes_dq` и `check_seats_dq`);
-- логирует краткую сводку в конце запуска.
-
-## Как проверить результат
-
-```bash
-make gp-psql
-```
-
-Примеры запросов:
+Откройте Greenplum командой `make gp-psql`:
 
 ```sql
 SELECT COUNT(*) FROM stg.bookings;
 
-SELECT
-    event_ts,
-    _load_ts,
-    _load_id
+SELECT book_ref, book_date, event_ts, _load_ts, _load_id
 FROM stg.bookings
-ORDER BY event_ts DESC
+ORDER BY _load_ts DESC, book_ref
 LIMIT 10;
 ```
 
-## Типичные ошибки
+После первого успешного запуска `stg.bookings` непуста. Сопоставьте `_load_id`
+с Run ID в Airflow и объясните, чем `book_date` отличается от `_load_ts`.
+Для просмотра первоисточника используйте `make bookings-psql`.
 
-- `database "demo" does not exist`: демо‑БД не установлена → выполните `make bookings-init`.
-- Ошибки про `stg.*`/`stg.*_ext`: не применён DDL → запустите `bookings_stg_ddl` или `make ddl-gp`.
-- Ошибки PXF (`protocol "pxf" does not exist`, connection refused): перезапустите `greenplum` и повторите DDL.
-  Для технических деталей PXF см. ветку `solution` (`docs/reference/pxf_bookings.md`).
+Далее запускайте [ODS](bookings_to_gp_ods.md).
+Общий порядок слоев находится в [порядке запуска DAG](dag_execution_order.md).
 
-## Рекомендации по качеству решения
+## Если загрузка не прошла
 
-Ревью решения и список улучшений — в ветке `solution` (`docs/archive/`).
+Откройте Log первой упавшей задачи в Airflow. Если упала DQ, начните с ключа
+и батча, названных в сообщении, затем откройте ее SQL из карточки таблицы.
+
+- Нет базы `demo`: пройдите инициализацию из README. `make bookings-init`
+  пересоздает исходную базу из seed-дампа, поэтому не используйте его для
+  обычного повторного запуска уже заполненного стенда.
+- Нет `stg.*` или `stg.*_ext`: выполните `bookings_stg_ddl`.
+- Ошибка PXF или соединения: проверьте `docker compose ps`, логи `greenplum`
+  и `bookings-db`, затем настройки из [справочника стенда](stack.md).
+  Повторное применение DDL само по себе не исправляет недоступное подключение.

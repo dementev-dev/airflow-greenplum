@@ -1,0 +1,4749 @@
+{
+  "title": "Хранилище авиаперевозок",
+  "lead": "От бронирования до витрины: выберите таблицу или связь.",
+  "layers": [
+    {
+      "id": "source",
+      "title": "Источник",
+      "caption": "Postgres · demo"
+    },
+    {
+      "id": "stg",
+      "title": "STG",
+      "caption": "Сырые строки · Greenplum"
+    },
+    {
+      "id": "ods",
+      "title": "ODS",
+      "caption": "Типы и текущее состояние"
+    },
+    {
+      "id": "dds",
+      "title": "DDS",
+      "caption": "Измерения и факт"
+    },
+    {
+      "id": "dm",
+      "title": "DM",
+      "caption": "Ответы на бизнес-вопросы"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "bookings.bookings",
+      "name": "bookings.bookings",
+      "layer": "source",
+      "order": 0,
+      "what": "Бронирование объединяет билеты одной покупки.",
+      "grain": "Одно бронирование.",
+      "keys": "`book_ref` — логический ключ строки источника.",
+      "fields": [
+        {
+          "name": "book_ref",
+          "meaning": "номер бронирования"
+        },
+        {
+          "name": "book_date",
+          "meaning": "момент бронирования"
+        },
+        {
+          "name": "total_amount",
+          "meaning": "сумма бронирования целиком"
+        }
+      ],
+      "fill": "Демо-БД восстанавливается из seed-дампа; генератор добавляет учебные дни. PXF читает ее через `stg.bookings_ext`.",
+      "status": "source",
+      "links": [
+        {
+          "label": "Источник и генератор",
+          "url": "../../bookings/README.md"
+        },
+        {
+          "label": "DDL входа PXF",
+          "url": "../../sql/stg/bookings_ddl.sql"
+        }
+      ],
+      "parts": []
+    },
+    {
+      "id": "stg.bookings",
+      "name": "stg.bookings",
+      "layer": "stg",
+      "order": 0,
+      "what": "Бронирование объединяет билеты одной покупки. Здесь бизнес-поля хранятся как TEXT.",
+      "grain": "Одно бронирование. Строка относится к загрузке STG.",
+      "keys": "Бизнес-ключ: `book_ref`. Для хранимой строки учитывайте также `_load_id`: снимки разных запусков сосуществуют.",
+      "fields": [
+        {
+          "name": "book_ref",
+          "meaning": "номер бронирования"
+        },
+        {
+          "name": "book_date",
+          "meaning": "момент бронирования"
+        },
+        {
+          "name": "total_amount",
+          "meaning": "сумма бронирования целиком"
+        },
+        {
+          "name": "event_ts",
+          "meaning": "опорное время инкремента"
+        },
+        {
+          "name": "_load_id",
+          "meaning": "идентификатор загрузки"
+        },
+        {
+          "name": "_load_ts",
+          "meaning": "время записи в STG"
+        }
+      ],
+      "fill": "Добавление строк по `event_ts` предыдущих загрузок. Опорное время — `book_date` бронирования. Повтор защищен ключом строки внутри `_load_id`.",
+      "status": "ready",
+      "links": [
+        {
+          "label": "DDL",
+          "url": "../../sql/stg/bookings_ddl.sql"
+        },
+        {
+          "label": "Загрузка",
+          "url": "../../sql/stg/bookings_load.sql"
+        },
+        {
+          "label": "DQ",
+          "url": "../../sql/stg/bookings_dq.sql"
+        }
+      ],
+      "parts": [
+        "stg.bookings_ext"
+      ]
+    },
+    {
+      "id": "ods.bookings",
+      "name": "ods.bookings",
+      "layer": "ods",
+      "order": 0,
+      "what": "Бронирование объединяет билеты одной покупки.",
+      "grain": "Одно бронирование.",
+      "keys": "`book_ref` — логический ключ текущей строки.",
+      "fields": [
+        {
+          "name": "book_ref",
+          "meaning": "номер бронирования"
+        },
+        {
+          "name": "book_date",
+          "meaning": "момент бронирования"
+        },
+        {
+          "name": "total_amount",
+          "meaning": "сумма бронирования целиком"
+        }
+      ],
+      "fill": "Дельта из STG по `_load_ts`, приведение типов, выбор последней строки по бизнес-ключу; UPDATE изменившихся и INSERT новых. Время и идентификатор загрузки сохраняются из STG.",
+      "status": "ready",
+      "links": [
+        {
+          "label": "DDL",
+          "url": "../../sql/ods/bookings_ddl.sql"
+        },
+        {
+          "label": "Загрузка",
+          "url": "../../sql/ods/bookings_load.sql"
+        },
+        {
+          "label": "DQ",
+          "url": "../../sql/ods/bookings_dq.sql"
+        }
+      ],
+      "parts": []
+    },
+    {
+      "id": "bookings.tickets",
+      "name": "bookings.tickets",
+      "layer": "source",
+      "order": 1,
+      "what": "Билет связывает пассажира с бронированием. В билете может быть несколько сегментов.",
+      "grain": "Один билет пассажира.",
+      "keys": "`ticket_no` — логический ключ строки источника.",
+      "fields": [
+        {
+          "name": "ticket_no",
+          "meaning": "номер билета"
+        },
+        {
+          "name": "book_ref",
+          "meaning": "бронирование"
+        },
+        {
+          "name": "passenger_id",
+          "meaning": "идентификатор пассажира"
+        },
+        {
+          "name": "passenger_name",
+          "meaning": "имя пассажира"
+        },
+        {
+          "name": "outbound",
+          "meaning": "признак направления поездки"
+        }
+      ],
+      "fill": "Демо-БД восстанавливается из seed-дампа; генератор добавляет учебные дни. PXF читает ее через `stg.tickets_ext`.",
+      "status": "source",
+      "links": [
+        {
+          "label": "Источник и генератор",
+          "url": "../../bookings/README.md"
+        },
+        {
+          "label": "DDL входа PXF",
+          "url": "../../sql/stg/tickets_ddl.sql"
+        }
+      ],
+      "parts": []
+    },
+    {
+      "id": "stg.tickets",
+      "name": "stg.tickets",
+      "layer": "stg",
+      "order": 1,
+      "what": "Билет связывает пассажира с бронированием. В билете может быть несколько сегментов. Здесь бизнес-поля хранятся как TEXT.",
+      "grain": "Один билет пассажира. Строка относится к загрузке STG.",
+      "keys": "Бизнес-ключ: `ticket_no`. Загрузчик исключает повторный `ticket_no` во всей таблице.",
+      "fields": [
+        {
+          "name": "ticket_no",
+          "meaning": "номер билета"
+        },
+        {
+          "name": "book_ref",
+          "meaning": "бронирование"
+        },
+        {
+          "name": "passenger_id",
+          "meaning": "идентификатор пассажира"
+        },
+        {
+          "name": "passenger_name",
+          "meaning": "имя пассажира"
+        },
+        {
+          "name": "outbound",
+          "meaning": "признак направления поездки"
+        },
+        {
+          "name": "event_ts",
+          "meaning": "опорное время инкремента"
+        },
+        {
+          "name": "_load_id",
+          "meaning": "идентификатор загрузки"
+        },
+        {
+          "name": "_load_ts",
+          "meaning": "время записи в STG"
+        }
+      ],
+      "fill": "Добавление строк по `event_ts` предыдущих загрузок. Опорное время — `book_date` бронирования. Уже сохраненный `ticket_no` повторно не вставляется.",
+      "status": "ready",
+      "links": [
+        {
+          "label": "DDL",
+          "url": "../../sql/stg/tickets_ddl.sql"
+        },
+        {
+          "label": "Загрузка",
+          "url": "../../sql/stg/tickets_load.sql"
+        },
+        {
+          "label": "DQ",
+          "url": "../../sql/stg/tickets_dq.sql"
+        }
+      ],
+      "parts": [
+        "stg.tickets_ext"
+      ]
+    },
+    {
+      "id": "ods.tickets",
+      "name": "ods.tickets",
+      "layer": "ods",
+      "order": 1,
+      "what": "Билет связывает пассажира с бронированием. В билете может быть несколько сегментов.",
+      "grain": "Один билет пассажира.",
+      "keys": "`ticket_no` — логический ключ текущей строки.",
+      "fields": [
+        {
+          "name": "ticket_no",
+          "meaning": "номер билета"
+        },
+        {
+          "name": "book_ref",
+          "meaning": "бронирование"
+        },
+        {
+          "name": "passenger_id",
+          "meaning": "идентификатор пассажира"
+        },
+        {
+          "name": "passenger_name",
+          "meaning": "имя пассажира"
+        },
+        {
+          "name": "is_outbound",
+          "meaning": "признак направления поездки"
+        }
+      ],
+      "fill": "Дельта из STG по `_load_ts`, приведение типов, выбор последней строки по бизнес-ключу; UPDATE изменившихся и INSERT новых. Время и идентификатор загрузки сохраняются из STG. `outbound` становится `is_outbound` (BOOLEAN).",
+      "status": "ready",
+      "links": [
+        {
+          "label": "DDL",
+          "url": "../../sql/ods/tickets_ddl.sql"
+        },
+        {
+          "label": "Загрузка",
+          "url": "../../sql/ods/tickets_load.sql"
+        },
+        {
+          "label": "DQ",
+          "url": "../../sql/ods/tickets_dq.sql"
+        }
+      ],
+      "parts": []
+    },
+    {
+      "id": "bookings.segments",
+      "name": "bookings.segments",
+      "layer": "source",
+      "order": 2,
+      "what": "Сегмент связывает билет с конкретным рейсом и хранит цену этого перелета.",
+      "grain": "Один перелет по одному билету.",
+      "keys": "`ticket_no` + `flight_id` — логический ключ строки источника.",
+      "fields": [
+        {
+          "name": "ticket_no",
+          "meaning": "билет"
+        },
+        {
+          "name": "flight_id",
+          "meaning": "рейс"
+        },
+        {
+          "name": "fare_conditions",
+          "meaning": "класс обслуживания"
+        },
+        {
+          "name": "price",
+          "meaning": "стоимость сегмента"
+        }
+      ],
+      "fill": "Демо-БД восстанавливается из seed-дампа; генератор добавляет учебные дни. PXF читает ее через `stg.segments_ext`.",
+      "status": "source",
+      "links": [
+        {
+          "label": "Источник и генератор",
+          "url": "../../bookings/README.md"
+        },
+        {
+          "label": "DDL входа PXF",
+          "url": "../../sql/stg/segments_ddl.sql"
+        }
+      ],
+      "parts": []
+    },
+    {
+      "id": "stg.segments",
+      "name": "stg.segments",
+      "layer": "stg",
+      "order": 2,
+      "what": "Сегмент связывает билет с конкретным рейсом и хранит цену этого перелета. Здесь бизнес-поля хранятся как TEXT.",
+      "grain": "Один перелет по одному билету. Строка относится к загрузке STG.",
+      "keys": "Бизнес-ключ: `ticket_no` + `flight_id`. Для хранимой строки учитывайте также `_load_id`: снимки разных запусков сосуществуют.",
+      "fields": [
+        {
+          "name": "ticket_no",
+          "meaning": "билет"
+        },
+        {
+          "name": "flight_id",
+          "meaning": "рейс"
+        },
+        {
+          "name": "fare_conditions",
+          "meaning": "класс обслуживания"
+        },
+        {
+          "name": "price",
+          "meaning": "стоимость сегмента"
+        },
+        {
+          "name": "event_ts",
+          "meaning": "опорное время инкремента"
+        },
+        {
+          "name": "_load_id",
+          "meaning": "идентификатор загрузки"
+        },
+        {
+          "name": "_load_ts",
+          "meaning": "время записи в STG"
+        }
+      ],
+      "fill": "Добавление строк по `event_ts` предыдущих загрузок. Опорное время — `book_date` бронирования. Повтор защищен ключом строки внутри `_load_id`.",
+      "status": "ready",
+      "links": [
+        {
+          "label": "DDL",
+          "url": "../../sql/stg/segments_ddl.sql"
+        },
+        {
+          "label": "Загрузка",
+          "url": "../../sql/stg/segments_load.sql"
+        },
+        {
+          "label": "DQ",
+          "url": "../../sql/stg/segments_dq.sql"
+        }
+      ],
+      "parts": [
+        "stg.segments_ext"
+      ]
+    },
+    {
+      "id": "ods.segments",
+      "name": "ods.segments",
+      "layer": "ods",
+      "order": 2,
+      "what": "Сегмент связывает билет с конкретным рейсом и хранит цену этого перелета.",
+      "grain": "Один перелет по одному билету.",
+      "keys": "`ticket_no` + `flight_id` — логический ключ текущей строки.",
+      "fields": [
+        {
+          "name": "ticket_no",
+          "meaning": "билет"
+        },
+        {
+          "name": "flight_id",
+          "meaning": "рейс"
+        },
+        {
+          "name": "fare_conditions",
+          "meaning": "класс обслуживания"
+        },
+        {
+          "name": "amount",
+          "meaning": "стоимость сегмента"
+        }
+      ],
+      "fill": "Дельта из STG по `_load_ts`, приведение типов, выбор последней строки по бизнес-ключу; UPDATE изменившихся и INSERT новых. Время и идентификатор загрузки сохраняются из STG. `stg.segments.price` становится `amount` (NUMERIC).",
+      "status": "ready",
+      "links": [
+        {
+          "label": "DDL",
+          "url": "../../sql/ods/segments_ddl.sql"
+        },
+        {
+          "label": "Загрузка",
+          "url": "../../sql/ods/segments_load.sql"
+        },
+        {
+          "label": "DQ",
+          "url": "../../sql/ods/segments_dq.sql"
+        }
+      ],
+      "parts": []
+    },
+    {
+      "id": "bookings.flights",
+      "name": "bookings.flights",
+      "layer": "source",
+      "order": 3,
+      "what": "Рейс представляет конкретный вылет по маршруту. Один маршрут выполняется многократно.",
+      "grain": "Один рейс с собственным расписанием и статусом.",
+      "keys": "`flight_id` — логический ключ строки источника.",
+      "fields": [
+        {
+          "name": "flight_id",
+          "meaning": "идентификатор рейса"
+        },
+        {
+          "name": "route_no",
+          "meaning": "маршрут"
+        },
+        {
+          "name": "scheduled_departure",
+          "meaning": "плановый момент вылета"
+        },
+        {
+          "name": "scheduled_arrival",
+          "meaning": "плановый момент прилета"
+        },
+        {
+          "name": "status",
+          "meaning": "состояние рейса"
+        }
+      ],
+      "fill": "Демо-БД восстанавливается из seed-дампа; генератор добавляет учебные дни. PXF читает ее через `stg.flights_ext`.",
+      "status": "source",
+      "links": [
+        {
+          "label": "Источник и генератор",
+          "url": "../../bookings/README.md"
+        },
+        {
+          "label": "DDL входа PXF",
+          "url": "../../sql/stg/flights_ddl.sql"
+        }
+      ],
+      "parts": []
+    },
+    {
+      "id": "stg.flights",
+      "name": "stg.flights",
+      "layer": "stg",
+      "order": 3,
+      "what": "Рейс представляет конкретный вылет по маршруту. Один маршрут выполняется многократно. Здесь бизнес-поля хранятся как TEXT.",
+      "grain": "Один рейс с собственным расписанием и статусом. Строка относится к загрузке STG.",
+      "keys": "Бизнес-ключ: `flight_id`. Для хранимой строки учитывайте также `_load_id`: снимки разных запусков сосуществуют.",
+      "fields": [
+        {
+          "name": "flight_id",
+          "meaning": "идентификатор рейса"
+        },
+        {
+          "name": "route_no",
+          "meaning": "маршрут"
+        },
+        {
+          "name": "scheduled_departure",
+          "meaning": "плановый момент вылета"
+        },
+        {
+          "name": "scheduled_arrival",
+          "meaning": "плановый момент прилета"
+        },
+        {
+          "name": "status",
+          "meaning": "состояние рейса"
+        },
+        {
+          "name": "event_ts",
+          "meaning": "опорное время инкремента"
+        },
+        {
+          "name": "_load_id",
+          "meaning": "идентификатор загрузки"
+        },
+        {
+          "name": "_load_ts",
+          "meaning": "время записи в STG"
+        }
+      ],
+      "fill": "Добавление строк по `event_ts` предыдущих загрузок. Опорное время — `scheduled_departure`. Повтор защищен ключом строки внутри `_load_id`.",
+      "status": "ready",
+      "links": [
+        {
+          "label": "DDL",
+          "url": "../../sql/stg/flights_ddl.sql"
+        },
+        {
+          "label": "Загрузка",
+          "url": "../../sql/stg/flights_load.sql"
+        },
+        {
+          "label": "DQ",
+          "url": "../../sql/stg/flights_dq.sql"
+        }
+      ],
+      "parts": [
+        "stg.flights_ext"
+      ]
+    },
+    {
+      "id": "ods.flights",
+      "name": "ods.flights",
+      "layer": "ods",
+      "order": 3,
+      "what": "Рейс представляет конкретный вылет по маршруту. Один маршрут выполняется многократно.",
+      "grain": "Один рейс с собственным расписанием и статусом.",
+      "keys": "`flight_id` — логический ключ текущей строки.",
+      "fields": [
+        {
+          "name": "flight_id",
+          "meaning": "идентификатор рейса"
+        },
+        {
+          "name": "route_no",
+          "meaning": "маршрут"
+        },
+        {
+          "name": "scheduled_departure",
+          "meaning": "плановый момент вылета"
+        },
+        {
+          "name": "scheduled_arrival",
+          "meaning": "плановый момент прилета"
+        },
+        {
+          "name": "status",
+          "meaning": "состояние рейса"
+        }
+      ],
+      "fill": "Дельта из STG по `_load_ts`, приведение типов, выбор последней строки по бизнес-ключу; UPDATE изменившихся и INSERT новых. Время и идентификатор загрузки сохраняются из STG. Дополнительно берутся рейсы из истории STG, на которые ссылаются новые `stg.segments`.",
+      "status": "ready",
+      "links": [
+        {
+          "label": "DDL",
+          "url": "../../sql/ods/flights_ddl.sql"
+        },
+        {
+          "label": "Загрузка",
+          "url": "../../sql/ods/flights_load.sql"
+        },
+        {
+          "label": "DQ",
+          "url": "../../sql/ods/flights_dq.sql"
+        }
+      ],
+      "parts": []
+    },
+    {
+      "id": "bookings.boarding_passes",
+      "name": "bookings.boarding_passes",
+      "layer": "source",
+      "order": 4,
+      "what": "Посадочный талон относится к сегменту билета. Его наличие используется как признак посадки в факте.",
+      "grain": "Один посадочный талон на билет и рейс.",
+      "keys": "`ticket_no` + `flight_id` — логический ключ строки источника.",
+      "fields": [
+        {
+          "name": "ticket_no",
+          "meaning": "билет"
+        },
+        {
+          "name": "flight_id",
+          "meaning": "рейс"
+        },
+        {
+          "name": "seat_no",
+          "meaning": "место в салоне"
+        },
+        {
+          "name": "boarding_no",
+          "meaning": "номер посадочного талона"
+        },
+        {
+          "name": "boarding_time",
+          "meaning": "время посадки"
+        }
+      ],
+      "fill": "Демо-БД восстанавливается из seed-дампа; генератор добавляет учебные дни. PXF читает ее через `stg.boarding_passes_ext`.",
+      "status": "source",
+      "links": [
+        {
+          "label": "Источник и генератор",
+          "url": "../../bookings/README.md"
+        },
+        {
+          "label": "DDL входа PXF",
+          "url": "../../sql/stg/boarding_passes_ddl.sql"
+        }
+      ],
+      "parts": []
+    },
+    {
+      "id": "stg.boarding_passes",
+      "name": "stg.boarding_passes",
+      "layer": "stg",
+      "order": 4,
+      "what": "Посадочный талон относится к сегменту билета. Его наличие используется как признак посадки в факте. Здесь бизнес-поля хранятся как TEXT.",
+      "grain": "Один посадочный талон на билет и рейс. Строка относится к загрузке STG.",
+      "keys": "Бизнес-ключ: `ticket_no` + `flight_id`. Для хранимой строки учитывайте также `_load_id`: снимки разных запусков сосуществуют.",
+      "fields": [
+        {
+          "name": "ticket_no",
+          "meaning": "билет"
+        },
+        {
+          "name": "flight_id",
+          "meaning": "рейс"
+        },
+        {
+          "name": "seat_no",
+          "meaning": "место в салоне"
+        },
+        {
+          "name": "boarding_no",
+          "meaning": "номер посадочного талона"
+        },
+        {
+          "name": "boarding_time",
+          "meaning": "время посадки"
+        },
+        {
+          "name": "event_ts",
+          "meaning": "опорное время инкремента"
+        },
+        {
+          "name": "_load_id",
+          "meaning": "идентификатор загрузки"
+        },
+        {
+          "name": "_load_ts",
+          "meaning": "время записи в STG"
+        }
+      ],
+      "fill": "Добавление строк по `event_ts` предыдущих загрузок. Опорное время — `book_date` бронирования. Повтор защищен ключом строки внутри `_load_id`.",
+      "status": "ready",
+      "links": [
+        {
+          "label": "DDL",
+          "url": "../../sql/stg/boarding_passes_ddl.sql"
+        },
+        {
+          "label": "Загрузка",
+          "url": "../../sql/stg/boarding_passes_load.sql"
+        },
+        {
+          "label": "DQ",
+          "url": "../../sql/stg/boarding_passes_dq.sql"
+        }
+      ],
+      "parts": [
+        "stg.boarding_passes_ext"
+      ]
+    },
+    {
+      "id": "ods.boarding_passes",
+      "name": "ods.boarding_passes",
+      "layer": "ods",
+      "order": 4,
+      "what": "Посадочный талон относится к сегменту билета. Его наличие используется как признак посадки в факте.",
+      "grain": "Один посадочный талон на билет и рейс.",
+      "keys": "`ticket_no` + `flight_id` — логический ключ текущей строки.",
+      "fields": [
+        {
+          "name": "ticket_no",
+          "meaning": "билет"
+        },
+        {
+          "name": "flight_id",
+          "meaning": "рейс"
+        },
+        {
+          "name": "seat_no",
+          "meaning": "место в салоне"
+        },
+        {
+          "name": "boarding_no",
+          "meaning": "номер посадочного талона"
+        },
+        {
+          "name": "boarding_time",
+          "meaning": "время посадки"
+        }
+      ],
+      "fill": "Дельта из STG по `_load_ts`, приведение типов, выбор последней строки по бизнес-ключу; UPDATE изменившихся и INSERT новых. Время и идентификатор загрузки сохраняются из STG.",
+      "status": "ready",
+      "links": [
+        {
+          "label": "DDL",
+          "url": "../../sql/ods/boarding_passes_ddl.sql"
+        },
+        {
+          "label": "Загрузка",
+          "url": "../../sql/ods/boarding_passes_load.sql"
+        },
+        {
+          "label": "DQ",
+          "url": "../../sql/ods/boarding_passes_dq.sql"
+        }
+      ],
+      "parts": []
+    },
+    {
+      "id": "bookings.routes",
+      "name": "bookings.routes",
+      "layer": "source",
+      "order": 5,
+      "what": "Маршрут задает аэропорты, модель самолета и расписание на период действия.",
+      "grain": "Один вариант расписания маршрута.",
+      "keys": "`route_no` + `validity` — логический ключ строки источника.",
+      "fields": [
+        {
+          "name": "route_no",
+          "meaning": "номер маршрута"
+        },
+        {
+          "name": "validity",
+          "meaning": "период действия исходного расписания"
+        },
+        {
+          "name": "departure_airport",
+          "meaning": "код аэропорта вылета"
+        },
+        {
+          "name": "arrival_airport",
+          "meaning": "код аэропорта прилета"
+        },
+        {
+          "name": "airplane_code",
+          "meaning": "код модели самолета"
+        },
+        {
+          "name": "scheduled_time",
+          "meaning": "время вылета по расписанию"
+        }
+      ],
+      "fill": "Демо-БД восстанавливается из seed-дампа; генератор добавляет учебные дни. PXF читает ее через `stg.routes_ext`.",
+      "status": "source",
+      "links": [
+        {
+          "label": "Источник и генератор",
+          "url": "../../bookings/README.md"
+        },
+        {
+          "label": "DDL входа PXF",
+          "url": "../../sql/stg/routes_ddl.sql"
+        }
+      ],
+      "parts": []
+    },
+    {
+      "id": "stg.routes",
+      "name": "stg.routes",
+      "layer": "stg",
+      "order": 5,
+      "what": "Маршрут задает аэропорты, модель самолета и расписание на период действия. Здесь бизнес-поля хранятся как TEXT.",
+      "grain": "Один вариант расписания маршрута. Строка относится к загрузке STG.",
+      "keys": "Бизнес-ключ: `route_no` + `validity`. Для хранимой строки учитывайте также `_load_id`: снимки разных запусков сосуществуют.",
+      "fields": [
+        {
+          "name": "route_no",
+          "meaning": "номер маршрута"
+        },
+        {
+          "name": "validity",
+          "meaning": "период действия исходного расписания"
+        },
+        {
+          "name": "departure_airport",
+          "meaning": "код аэропорта вылета"
+        },
+        {
+          "name": "arrival_airport",
+          "meaning": "код аэропорта прилета"
+        },
+        {
+          "name": "airplane_code",
+          "meaning": "код модели самолета"
+        },
+        {
+          "name": "scheduled_time",
+          "meaning": "время вылета по расписанию"
+        },
+        {
+          "name": "event_ts",
+          "meaning": "время снимка (`now()`)"
+        },
+        {
+          "name": "_load_id",
+          "meaning": "идентификатор загрузки"
+        },
+        {
+          "name": "_load_ts",
+          "meaning": "время записи в STG"
+        }
+      ],
+      "fill": "Полный снимок при каждом новом запуске STG; повтор в том же `_load_id` не добавляет строку повторно.",
+      "status": "ready",
+      "links": [
+        {
+          "label": "DDL",
+          "url": "../../sql/stg/routes_ddl.sql"
+        },
+        {
+          "label": "Загрузка",
+          "url": "../../sql/stg/routes_load.sql"
+        },
+        {
+          "label": "DQ",
+          "url": "../../sql/stg/routes_dq.sql"
+        }
+      ],
+      "parts": [
+        "stg.routes_ext"
+      ]
+    },
+    {
+      "id": "ods.routes",
+      "name": "ods.routes",
+      "layer": "ods",
+      "order": 5,
+      "what": "Маршрут задает аэропорты, модель самолета и расписание на период действия.",
+      "grain": "Один вариант расписания маршрута.",
+      "keys": "`route_no` + `validity` — логический ключ текущей строки.",
+      "fields": [
+        {
+          "name": "route_no",
+          "meaning": "номер маршрута"
+        },
+        {
+          "name": "validity",
+          "meaning": "период действия исходного расписания"
+        },
+        {
+          "name": "departure_airport",
+          "meaning": "код аэропорта вылета"
+        },
+        {
+          "name": "arrival_airport",
+          "meaning": "код аэропорта прилета"
+        },
+        {
+          "name": "airplane_code",
+          "meaning": "код модели самолета"
+        },
+        {
+          "name": "departure_time",
+          "meaning": "время вылета по расписанию"
+        }
+      ],
+      "fill": "Полный снимок из согласованного батча STG (`stg_batch_id`): TRUNCATE + INSERT, одна строка на бизнес-ключ. `scheduled_time` становится `departure_time` (TIME), `days_of_week` — INTEGER[], `duration` — INTERVAL.",
+      "status": "ready",
+      "links": [
+        {
+          "label": "DDL",
+          "url": "../../sql/ods/routes_ddl.sql"
+        },
+        {
+          "label": "Загрузка",
+          "url": "../../sql/ods/routes_load.sql"
+        },
+        {
+          "label": "DQ",
+          "url": "../../sql/ods/routes_dq.sql"
+        }
+      ],
+      "parts": []
+    },
+    {
+      "id": "bookings.airports_data",
+      "name": "bookings.airports_data",
+      "layer": "source",
+      "order": 6,
+      "what": "Справочник аэропортов. Один аэропорт может участвовать в разных рейсах как место вылета или прилета.",
+      "grain": "Один аэропорт.",
+      "keys": "`airport_code` — логический ключ строки источника.",
+      "fields": [
+        {
+          "name": "airport_code",
+          "meaning": "код аэропорта"
+        },
+        {
+          "name": "airport_name",
+          "meaning": "название"
+        },
+        {
+          "name": "city",
+          "meaning": "город"
+        },
+        {
+          "name": "timezone",
+          "meaning": "часовой пояс"
+        }
+      ],
+      "fill": "Демо-БД восстанавливается из seed-дампа; генератор добавляет учебные дни. PXF читает ее через `stg.airports_ext`.",
+      "status": "source",
+      "links": [
+        {
+          "label": "Источник и генератор",
+          "url": "../../bookings/README.md"
+        },
+        {
+          "label": "DDL входа PXF",
+          "url": "../../sql/stg/airports_ddl.sql"
+        }
+      ],
+      "parts": []
+    },
+    {
+      "id": "stg.airports",
+      "name": "stg.airports",
+      "layer": "stg",
+      "order": 6,
+      "what": "Справочник аэропортов. Один аэропорт может участвовать в разных рейсах как место вылета или прилета. Здесь бизнес-поля хранятся как TEXT.",
+      "grain": "Один аэропорт. Строка относится к загрузке STG.",
+      "keys": "Бизнес-ключ: `airport_code`. Для хранимой строки учитывайте также `_load_id`: снимки разных запусков сосуществуют.",
+      "fields": [
+        {
+          "name": "airport_code",
+          "meaning": "код аэропорта"
+        },
+        {
+          "name": "airport_name",
+          "meaning": "название"
+        },
+        {
+          "name": "city",
+          "meaning": "город"
+        },
+        {
+          "name": "timezone",
+          "meaning": "часовой пояс"
+        },
+        {
+          "name": "event_ts",
+          "meaning": "время снимка (`now()`)"
+        },
+        {
+          "name": "_load_id",
+          "meaning": "идентификатор загрузки"
+        },
+        {
+          "name": "_load_ts",
+          "meaning": "время записи в STG"
+        }
+      ],
+      "fill": "Полный снимок при каждом новом запуске STG; повтор в том же `_load_id` не добавляет строку повторно.",
+      "status": "ready",
+      "links": [
+        {
+          "label": "DDL",
+          "url": "../../sql/stg/airports_ddl.sql"
+        },
+        {
+          "label": "Загрузка",
+          "url": "../../sql/stg/airports_load.sql"
+        },
+        {
+          "label": "DQ",
+          "url": "../../sql/stg/airports_dq.sql"
+        }
+      ],
+      "parts": [
+        "stg.airports_ext"
+      ]
+    },
+    {
+      "id": "ods.airports",
+      "name": "ods.airports",
+      "layer": "ods",
+      "order": 6,
+      "what": "Справочник аэропортов. Один аэропорт может участвовать в разных рейсах как место вылета или прилета.",
+      "grain": "Один аэропорт.",
+      "keys": "`airport_code` — логический ключ текущей строки.",
+      "fields": [
+        {
+          "name": "airport_code",
+          "meaning": "код аэропорта"
+        },
+        {
+          "name": "airport_name",
+          "meaning": "название"
+        },
+        {
+          "name": "city",
+          "meaning": "город"
+        },
+        {
+          "name": "timezone",
+          "meaning": "часовой пояс"
+        }
+      ],
+      "fill": "Полный снимок из согласованного батча STG (`stg_batch_id`): TRUNCATE + INSERT, одна строка на бизнес-ключ. Из JSON извлекаются русские названия аэропорта, города и страны.",
+      "status": "ready",
+      "links": [
+        {
+          "label": "DDL",
+          "url": "../../sql/ods/airports_ddl.sql"
+        },
+        {
+          "label": "Загрузка",
+          "url": "../../sql/ods/airports_load.sql"
+        },
+        {
+          "label": "DQ",
+          "url": "../../sql/ods/airports_dq.sql"
+        }
+      ],
+      "parts": []
+    },
+    {
+      "id": "bookings.airplanes_data",
+      "name": "bookings.airplanes_data",
+      "layer": "source",
+      "order": 7,
+      "what": "Справочник моделей самолетов; бортовых номеров отдельных самолетов здесь нет.",
+      "grain": "Одна модель самолета.",
+      "keys": "`airplane_code` — логический ключ строки источника.",
+      "fields": [
+        {
+          "name": "airplane_code",
+          "meaning": "код модели"
+        },
+        {
+          "name": "model",
+          "meaning": "название модели"
+        },
+        {
+          "name": "range",
+          "meaning": "дальность полета"
+        },
+        {
+          "name": "speed",
+          "meaning": "скорость"
+        }
+      ],
+      "fill": "Демо-БД восстанавливается из seed-дампа; генератор добавляет учебные дни. PXF читает ее через `stg.airplanes_ext`.",
+      "status": "source",
+      "links": [
+        {
+          "label": "Источник и генератор",
+          "url": "../../bookings/README.md"
+        },
+        {
+          "label": "DDL входа PXF",
+          "url": "../../sql/stg/airplanes_ddl.sql"
+        }
+      ],
+      "parts": []
+    },
+    {
+      "id": "stg.airplanes",
+      "name": "stg.airplanes",
+      "layer": "stg",
+      "order": 7,
+      "what": "Справочник моделей самолетов; бортовых номеров отдельных самолетов здесь нет. Здесь бизнес-поля хранятся как TEXT.",
+      "grain": "Одна модель самолета. Строка относится к загрузке STG.",
+      "keys": "Бизнес-ключ: `airplane_code`. Для хранимой строки учитывайте также `_load_id`: снимки разных запусков сосуществуют.",
+      "fields": [
+        {
+          "name": "airplane_code",
+          "meaning": "код модели"
+        },
+        {
+          "name": "model",
+          "meaning": "название модели"
+        },
+        {
+          "name": "range",
+          "meaning": "дальность полета"
+        },
+        {
+          "name": "speed",
+          "meaning": "скорость"
+        },
+        {
+          "name": "event_ts",
+          "meaning": "время снимка (`now()`)"
+        },
+        {
+          "name": "_load_id",
+          "meaning": "идентификатор загрузки"
+        },
+        {
+          "name": "_load_ts",
+          "meaning": "время записи в STG"
+        }
+      ],
+      "fill": "Полный снимок при каждом новом запуске STG; повтор в том же `_load_id` не добавляет строку повторно.",
+      "status": "ready",
+      "links": [
+        {
+          "label": "DDL",
+          "url": "../../sql/stg/airplanes_ddl.sql"
+        },
+        {
+          "label": "Загрузка",
+          "url": "../../sql/stg/airplanes_load.sql"
+        },
+        {
+          "label": "DQ",
+          "url": "../../sql/stg/airplanes_dq.sql"
+        }
+      ],
+      "parts": [
+        "stg.airplanes_ext"
+      ]
+    },
+    {
+      "id": "ods.airplanes",
+      "name": "ods.airplanes",
+      "layer": "ods",
+      "order": 7,
+      "what": "Справочник моделей самолетов; бортовых номеров отдельных самолетов здесь нет.",
+      "grain": "Одна модель самолета.",
+      "keys": "`airplane_code` — логический ключ текущей строки.",
+      "fields": [
+        {
+          "name": "airplane_code",
+          "meaning": "код модели"
+        },
+        {
+          "name": "model",
+          "meaning": "название модели"
+        },
+        {
+          "name": "range_km",
+          "meaning": "дальность полета"
+        },
+        {
+          "name": "speed_kmh",
+          "meaning": "скорость"
+        }
+      ],
+      "fill": "Ожидается по ТЗ: Полный снимок из согласованного батча STG (`stg_batch_id`): TRUNCATE + INSERT, одна строка на бизнес-ключ.",
+      "status": "student",
+      "links": [
+        {
+          "label": "DDL",
+          "url": "../../sql/ods/airplanes_ddl.sql"
+        },
+        {
+          "label": "Загрузка · заглушка",
+          "url": "../../sql/ods/airplanes_load.sql"
+        },
+        {
+          "label": "DQ · заглушка",
+          "url": "../../sql/ods/airplanes_dq.sql"
+        },
+        {
+          "label": "Задание 1.1",
+          "url": "../assignment/analyst_spec.md#11-odsairplanes"
+        }
+      ],
+      "parts": []
+    },
+    {
+      "id": "bookings.seats",
+      "name": "bookings.seats",
+      "layer": "source",
+      "order": 8,
+      "what": "Схема салона модели самолета. Номер места повторяется у разных моделей.",
+      "grain": "Одно место в салоне модели.",
+      "keys": "`airplane_code` + `seat_no` — логический ключ строки источника.",
+      "fields": [
+        {
+          "name": "airplane_code",
+          "meaning": "модель самолета"
+        },
+        {
+          "name": "seat_no",
+          "meaning": "номер места"
+        },
+        {
+          "name": "fare_conditions",
+          "meaning": "класс обслуживания места"
+        }
+      ],
+      "fill": "Демо-БД восстанавливается из seed-дампа; генератор добавляет учебные дни. PXF читает ее через `stg.seats_ext`.",
+      "status": "source",
+      "links": [
+        {
+          "label": "Источник и генератор",
+          "url": "../../bookings/README.md"
+        },
+        {
+          "label": "DDL входа PXF",
+          "url": "../../sql/stg/seats_ddl.sql"
+        }
+      ],
+      "parts": []
+    },
+    {
+      "id": "stg.seats",
+      "name": "stg.seats",
+      "layer": "stg",
+      "order": 8,
+      "what": "Схема салона модели самолета. Номер места повторяется у разных моделей. Здесь бизнес-поля хранятся как TEXT.",
+      "grain": "Одно место в салоне модели. Строка относится к загрузке STG.",
+      "keys": "Бизнес-ключ: `airplane_code` + `seat_no`. Для хранимой строки учитывайте также `_load_id`: снимки разных запусков сосуществуют.",
+      "fields": [
+        {
+          "name": "airplane_code",
+          "meaning": "модель самолета"
+        },
+        {
+          "name": "seat_no",
+          "meaning": "номер места"
+        },
+        {
+          "name": "fare_conditions",
+          "meaning": "класс обслуживания места"
+        },
+        {
+          "name": "event_ts",
+          "meaning": "время снимка (`now()`)"
+        },
+        {
+          "name": "_load_id",
+          "meaning": "идентификатор загрузки"
+        },
+        {
+          "name": "_load_ts",
+          "meaning": "время записи в STG"
+        }
+      ],
+      "fill": "Полный снимок при каждом новом запуске STG; повтор в том же `_load_id` не добавляет строку повторно.",
+      "status": "ready",
+      "links": [
+        {
+          "label": "DDL",
+          "url": "../../sql/stg/seats_ddl.sql"
+        },
+        {
+          "label": "Загрузка",
+          "url": "../../sql/stg/seats_load.sql"
+        },
+        {
+          "label": "DQ",
+          "url": "../../sql/stg/seats_dq.sql"
+        }
+      ],
+      "parts": [
+        "stg.seats_ext"
+      ]
+    },
+    {
+      "id": "ods.seats",
+      "name": "ods.seats",
+      "layer": "ods",
+      "order": 8,
+      "what": "Схема салона модели самолета. Номер места повторяется у разных моделей.",
+      "grain": "Одно место в салоне модели.",
+      "keys": "`airplane_code` + `seat_no` — логический ключ текущей строки.",
+      "fields": [
+        {
+          "name": "airplane_code",
+          "meaning": "модель самолета"
+        },
+        {
+          "name": "seat_no",
+          "meaning": "номер места"
+        },
+        {
+          "name": "fare_conditions",
+          "meaning": "класс обслуживания места"
+        }
+      ],
+      "fill": "Ожидается по ТЗ: Полный снимок из согласованного батча STG (`stg_batch_id`): TRUNCATE + INSERT, одна строка на бизнес-ключ.",
+      "status": "student",
+      "links": [
+        {
+          "label": "DDL",
+          "url": "../../sql/ods/seats_ddl.sql"
+        },
+        {
+          "label": "Загрузка · заглушка",
+          "url": "../../sql/ods/seats_load.sql"
+        },
+        {
+          "label": "DQ · заглушка",
+          "url": "../../sql/ods/seats_dq.sql"
+        },
+        {
+          "label": "Задание 1.2",
+          "url": "../assignment/analyst_spec.md#12-odsseats"
+        }
+      ],
+      "parts": []
+    },
+    {
+      "id": "dds.dim_calendar",
+      "name": "dds.dim_calendar",
+      "layer": "dds",
+      "order": 0,
+      "what": "Дает дату и календарные признаки рейса.",
+      "grain": "Одна календарная дата.",
+      "keys": "`date_actual` — дата; `calendar_sk` — ключ измерения.",
+      "fields": [
+        {
+          "name": "calendar_sk",
+          "meaning": "ключ даты"
+        },
+        {
+          "name": "date_actual",
+          "meaning": "дата"
+        },
+        {
+          "name": "year_actual",
+          "meaning": "год"
+        },
+        {
+          "name": "month_actual",
+          "meaning": "месяц"
+        },
+        {
+          "name": "day_of_week",
+          "meaning": "день недели ISO"
+        },
+        {
+          "name": "is_weekend",
+          "meaning": "суббота или воскресенье"
+        }
+      ],
+      "fill": "Генерация дат 2016–2030 только при пустой таблице. Календарь не читается из ODS.",
+      "status": "ready",
+      "links": [
+        {
+          "label": "DDL",
+          "url": "../../sql/dds/dim_calendar_ddl.sql"
+        },
+        {
+          "label": "Загрузка",
+          "url": "../../sql/dds/dim_calendar_load.sql"
+        },
+        {
+          "label": "DQ",
+          "url": "../../sql/dds/dim_calendar_dq.sql"
+        }
+      ],
+      "parts": []
+    },
+    {
+      "id": "dds.dim_tariffs",
+      "name": "dds.dim_tariffs",
+      "layer": "dds",
+      "order": 1,
+      "what": "Выносит классы обслуживания из сегментов в измерение.",
+      "grain": "Один класс обслуживания.",
+      "keys": "`fare_conditions` — бизнес-ключ; `tariff_sk` — ключ измерения.",
+      "fields": [
+        {
+          "name": "tariff_sk",
+          "meaning": "ключ класса"
+        },
+        {
+          "name": "fare_conditions",
+          "meaning": "Economy, Business или Comfort"
+        }
+      ],
+      "fill": "DISTINCT непустых `ods.segments.fare_conditions`; вставляются только новые значения с новым SK.",
+      "status": "ready",
+      "links": [
+        {
+          "label": "DDL",
+          "url": "../../sql/dds/dim_tariffs_ddl.sql"
+        },
+        {
+          "label": "Загрузка",
+          "url": "../../sql/dds/dim_tariffs_load.sql"
+        },
+        {
+          "label": "DQ",
+          "url": "../../sql/dds/dim_tariffs_dq.sql"
+        }
+      ],
+      "parts": []
+    },
+    {
+      "id": "dds.dim_passengers",
+      "name": "dds.dim_passengers",
+      "layer": "dds",
+      "order": 2,
+      "what": "Собирает пассажиров из билетов: отдельного справочника пассажиров в источнике нет.",
+      "grain": "Один пассажир, даже если у него много билетов.",
+      "keys": "`passenger_id` — бизнес-ключ; `passenger_sk` — ключ измерения.",
+      "fields": [
+        {
+          "name": "passenger_sk",
+          "meaning": "ключ пассажира"
+        },
+        {
+          "name": "passenger_id",
+          "meaning": "идентификатор из билетов"
+        },
+        {
+          "name": "passenger_name",
+          "meaning": "актуальное имя"
+        }
+      ],
+      "fill": "По ТЗ: SCD1; выбрать актуальное имя из билетов, добавлять новых пассажиров и обновлять изменившиеся имена.",
+      "status": "student",
+      "links": [
+        {
+          "label": "DDL",
+          "url": "../../sql/dds/dim_passengers_ddl.sql"
+        },
+        {
+          "label": "Загрузка · заглушка",
+          "url": "../../sql/dds/dim_passengers_load.sql"
+        },
+        {
+          "label": "DQ · заглушка",
+          "url": "../../sql/dds/dim_passengers_dq.sql"
+        },
+        {
+          "label": "Задание",
+          "url": "../assignment/analyst_spec.md#22-ddsdim_passengers-scd1"
+        }
+      ],
+      "parts": []
+    },
+    {
+      "id": "dds.dim_routes",
+      "name": "dds.dim_routes",
+      "layer": "dds",
+      "order": 3,
+      "what": "Хранит версии маршрута для выбора состояния на дату рейса.",
+      "grain": "Одна версия маршрута на интервале `[valid_from, valid_to)`.",
+      "keys": "`route_bk` повторяется в истории; `route_sk` обозначает одну версию. `valid_to IS NULL` — открытая версия.",
+      "fields": [
+        {
+          "name": "route_sk",
+          "meaning": "ключ версии"
+        },
+        {
+          "name": "route_bk",
+          "meaning": "номер маршрута"
+        },
+        {
+          "name": "airplane_code",
+          "meaning": "модель самолета этой версии"
+        },
+        {
+          "name": "departure_airport",
+          "meaning": "код вылета"
+        },
+        {
+          "name": "arrival_airport",
+          "meaning": "код прилета"
+        },
+        {
+          "name": "total_seats",
+          "meaning": "число мест"
+        },
+        {
+          "name": "valid_from",
+          "meaning": "начало версии"
+        },
+        {
+          "name": "valid_to",
+          "meaning": "конец версии, не включается"
+        },
+        {
+          "name": "hashdiff",
+          "meaning": "признак изменения атрибутов"
+        }
+      ],
+      "fill": "По ТЗ: SCD2 для атрибутов маршрута; города, модель и число мест обогащаются из измерений. Их обновление у открытых версий само по себе новую версию не создает.",
+      "status": "student",
+      "links": [
+        {
+          "label": "DDL",
+          "url": "../../sql/dds/dim_routes_ddl.sql"
+        },
+        {
+          "label": "Загрузка · заглушка",
+          "url": "../../sql/dds/dim_routes_load.sql"
+        },
+        {
+          "label": "DQ · заглушка",
+          "url": "../../sql/dds/dim_routes_dq.sql"
+        },
+        {
+          "label": "Задание",
+          "url": "../assignment/analyst_spec.md#23-ddsdim_routes-scd2"
+        }
+      ],
+      "parts": []
+    },
+    {
+      "id": "dds.fact_flight_sales",
+      "name": "dds.fact_flight_sales",
+      "layer": "dds",
+      "order": 4,
+      "what": "Связывает проданный сегмент с измерениями; служит основой витрин.",
+      "grain": "Один сегмент билета: `(ticket_no, flight_id)`. Один билет с пересадкой дает несколько строк.",
+      "keys": "`ticket_no` + `flight_id` — логическое зерно. `book_ref` повторяется у разных билетов и сегментов. Собственного `fact_sk` нет.",
+      "fields": [
+        {
+          "name": "ticket_no",
+          "meaning": "билет"
+        },
+        {
+          "name": "flight_id",
+          "meaning": "рейс"
+        },
+        {
+          "name": "book_ref",
+          "meaning": "бронирование"
+        },
+        {
+          "name": "book_date",
+          "meaning": "дата бронирования"
+        },
+        {
+          "name": "price",
+          "meaning": "цена сегмента из `ods.segments.amount`"
+        },
+        {
+          "name": "is_boarded",
+          "meaning": "есть ли посадочный талон"
+        },
+        {
+          "name": "seat_no",
+          "meaning": "место из талона"
+        },
+        {
+          "name": "calendar_sk",
+          "meaning": "дата вылета"
+        },
+        {
+          "name": "departure_airport_sk",
+          "meaning": "аэропорт вылета"
+        },
+        {
+          "name": "arrival_airport_sk",
+          "meaning": "аэропорт прилета"
+        },
+        {
+          "name": "route_sk",
+          "meaning": "версия маршрута на дату вылета"
+        },
+        {
+          "name": "airplane_sk",
+          "meaning": "модель через выбранную версию маршрута"
+        },
+        {
+          "name": "passenger_sk",
+          "meaning": "пассажир"
+        },
+        {
+          "name": "tariff_sk",
+          "meaning": "класс обслуживания"
+        }
+      ],
+      "fill": "INSERT новых пар `(ticket_no, flight_id)`; UPDATE меняет только `seat_no`, `price`, `is_boarded` и метаданные загрузки. Ключи измерений фиксируются при вставке. До выполнения заданий `passenger_sk`, `route_sk`, `airplane_sk` могут быть NULL. Повторный запуск их не заполнит: после реализации измерений нужен пересчет факта по ТЗ.",
+      "status": "ready",
+      "links": [
+        {
+          "label": "DDL",
+          "url": "../../sql/dds/fact_flight_sales_ddl.sql"
+        },
+        {
+          "label": "Загрузка",
+          "url": "../../sql/dds/fact_flight_sales_load.sql"
+        },
+        {
+          "label": "DQ",
+          "url": "../../sql/dds/fact_flight_sales_dq.sql"
+        },
+        {
+          "label": "Пересчет после реализации измерений",
+          "url": "../assignment/analyst_spec.md#пересчёт-факта-после-реализации-измерений"
+        }
+      ],
+      "parts": []
+    },
+    {
+      "id": "dds.dim_airports",
+      "name": "dds.dim_airports",
+      "layer": "dds",
+      "order": 6,
+      "what": "Один справочник для двух ролей аэропорта в факте: вылет и прилет.",
+      "grain": "Один аэропорт в текущем состоянии.",
+      "keys": "`airport_bk` — код из `ods.airports.airport_code`; `airport_sk` — ключ измерения.",
+      "fields": [
+        {
+          "name": "airport_sk",
+          "meaning": "ключ аэропорта"
+        },
+        {
+          "name": "airport_bk",
+          "meaning": "код аэропорта"
+        },
+        {
+          "name": "city",
+          "meaning": "город"
+        },
+        {
+          "name": "airport_name",
+          "meaning": "название"
+        },
+        {
+          "name": "timezone",
+          "meaning": "часовой пояс"
+        }
+      ],
+      "fill": "SCD1 из `ods.airports`: UPDATE изменившихся атрибутов, INSERT новых аэропортов с новым SK.",
+      "status": "ready",
+      "links": [
+        {
+          "label": "DDL",
+          "url": "../../sql/dds/dim_airports_ddl.sql"
+        },
+        {
+          "label": "Загрузка",
+          "url": "../../sql/dds/dim_airports_load.sql"
+        },
+        {
+          "label": "DQ",
+          "url": "../../sql/dds/dim_airports_dq.sql"
+        }
+      ],
+      "parts": []
+    },
+    {
+      "id": "dds.dim_airplanes",
+      "name": "dds.dim_airplanes",
+      "layer": "dds",
+      "order": 7,
+      "what": "Описывает модель самолета и вместимость ее салона.",
+      "grain": "Одна модель самолета.",
+      "keys": "`airplane_bk` — код модели; `airplane_sk` — ключ измерения.",
+      "fields": [
+        {
+          "name": "airplane_sk",
+          "meaning": "ключ модели"
+        },
+        {
+          "name": "airplane_bk",
+          "meaning": "код модели"
+        },
+        {
+          "name": "model",
+          "meaning": "название"
+        },
+        {
+          "name": "total_seats",
+          "meaning": "количество мест из `ods.seats`"
+        },
+        {
+          "name": "range_km",
+          "meaning": "дальность, км"
+        },
+        {
+          "name": "speed_kmh",
+          "meaning": "скорость, км/ч"
+        }
+      ],
+      "fill": "По ТЗ: SCD1 из `ods.airplanes` с подсчетом мест из `ods.seats` по коду модели. Сейчас загрузка и DQ — заглушки.",
+      "status": "student",
+      "links": [
+        {
+          "label": "DDL",
+          "url": "../../sql/dds/dim_airplanes_ddl.sql"
+        },
+        {
+          "label": "Загрузка · заглушка",
+          "url": "../../sql/dds/dim_airplanes_load.sql"
+        },
+        {
+          "label": "DQ · заглушка",
+          "url": "../../sql/dds/dim_airplanes_dq.sql"
+        },
+        {
+          "label": "Задание",
+          "url": "../assignment/analyst_spec.md#21-ddsdim_airplanes-scd1"
+        }
+      ],
+      "parts": []
+    },
+    {
+      "id": "dm.sales_report",
+      "name": "dm.sales_report",
+      "layer": "dm",
+      "order": 0,
+      "what": "Показывает выручку и долю посадок по направлениям и классам обслуживания.",
+      "grain": "Один день вылета × аэропорт вылета × аэропорт прилета × класс обслуживания.",
+      "keys": "`flight_date` + `departure_airport_sk` + `arrival_airport_sk` + `tariff_sk` — логический ключ агрегата.",
+      "fields": [
+        {
+          "name": "flight_date",
+          "meaning": "дата вылета"
+        },
+        {
+          "name": "departure_airport_sk",
+          "meaning": "аэропорт вылета"
+        },
+        {
+          "name": "arrival_airport_sk",
+          "meaning": "аэропорт прилета"
+        },
+        {
+          "name": "tariff_sk",
+          "meaning": "класс обслуживания"
+        },
+        {
+          "name": "tickets_sold",
+          "meaning": "число сегментов, COUNT(*) факта"
+        },
+        {
+          "name": "total_revenue",
+          "meaning": "сумма цен сегментов"
+        },
+        {
+          "name": "passengers_boarded",
+          "meaning": "сегменты с посадочным талоном"
+        },
+        {
+          "name": "boarding_rate",
+          "meaning": "доля сегментов с талоном"
+        }
+      ],
+      "fill": "По HWM факта выбираются затронутые даты; за эти даты агрегируются все факты, выполняются UPDATE и INSERT.",
+      "status": "ready",
+      "links": [
+        {
+          "label": "DDL",
+          "url": "../../sql/dm/sales_report_ddl.sql"
+        },
+        {
+          "label": "Загрузка",
+          "url": "../../sql/dm/sales_report_load.sql"
+        },
+        {
+          "label": "DQ",
+          "url": "../../sql/dm/sales_report_dq.sql"
+        }
+      ],
+      "parts": []
+    },
+    {
+      "id": "dm.airport_traffic",
+      "name": "dm.airport_traffic",
+      "layer": "dm",
+      "order": 2,
+      "what": "Сводит вылеты и прилеты каждого аэропорта за день.",
+      "grain": "Один аэропорт за день.",
+      "keys": "`traffic_date` + `airport_sk` — логический ключ агрегата.",
+      "fields": [
+        {
+          "name": "traffic_date",
+          "meaning": "дата из календаря вылета"
+        },
+        {
+          "name": "airport_sk",
+          "meaning": "аэропорт в роли вылета или прилета"
+        },
+        {
+          "name": "total_passengers",
+          "meaning": "посадки по обеим ролям"
+        },
+        {
+          "name": "departures_revenue",
+          "meaning": "выручка вылетов"
+        },
+        {
+          "name": "arrivals_revenue",
+          "meaning": "выручка прилетов"
+        }
+      ],
+      "fill": "По ТЗ: пересчитывать затронутые дни. Каждый факт участвует в двух ролях. Выручку вылетов и прилетов нельзя складывать: получится двойной счет. Дата обеих ролей берется из календаря факта (дата вылета).",
+      "status": "student",
+      "links": [
+        {
+          "label": "DDL",
+          "url": "../../sql/dm/airport_traffic_ddl.sql"
+        },
+        {
+          "label": "Загрузка · заглушка",
+          "url": "../../sql/dm/airport_traffic_load.sql"
+        },
+        {
+          "label": "DQ · заглушка",
+          "url": "../../sql/dm/airport_traffic_dq.sql"
+        },
+        {
+          "label": "Задание",
+          "url": "../assignment/analyst_spec.md#31-dmairport_traffic"
+        }
+      ],
+      "parts": []
+    },
+    {
+      "id": "dm.route_performance",
+      "name": "dm.route_performance",
+      "layer": "dm",
+      "order": 4,
+      "what": "Сравнивает маршруты по выручке, посадкам и заполняемости.",
+      "grain": "Один маршрут за всю историю, объединяя его версии.",
+      "keys": "`route_bk` — логический ключ агрегата.",
+      "fields": [
+        {
+          "name": "route_bk",
+          "meaning": "маршрут независимо от версии"
+        },
+        {
+          "name": "route_sk",
+          "meaning": "ключ текущей версии"
+        },
+        {
+          "name": "total_flights",
+          "meaning": "уникальные рейсы"
+        },
+        {
+          "name": "total_tickets",
+          "meaning": "проданные сегменты"
+        },
+        {
+          "name": "avg_load_factor",
+          "meaning": "посадки относительно числа рейсов и мест текущей версии"
+        }
+      ],
+      "fill": "По ТЗ: полный пересчет; факты всех версий группируются по бизнес-ключу маршрута, описания берутся из открытой версии.",
+      "status": "student",
+      "links": [
+        {
+          "label": "DDL",
+          "url": "../../sql/dm/route_performance_ddl.sql"
+        },
+        {
+          "label": "Загрузка · заглушка",
+          "url": "../../sql/dm/route_performance_load.sql"
+        },
+        {
+          "label": "DQ · заглушка",
+          "url": "../../sql/dm/route_performance_dq.sql"
+        },
+        {
+          "label": "Задание",
+          "url": "../assignment/analyst_spec.md#32-dmroute_performance"
+        }
+      ],
+      "parts": []
+    },
+    {
+      "id": "dm.monthly_overview",
+      "name": "dm.monthly_overview",
+      "layer": "dm",
+      "order": 6,
+      "what": "Показывает помесячные показатели по моделям самолетов.",
+      "grain": "Одна модель самолета за месяц.",
+      "keys": "`year_actual` + `month_actual` + `airplane_sk` — логический ключ агрегата.",
+      "fields": [
+        {
+          "name": "year_actual",
+          "meaning": "год"
+        },
+        {
+          "name": "month_actual",
+          "meaning": "месяц"
+        },
+        {
+          "name": "airplane_sk",
+          "meaning": "модель"
+        },
+        {
+          "name": "total_flights",
+          "meaning": "число уникальных рейсов"
+        },
+        {
+          "name": "avg_load_factor",
+          "meaning": "средняя заполняемость по рейсам"
+        }
+      ],
+      "fill": "По ТЗ: пересчитывать затронутые месяцы; сначала считать показатели рейса, затем месяца.",
+      "status": "student",
+      "links": [
+        {
+          "label": "DDL",
+          "url": "../../sql/dm/monthly_overview_ddl.sql"
+        },
+        {
+          "label": "Загрузка · заглушка",
+          "url": "../../sql/dm/monthly_overview_load.sql"
+        },
+        {
+          "label": "DQ · заглушка",
+          "url": "../../sql/dm/monthly_overview_dq.sql"
+        },
+        {
+          "label": "Задание",
+          "url": "../assignment/analyst_spec.md#33-dmmonthly_overview"
+        }
+      ],
+      "parts": []
+    },
+    {
+      "id": "dm.passenger_loyalty",
+      "name": "dm.passenger_loyalty",
+      "layer": "dm",
+      "order": 8,
+      "what": "Собирает историю перелетов и трат пассажира.",
+      "grain": "Один пассажир за всю историю.",
+      "keys": "`passenger_sk` — логический ключ агрегата.",
+      "fields": [
+        {
+          "name": "passenger_sk",
+          "meaning": "ключ пассажира"
+        },
+        {
+          "name": "passenger_bk",
+          "meaning": "исходный passenger_id"
+        },
+        {
+          "name": "total_bookings",
+          "meaning": "уникальные бронирования"
+        },
+        {
+          "name": "total_flights",
+          "meaning": "число сегментов пассажира"
+        },
+        {
+          "name": "total_spent",
+          "meaning": "сумма цен"
+        },
+        {
+          "name": "favorite_fare_conditions",
+          "meaning": "самый частый класс обслуживания"
+        }
+      ],
+      "fill": "По ТЗ: пересчитывать всю историю пассажиров, чьи факты изменились. Строки без `passenger_sk` исключаются.",
+      "status": "student",
+      "links": [
+        {
+          "label": "DDL",
+          "url": "../../sql/dm/passenger_loyalty_ddl.sql"
+        },
+        {
+          "label": "Загрузка · заглушка",
+          "url": "../../sql/dm/passenger_loyalty_load.sql"
+        },
+        {
+          "label": "DQ · заглушка",
+          "url": "../../sql/dm/passenger_loyalty_dq.sql"
+        },
+        {
+          "label": "Задание",
+          "url": "../assignment/analyst_spec.md#34-dmpassenger_loyalty"
+        }
+      ],
+      "parts": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "flow-bookings.bookings-stg.bookings-0",
+      "from": "bookings.bookings",
+      "to": "stg.bookings",
+      "label": "Чтение через PXF",
+      "join": "`stg.bookings_ext` читает `bookings.bookings` без локальной копии. Загрузчик переносит выбранные строки в `stg.bookings`. Добавление строк по `event_ts` предыдущих загрузок. Опорное время — `book_date` бронирования. Повтор защищен ключом строки внутри `_load_id`.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "bookings.bookings",
+          "columns": [
+            "book_ref"
+          ]
+        },
+        {
+          "node": "stg.bookings",
+          "columns": [
+            "book_ref"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/stg/bookings_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "flow-stg.bookings-ods.bookings-1",
+      "from": "stg.bookings",
+      "to": "ods.bookings",
+      "label": "Типизация и загрузка ODS",
+      "join": "Дельта из STG по `_load_ts`, приведение типов, выбор последней строки по бизнес-ключу; UPDATE изменившихся и INSERT новых. Время и идентификатор загрузки сохраняются из STG.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "stg.bookings",
+          "columns": [
+            "book_ref"
+          ]
+        },
+        {
+          "node": "ods.bookings",
+          "columns": [
+            "book_ref"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/ods/bookings_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "flow-bookings.tickets-stg.tickets-2",
+      "from": "bookings.tickets",
+      "to": "stg.tickets",
+      "label": "Чтение через PXF",
+      "join": "`stg.tickets_ext` читает `bookings.tickets` без локальной копии. Загрузчик переносит выбранные строки в `stg.tickets`. Добавление строк по `event_ts` предыдущих загрузок. Опорное время — `book_date` бронирования. Уже сохраненный `ticket_no` повторно не вставляется.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "bookings.tickets",
+          "columns": [
+            "ticket_no"
+          ]
+        },
+        {
+          "node": "stg.tickets",
+          "columns": [
+            "ticket_no"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/stg/tickets_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "flow-stg.tickets-ods.tickets-3",
+      "from": "stg.tickets",
+      "to": "ods.tickets",
+      "label": "Типизация и загрузка ODS",
+      "join": "Дельта из STG по `_load_ts`, приведение типов, выбор последней строки по бизнес-ключу; UPDATE изменившихся и INSERT новых. Время и идентификатор загрузки сохраняются из STG. `outbound` становится `is_outbound` (BOOLEAN).",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "stg.tickets",
+          "columns": [
+            "ticket_no"
+          ]
+        },
+        {
+          "node": "ods.tickets",
+          "columns": [
+            "ticket_no"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/ods/tickets_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "flow-bookings.segments-stg.segments-4",
+      "from": "bookings.segments",
+      "to": "stg.segments",
+      "label": "Чтение через PXF",
+      "join": "`stg.segments_ext` читает `bookings.segments` без локальной копии. Загрузчик переносит выбранные строки в `stg.segments`. Добавление строк по `event_ts` предыдущих загрузок. Опорное время — `book_date` бронирования. Повтор защищен ключом строки внутри `_load_id`.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "bookings.segments",
+          "columns": [
+            "ticket_no",
+            "flight_id"
+          ]
+        },
+        {
+          "node": "stg.segments",
+          "columns": [
+            "ticket_no",
+            "flight_id"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/stg/segments_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "flow-stg.segments-ods.segments-5",
+      "from": "stg.segments",
+      "to": "ods.segments",
+      "label": "Типизация и загрузка ODS",
+      "join": "Дельта из STG по `_load_ts`, приведение типов, выбор последней строки по бизнес-ключу; UPDATE изменившихся и INSERT новых. Время и идентификатор загрузки сохраняются из STG. `stg.segments.price` становится `amount` (NUMERIC).",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "stg.segments",
+          "columns": [
+            "ticket_no",
+            "flight_id"
+          ]
+        },
+        {
+          "node": "ods.segments",
+          "columns": [
+            "ticket_no",
+            "flight_id"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/ods/segments_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "flow-bookings.flights-stg.flights-6",
+      "from": "bookings.flights",
+      "to": "stg.flights",
+      "label": "Чтение через PXF",
+      "join": "`stg.flights_ext` читает `bookings.flights` без локальной копии. Загрузчик переносит выбранные строки в `stg.flights`. Добавление строк по `event_ts` предыдущих загрузок. Опорное время — `scheduled_departure`. Повтор защищен ключом строки внутри `_load_id`.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "bookings.flights",
+          "columns": [
+            "flight_id"
+          ]
+        },
+        {
+          "node": "stg.flights",
+          "columns": [
+            "flight_id"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/stg/flights_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "flow-stg.flights-ods.flights-7",
+      "from": "stg.flights",
+      "to": "ods.flights",
+      "label": "Типизация и загрузка ODS",
+      "join": "Дельта из STG по `_load_ts`, приведение типов, выбор последней строки по бизнес-ключу; UPDATE изменившихся и INSERT новых. Время и идентификатор загрузки сохраняются из STG. Дополнительно берутся рейсы из истории STG, на которые ссылаются новые `stg.segments`.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "stg.flights",
+          "columns": [
+            "flight_id"
+          ]
+        },
+        {
+          "node": "ods.flights",
+          "columns": [
+            "flight_id"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/ods/flights_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "flow-bookings.boarding_passes-stg.boarding_passes-8",
+      "from": "bookings.boarding_passes",
+      "to": "stg.boarding_passes",
+      "label": "Чтение через PXF",
+      "join": "`stg.boarding_passes_ext` читает `bookings.boarding_passes` без локальной копии. Загрузчик переносит выбранные строки в `stg.boarding_passes`. Добавление строк по `event_ts` предыдущих загрузок. Опорное время — `book_date` бронирования. Повтор защищен ключом строки внутри `_load_id`.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "bookings.boarding_passes",
+          "columns": [
+            "ticket_no",
+            "flight_id"
+          ]
+        },
+        {
+          "node": "stg.boarding_passes",
+          "columns": [
+            "ticket_no",
+            "flight_id"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/stg/boarding_passes_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "flow-stg.boarding_passes-ods.boarding_passes-9",
+      "from": "stg.boarding_passes",
+      "to": "ods.boarding_passes",
+      "label": "Типизация и загрузка ODS",
+      "join": "Дельта из STG по `_load_ts`, приведение типов, выбор последней строки по бизнес-ключу; UPDATE изменившихся и INSERT новых. Время и идентификатор загрузки сохраняются из STG.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "stg.boarding_passes",
+          "columns": [
+            "ticket_no",
+            "flight_id"
+          ]
+        },
+        {
+          "node": "ods.boarding_passes",
+          "columns": [
+            "ticket_no",
+            "flight_id"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/ods/boarding_passes_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "flow-bookings.routes-stg.routes-10",
+      "from": "bookings.routes",
+      "to": "stg.routes",
+      "label": "Чтение через PXF",
+      "join": "`stg.routes_ext` читает `bookings.routes` без локальной копии. Загрузчик переносит выбранные строки в `stg.routes`. Полный снимок при каждом новом запуске STG; повтор в том же `_load_id` не добавляет строку повторно.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "bookings.routes",
+          "columns": [
+            "route_no",
+            "validity"
+          ]
+        },
+        {
+          "node": "stg.routes",
+          "columns": [
+            "route_no",
+            "validity"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/stg/routes_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "flow-stg.routes-ods.routes-11",
+      "from": "stg.routes",
+      "to": "ods.routes",
+      "label": "Типизация и загрузка ODS",
+      "join": "Полный снимок из согласованного батча STG (`stg_batch_id`): TRUNCATE + INSERT, одна строка на бизнес-ключ. `scheduled_time` становится `departure_time` (TIME), `days_of_week` — INTEGER[], `duration` — INTERVAL.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "stg.routes",
+          "columns": [
+            "route_no",
+            "validity"
+          ]
+        },
+        {
+          "node": "ods.routes",
+          "columns": [
+            "route_no",
+            "validity"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/ods/routes_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "flow-bookings.airports_data-stg.airports-12",
+      "from": "bookings.airports_data",
+      "to": "stg.airports",
+      "label": "Чтение через PXF",
+      "join": "`stg.airports_ext` читает `bookings.airports_data` без локальной копии. Загрузчик переносит выбранные строки в `stg.airports`. Полный снимок при каждом новом запуске STG; повтор в том же `_load_id` не добавляет строку повторно.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "bookings.airports_data",
+          "columns": [
+            "airport_code"
+          ]
+        },
+        {
+          "node": "stg.airports",
+          "columns": [
+            "airport_code"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/stg/airports_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "flow-stg.airports-ods.airports-13",
+      "from": "stg.airports",
+      "to": "ods.airports",
+      "label": "Типизация и загрузка ODS",
+      "join": "Полный снимок из согласованного батча STG (`stg_batch_id`): TRUNCATE + INSERT, одна строка на бизнес-ключ. Из JSON извлекаются русские названия аэропорта, города и страны.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "stg.airports",
+          "columns": [
+            "airport_code"
+          ]
+        },
+        {
+          "node": "ods.airports",
+          "columns": [
+            "airport_code"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/ods/airports_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "flow-bookings.airplanes_data-stg.airplanes-14",
+      "from": "bookings.airplanes_data",
+      "to": "stg.airplanes",
+      "label": "Чтение через PXF",
+      "join": "`stg.airplanes_ext` читает `bookings.airplanes_data` без локальной копии. Загрузчик переносит выбранные строки в `stg.airplanes`. Полный снимок при каждом новом запуске STG; повтор в том же `_load_id` не добавляет строку повторно.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "bookings.airplanes_data",
+          "columns": [
+            "airplane_code"
+          ]
+        },
+        {
+          "node": "stg.airplanes",
+          "columns": [
+            "airplane_code"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/stg/airplanes_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "flow-stg.airplanes-ods.airplanes-15",
+      "from": "stg.airplanes",
+      "to": "ods.airplanes",
+      "label": "Типизация и загрузка ODS",
+      "join": "Ожидается по ТЗ: Полный снимок из согласованного батча STG (`stg_batch_id`): TRUNCATE + INSERT, одна строка на бизнес-ключ.",
+      "mode": "flow",
+      "status": "student",
+      "refs": [
+        {
+          "node": "stg.airplanes",
+          "columns": [
+            "airplane_code"
+          ]
+        },
+        {
+          "node": "ods.airplanes",
+          "columns": [
+            "airplane_code"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "ТЗ",
+          "url": "../assignment/analyst_spec.md#11-odsairplanes"
+        }
+      ]
+    },
+    {
+      "id": "flow-bookings.seats-stg.seats-16",
+      "from": "bookings.seats",
+      "to": "stg.seats",
+      "label": "Чтение через PXF",
+      "join": "`stg.seats_ext` читает `bookings.seats` без локальной копии. Загрузчик переносит выбранные строки в `stg.seats`. Полный снимок при каждом новом запуске STG; повтор в том же `_load_id` не добавляет строку повторно.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "bookings.seats",
+          "columns": [
+            "airplane_code",
+            "seat_no"
+          ]
+        },
+        {
+          "node": "stg.seats",
+          "columns": [
+            "airplane_code",
+            "seat_no"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/stg/seats_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "flow-stg.seats-ods.seats-17",
+      "from": "stg.seats",
+      "to": "ods.seats",
+      "label": "Типизация и загрузка ODS",
+      "join": "Ожидается по ТЗ: Полный снимок из согласованного батча STG (`stg_batch_id`): TRUNCATE + INSERT, одна строка на бизнес-ключ.",
+      "mode": "flow",
+      "status": "student",
+      "refs": [
+        {
+          "node": "stg.seats",
+          "columns": [
+            "airplane_code",
+            "seat_no"
+          ]
+        },
+        {
+          "node": "ods.seats",
+          "columns": [
+            "airplane_code",
+            "seat_no"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "ТЗ",
+          "url": "../assignment/analyst_spec.md#12-odsseats"
+        }
+      ]
+    },
+    {
+      "id": "flow-bookings.bookings-stg.tickets-18",
+      "from": "bookings.bookings",
+      "to": "stg.tickets",
+      "label": "Дата отбора",
+      "join": "`book_date` из `stg.bookings_ext` определяет окно. INNER JOIN по `book_ref` с билетом. Без бронирования строка не проходит соединение.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "bookings.bookings",
+          "columns": [
+            "book_ref",
+            "book_date"
+          ]
+        },
+        {
+          "node": "bookings.tickets",
+          "columns": [
+            "ticket_no",
+            "book_ref"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/stg/tickets_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "flow-bookings.bookings-stg.segments-19",
+      "from": "bookings.bookings",
+      "to": "stg.segments",
+      "label": "Дата отбора",
+      "join": "`book_date` из `stg.bookings_ext` определяет окно. Сегмент/талон соединяется с `stg.tickets_ext` по `ticket_no`, затем с `stg.bookings_ext` по `book_ref`. Без бронирования строка не проходит соединение.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "bookings.bookings",
+          "columns": [
+            "book_ref",
+            "book_date"
+          ]
+        },
+        {
+          "node": "bookings.tickets",
+          "columns": [
+            "ticket_no",
+            "book_ref"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/stg/segments_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "flow-bookings.bookings-stg.boarding_passes-20",
+      "from": "bookings.bookings",
+      "to": "stg.boarding_passes",
+      "label": "Дата отбора",
+      "join": "`book_date` из `stg.bookings_ext` определяет окно. Сегмент/талон соединяется с `stg.tickets_ext` по `ticket_no`, затем с `stg.bookings_ext` по `book_ref`. Без бронирования строка не проходит соединение.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "bookings.bookings",
+          "columns": [
+            "book_ref",
+            "book_date"
+          ]
+        },
+        {
+          "node": "bookings.tickets",
+          "columns": [
+            "ticket_no",
+            "book_ref"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/stg/boarding_passes_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "flow-bookings.tickets-stg.segments-21",
+      "from": "bookings.tickets",
+      "to": "stg.segments",
+      "label": "Билет для отбора",
+      "join": "INNER JOIN по `ticket_no` дает `book_ref`, через него находится дата бронирования. Без билета строка не попадет в STG.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "bookings.tickets",
+          "columns": [
+            "ticket_no",
+            "book_ref"
+          ]
+        },
+        {
+          "node": "stg.segments",
+          "columns": [
+            "ticket_no"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/stg/segments_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "flow-bookings.tickets-stg.boarding_passes-22",
+      "from": "bookings.tickets",
+      "to": "stg.boarding_passes",
+      "label": "Билет для отбора",
+      "join": "INNER JOIN по `ticket_no` дает `book_ref`, через него находится дата бронирования. Без билета строка не попадет в STG.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "bookings.tickets",
+          "columns": [
+            "ticket_no",
+            "book_ref"
+          ]
+        },
+        {
+          "node": "stg.boarding_passes",
+          "columns": [
+            "ticket_no"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/stg/boarding_passes_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "flow-stg.segments-ods.flights-23",
+      "from": "stg.segments",
+      "to": "ods.flights",
+      "label": "Рейсы новых сегментов",
+      "join": "`flight_id` новых сегментов определяет, какие рейсы дополнительно взять из истории `stg.flights`. Если рейса там нет, эта ветка его не создаст; связь проверяет DQ сегментов.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "stg.segments",
+          "columns": [
+            "flight_id",
+            "_load_ts"
+          ]
+        },
+        {
+          "node": "stg.flights",
+          "columns": [
+            "flight_id"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/ods/flights_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "flow-ods.airports-dds.dim_airports-24",
+      "from": "ods.airports",
+      "to": "dds.dim_airports",
+      "label": "Код аэропорта → SK",
+      "join": "`airport_code = airport_bk`: атрибуты существующего аэропорта обновляются, для нового кода создается строка с SK.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "ods.airports",
+          "columns": [
+            "airport_code"
+          ]
+        },
+        {
+          "node": "dds.dim_airports",
+          "columns": [
+            "airport_bk",
+            "airport_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/dds/dim_airports_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "flow-ods.segments-dds.dim_tariffs-25",
+      "from": "ods.segments",
+      "to": "dds.dim_tariffs",
+      "label": "Уникальные классы",
+      "join": "Из `fare_conditions` выбираются уникальные непустые значения. Новому классу назначается `tariff_sk`; отсутствие сегментов не удаляет старые классы.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "ods.segments",
+          "columns": [
+            "fare_conditions"
+          ]
+        },
+        {
+          "node": "dds.dim_tariffs",
+          "columns": [
+            "fare_conditions",
+            "tariff_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/dds/dim_tariffs_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "flow-ods.airplanes-dds.dim_airplanes-26",
+      "from": "ods.airplanes",
+      "to": "dds.dim_airplanes",
+      "label": "Описание модели",
+      "join": "По ТЗ: `airplane_code` становится `airplane_bk`; характеристики модели получают свой SK.",
+      "mode": "flow",
+      "status": "student",
+      "refs": [
+        {
+          "node": "ods.airplanes",
+          "columns": [
+            "airplane_code"
+          ]
+        },
+        {
+          "node": "dds.dim_airplanes",
+          "columns": [
+            "airplane_bk",
+            "airplane_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "ТЗ",
+          "url": "../assignment/analyst_spec.md#21-ddsdim_airplanes-scd1"
+        }
+      ]
+    },
+    {
+      "id": "flow-ods.seats-dds.dim_airplanes-27",
+      "from": "ods.seats",
+      "to": "dds.dim_airplanes",
+      "label": "Вместимость модели",
+      "join": "По ТЗ: места считаются по `airplane_code` и добавляют `total_seats`. LEFT JOIN сохраняет модель без совпавших мест. Точное значение для отсутствующих мест ТЗ не оговаривает; нулевую вместимость нельзя трактовать как известную.",
+      "mode": "flow",
+      "status": "student",
+      "refs": [
+        {
+          "node": "ods.seats",
+          "columns": [
+            "airplane_code",
+            "seat_no"
+          ]
+        },
+        {
+          "node": "dds.dim_airplanes",
+          "columns": [
+            "airplane_bk",
+            "total_seats"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "ТЗ",
+          "url": "../assignment/analyst_spec.md#21-ddsdim_airplanes-scd1"
+        }
+      ]
+    },
+    {
+      "id": "flow-ods.tickets-dds.dim_passengers-28",
+      "from": "ods.tickets",
+      "to": "dds.dim_passengers",
+      "label": "Пассажиры из билетов",
+      "join": "По ТЗ: несколько билетов одного `passenger_id` дают одного пассажира с актуальным именем. Отдельного JOIN к справочнику пассажиров источника нет.",
+      "mode": "flow",
+      "status": "student",
+      "refs": [
+        {
+          "node": "ods.tickets",
+          "columns": [
+            "passenger_id",
+            "passenger_name"
+          ]
+        },
+        {
+          "node": "dds.dim_passengers",
+          "columns": [
+            "passenger_id",
+            "passenger_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "ТЗ",
+          "url": "../assignment/analyst_spec.md#22-ddsdim_passengers-scd1"
+        }
+      ]
+    },
+    {
+      "id": "flow-ods.routes-dds.dim_routes-29",
+      "from": "ods.routes",
+      "to": "dds.dim_routes",
+      "label": "История маршрута",
+      "join": "По ТЗ: `route_no` становится `route_bk`; изменения атрибутов создают новую версию с `route_sk` и интервалом действия. Исчезновение маршрута закрывает открытую версию.",
+      "mode": "flow",
+      "status": "student",
+      "refs": [
+        {
+          "node": "ods.routes",
+          "columns": [
+            "route_no"
+          ]
+        },
+        {
+          "node": "dds.dim_routes",
+          "columns": [
+            "route_bk",
+            "route_sk",
+            "valid_from",
+            "valid_to"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "ТЗ",
+          "url": "../assignment/analyst_spec.md#23-ddsdim_routes-scd2"
+        }
+      ]
+    },
+    {
+      "id": "flow-dds.dim_airports-dds.dim_routes-30",
+      "from": "dds.dim_airports",
+      "to": "dds.dim_routes",
+      "label": "Города вылета и прилета",
+      "join": "По ТЗ: коды `departure_airport` и `arrival_airport` сопоставляются с `airport_bk`; добавляются два города. Тип JOIN при пропуске ТЗ не задает, но города в DDL обязательны: пропуск нельзя молча записать как NULL.",
+      "mode": "flow",
+      "status": "student",
+      "refs": [
+        {
+          "node": "dds.dim_airports",
+          "columns": [
+            "airport_bk",
+            "city"
+          ]
+        },
+        {
+          "node": "dds.dim_routes",
+          "columns": [
+            "departure_airport",
+            "arrival_airport",
+            "departure_city",
+            "arrival_city"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "ТЗ",
+          "url": "../assignment/analyst_spec.md#23-ddsdim_routes-scd2"
+        }
+      ]
+    },
+    {
+      "id": "flow-dds.dim_airplanes-dds.dim_routes-31",
+      "from": "dds.dim_airplanes",
+      "to": "dds.dim_routes",
+      "label": "Модель и места",
+      "join": "По ТЗ: `airplane_code = airplane_bk` дает `airplane_model` и `total_seats`. Тип JOIN при пропуске не определен; оба поля в DDL обязательны. Это требуемое обогащение, загрузчик пока пуст.",
+      "mode": "flow",
+      "status": "student",
+      "refs": [
+        {
+          "node": "dds.dim_airplanes",
+          "columns": [
+            "airplane_bk",
+            "model",
+            "total_seats"
+          ]
+        },
+        {
+          "node": "dds.dim_routes",
+          "columns": [
+            "airplane_code",
+            "airplane_model",
+            "total_seats"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "ТЗ",
+          "url": "../assignment/analyst_spec.md#23-ddsdim_routes-scd2"
+        }
+      ]
+    },
+    {
+      "id": "fact-0",
+      "from": "ods.segments",
+      "to": "dds.fact_flight_sales",
+      "label": "Зерно и цена",
+      "join": "Основной поток: пара `(ticket_no, flight_id)` и `amount → price`. Нет сегмента — нет новой строки факта.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "ods.segments",
+          "columns": [
+            "ticket_no",
+            "flight_id",
+            "amount"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "ticket_no",
+            "flight_id",
+            "price"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/dds/fact_flight_sales_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "fact-1",
+      "from": "ods.tickets",
+      "to": "dds.fact_flight_sales",
+      "label": "Билет и пассажир",
+      "join": "INNER JOIN `tkt.ticket_no = seg.ticket_no` дает `book_ref` и `passenger_id` для дальнейших соединений. Без билета сегмент не попадет в новый факт.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "ods.tickets",
+          "columns": [
+            "ticket_no",
+            "book_ref",
+            "passenger_id"
+          ]
+        },
+        {
+          "node": "ods.segments",
+          "columns": [
+            "ticket_no"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/dds/fact_flight_sales_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "fact-2",
+      "from": "ods.bookings",
+      "to": "dds.fact_flight_sales",
+      "label": "Дата бронирования",
+      "join": "INNER JOIN `bkg.book_ref = tkt.book_ref` дает `book_date::DATE`. Без бронирования сегмент не попадет в новый факт; `total_amount` здесь не используется.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "ods.bookings",
+          "columns": [
+            "book_ref",
+            "book_date"
+          ]
+        },
+        {
+          "node": "ods.tickets",
+          "columns": [
+            "book_ref"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "book_date"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/dds/fact_flight_sales_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "fact-3",
+      "from": "ods.flights",
+      "to": "dds.fact_flight_sales",
+      "label": "Рейс, дата и маршрут",
+      "join": "INNER JOIN `flt.flight_id = seg.flight_id` дает `scheduled_departure` и `route_no` для lookup. Без рейса сегмент не попадет в новый факт.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "ods.flights",
+          "columns": [
+            "flight_id",
+            "scheduled_departure",
+            "route_no"
+          ]
+        },
+        {
+          "node": "ods.segments",
+          "columns": [
+            "flight_id"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/dds/fact_flight_sales_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "fact-4",
+      "from": "ods.routes",
+      "to": "dds.fact_flight_sales",
+      "label": "Коды двух аэропортов",
+      "join": "Из ODS выбирается одна строка на `route_no` с наибольшим `validity` (поле TEXT). LEFT JOIN по `flt.route_no` дает коды вылета и прилета. Это отдельный путь от SCD2: дата рейса здесь не участвует. Если маршрута нет, оба airport_sk останутся NULL; DQ считает это аномалией, а не учебной заглушкой.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "ods.routes",
+          "columns": [
+            "route_no",
+            "validity",
+            "departure_airport",
+            "arrival_airport"
+          ]
+        },
+        {
+          "node": "ods.flights",
+          "columns": [
+            "route_no"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "departure_airport_sk",
+            "arrival_airport_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/dds/fact_flight_sales_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "fact-5",
+      "from": "dds.dim_routes",
+      "to": "dds.fact_flight_sales",
+      "label": "Версия на дату рейса",
+      "join": "LEFT JOIN `rte.route_bk = flt.route_no` и `scheduled_departure::DATE >= valid_from`, а конец — `valid_to IS NULL` или дата `< valid_to`. Дает `route_sk` и `airplane_code` для поиска модели. Нет подходящей версии — route_sk и airplane_sk NULL, строка факта сохраняется. На main это ожидается до выполнения задания.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "dds.dim_routes",
+          "columns": [
+            "route_bk",
+            "route_sk",
+            "airplane_code",
+            "valid_from",
+            "valid_to"
+          ]
+        },
+        {
+          "node": "ods.flights",
+          "columns": [
+            "route_no",
+            "scheduled_departure"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "route_sk",
+            "airplane_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/dds/fact_flight_sales_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "fact-6",
+      "from": "dds.dim_calendar",
+      "to": "dds.fact_flight_sales",
+      "label": "Дата вылета",
+      "join": "LEFT JOIN `date_actual = scheduled_departure::DATE` дает `calendar_sk`. Нет даты в календаре — SK будет NULL, строка факта сохраняется. Это не дата бронирования.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "dds.dim_calendar",
+          "columns": [
+            "date_actual",
+            "calendar_sk"
+          ]
+        },
+        {
+          "node": "ods.flights",
+          "columns": [
+            "scheduled_departure"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "calendar_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/dds/fact_flight_sales_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "fact-7",
+      "from": "dds.dim_airports",
+      "to": "dds.fact_flight_sales",
+      "label": "Аэропорт вылета",
+      "join": "LEFT JOIN `dep.airport_bk = ods_rte.departure_airport` дает `departure_airport_sk`. Без аэропорта SK будет NULL, факт сохраняется. Код берется через ods.routes; пустой dim_routes этому не мешает.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "dds.dim_airports",
+          "columns": [
+            "airport_bk",
+            "airport_sk"
+          ]
+        },
+        {
+          "node": "ods.routes",
+          "columns": [
+            "departure_airport"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "departure_airport_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/dds/fact_flight_sales_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "fact-8",
+      "from": "dds.dim_airports",
+      "to": "dds.fact_flight_sales",
+      "label": "Аэропорт прилета",
+      "join": "LEFT JOIN `arr.airport_bk = ods_rte.arrival_airport` дает `arrival_airport_sk`. Без аэропорта SK будет NULL, факт сохраняется. Это вторая роль того же измерения.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "dds.dim_airports",
+          "columns": [
+            "airport_bk",
+            "airport_sk"
+          ]
+        },
+        {
+          "node": "ods.routes",
+          "columns": [
+            "arrival_airport"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "arrival_airport_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/dds/fact_flight_sales_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "fact-9",
+      "from": "dds.dim_airplanes",
+      "to": "dds.fact_flight_sales",
+      "label": "Модель выбранной версии",
+      "join": "LEFT JOIN `ap.airplane_bk = rte.airplane_code` дает `airplane_sk`. Код берется из выбранной по дате версии dim_routes. Без версии или модели SK будет NULL; факт сохраняется.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "dds.dim_airplanes",
+          "columns": [
+            "airplane_bk",
+            "airplane_sk"
+          ]
+        },
+        {
+          "node": "dds.dim_routes",
+          "columns": [
+            "airplane_code"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "airplane_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/dds/fact_flight_sales_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "fact-10",
+      "from": "dds.dim_tariffs",
+      "to": "dds.fact_flight_sales",
+      "label": "Класс обслуживания",
+      "join": "LEFT JOIN `tar.fare_conditions = seg.fare_conditions` дает `tariff_sk`. Нет совпадения — факт сохраняется с NULL; последующая DQ факта считает такой NULL ошибкой.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "dds.dim_tariffs",
+          "columns": [
+            "fare_conditions",
+            "tariff_sk"
+          ]
+        },
+        {
+          "node": "ods.segments",
+          "columns": [
+            "fare_conditions"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "tariff_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/dds/fact_flight_sales_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "fact-11",
+      "from": "dds.dim_passengers",
+      "to": "dds.fact_flight_sales",
+      "label": "Пассажир",
+      "join": "LEFT JOIN `pax.passenger_id = tkt.passenger_id` дает `passenger_sk`. Без пассажира факт сохраняется с NULL; на main это ожидается до выполнения задания.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "dds.dim_passengers",
+          "columns": [
+            "passenger_id",
+            "passenger_sk"
+          ]
+        },
+        {
+          "node": "ods.tickets",
+          "columns": [
+            "passenger_id"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "passenger_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/dds/fact_flight_sales_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "fact-12",
+      "from": "ods.boarding_passes",
+      "to": "dds.fact_flight_sales",
+      "label": "Посадка и место",
+      "join": "LEFT JOIN по ОБОИМ полям `ticket_no` и `flight_id` дает `seat_no`; наличие талона означает `is_boarded = true`. Без талона `seat_no = NULL`, `is_boarded = false`, сегмент остается в факте.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "ods.boarding_passes",
+          "columns": [
+            "ticket_no",
+            "flight_id",
+            "seat_no"
+          ]
+        },
+        {
+          "node": "ods.segments",
+          "columns": [
+            "ticket_no",
+            "flight_id"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "seat_no",
+            "is_boarded"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/dds/fact_flight_sales_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "flow-dds.fact_flight_sales-dm.sales_report-45",
+      "from": "dds.fact_flight_sales",
+      "to": "dm.sales_report",
+      "label": "Агрегация сегментов",
+      "join": "Один день вылета × аэропорт вылета × аэропорт прилета × класс обслуживания. По HWM факта выбираются затронутые даты; за эти даты агрегируются все факты, выполняются UPDATE и INSERT. INNER JOIN к календарю, двум ролям аэропортов и тарифу: факты без этих совпадений не входят в агрегат. `tickets_sold = COUNT(*)`, `total_revenue = SUM(price)`.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "price",
+            "is_boarded"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/dm/sales_report_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "flow-dds.dim_calendar-dm.sales_report-46",
+      "from": "dds.dim_calendar",
+      "to": "dm.sales_report",
+      "label": "Измерение для витрины",
+      "join": "Дает дату и календарные признаки по calendar_sk. INNER JOIN: без совпадения факт исключается из агрегата.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "dds.dim_calendar",
+          "columns": [
+            "calendar_sk"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "calendar_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/dm/sales_report_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "flow-dds.dim_airports-dm.sales_report-47",
+      "from": "dds.dim_airports",
+      "to": "dm.sales_report",
+      "label": "Измерение для витрины",
+      "join": "Дает коды и города для departure_airport_sk и arrival_airport_sk; один справочник используется дважды. INNER JOIN: без совпадения факт исключается из агрегата.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "dds.dim_airports",
+          "columns": [
+            "airport_sk"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "departure_airport_sk",
+            "arrival_airport_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/dm/sales_report_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "flow-dds.dim_tariffs-dm.sales_report-48",
+      "from": "dds.dim_tariffs",
+      "to": "dm.sales_report",
+      "label": "Измерение для витрины",
+      "join": "Дает класс обслуживания по tariff_sk. INNER JOIN: без совпадения факт исключается из агрегата.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "dds.dim_tariffs",
+          "columns": [
+            "tariff_sk"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "tariff_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/dm/sales_report_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "flow-dds.fact_flight_sales-dm.airport_traffic-49",
+      "from": "dds.fact_flight_sales",
+      "to": "dm.airport_traffic",
+      "label": "Агрегация сегментов",
+      "join": "Один аэропорт за день. По ТЗ: пересчитывать затронутые дни. Каждый факт участвует в двух ролях. Выручку вылетов и прилетов нельзя складывать: получится двойной счет. Дата обеих ролей берется из календаря факта (дата вылета). Без фактов нет входных строк для агрегата.",
+      "mode": "flow",
+      "status": "student",
+      "refs": [
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "price",
+            "is_boarded"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "ТЗ",
+          "url": "../assignment/analyst_spec.md#31-dmairport_traffic"
+        }
+      ]
+    },
+    {
+      "id": "flow-dds.dim_calendar-dm.airport_traffic-50",
+      "from": "dds.dim_calendar",
+      "to": "dm.airport_traffic",
+      "label": "Измерение для витрины",
+      "join": "Дает дату и календарные признаки по calendar_sk. Ожидаемая связь по ТЗ; загрузка пока заглушка. Тип JOIN и общее поведение при пропуске измерения ТЗ не задает.",
+      "mode": "flow",
+      "status": "student",
+      "refs": [
+        {
+          "node": "dds.dim_calendar",
+          "columns": [
+            "calendar_sk"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "calendar_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "ТЗ",
+          "url": "../assignment/analyst_spec.md#31-dmairport_traffic"
+        }
+      ]
+    },
+    {
+      "id": "flow-dds.dim_airports-dm.airport_traffic-51",
+      "from": "dds.dim_airports",
+      "to": "dm.airport_traffic",
+      "label": "Измерение для витрины",
+      "join": "Дает коды и города для departure_airport_sk и arrival_airport_sk; один справочник используется дважды. Ожидаемая связь по ТЗ; загрузка пока заглушка. Тип JOIN и общее поведение при пропуске измерения ТЗ не задает.",
+      "mode": "flow",
+      "status": "student",
+      "refs": [
+        {
+          "node": "dds.dim_airports",
+          "columns": [
+            "airport_sk"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "departure_airport_sk",
+            "arrival_airport_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "ТЗ",
+          "url": "../assignment/analyst_spec.md#31-dmairport_traffic"
+        }
+      ]
+    },
+    {
+      "id": "flow-dds.fact_flight_sales-dm.route_performance-52",
+      "from": "dds.fact_flight_sales",
+      "to": "dm.route_performance",
+      "label": "Агрегация сегментов",
+      "join": "Один маршрут за всю историю, объединяя его версии. По ТЗ: полный пересчет; факты всех версий группируются по бизнес-ключу маршрута, описания берутся из открытой версии. Без фактов нет входных строк для агрегата.",
+      "mode": "flow",
+      "status": "student",
+      "refs": [
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "price",
+            "is_boarded"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "ТЗ",
+          "url": "../assignment/analyst_spec.md#32-dmroute_performance"
+        }
+      ]
+    },
+    {
+      "id": "flow-dds.dim_routes-dm.route_performance-53",
+      "from": "dds.dim_routes",
+      "to": "dm.route_performance",
+      "label": "Измерение для витрины",
+      "join": "Дает route_bk по route_sk для объединения версий маршрута. Ожидаемая связь по ТЗ; загрузка пока заглушка. Тип JOIN и общее поведение при пропуске измерения ТЗ не задает.",
+      "mode": "flow",
+      "status": "student",
+      "refs": [
+        {
+          "node": "dds.dim_routes",
+          "columns": [
+            "route_sk"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "route_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "ТЗ",
+          "url": "../assignment/analyst_spec.md#32-dmroute_performance"
+        }
+      ]
+    },
+    {
+      "id": "flow-dds.dim_calendar-dm.route_performance-54",
+      "from": "dds.dim_calendar",
+      "to": "dm.route_performance",
+      "label": "Измерение для витрины",
+      "join": "Дает дату и календарные признаки по calendar_sk. Ожидаемая связь по ТЗ; загрузка пока заглушка. Тип JOIN и общее поведение при пропуске измерения ТЗ не задает.",
+      "mode": "flow",
+      "status": "student",
+      "refs": [
+        {
+          "node": "dds.dim_calendar",
+          "columns": [
+            "calendar_sk"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "calendar_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "ТЗ",
+          "url": "../assignment/analyst_spec.md#32-dmroute_performance"
+        }
+      ]
+    },
+    {
+      "id": "flow-dds.fact_flight_sales-dm.monthly_overview-55",
+      "from": "dds.fact_flight_sales",
+      "to": "dm.monthly_overview",
+      "label": "Агрегация сегментов",
+      "join": "Одна модель самолета за месяц. По ТЗ: пересчитывать затронутые месяцы; сначала считать показатели рейса, затем месяца. Без фактов нет входных строк для агрегата.",
+      "mode": "flow",
+      "status": "student",
+      "refs": [
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "price",
+            "is_boarded"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "ТЗ",
+          "url": "../assignment/analyst_spec.md#33-dmmonthly_overview"
+        }
+      ]
+    },
+    {
+      "id": "flow-dds.dim_calendar-dm.monthly_overview-56",
+      "from": "dds.dim_calendar",
+      "to": "dm.monthly_overview",
+      "label": "Измерение для витрины",
+      "join": "Дает дату и календарные признаки по calendar_sk. Ожидаемая связь по ТЗ; загрузка пока заглушка. Тип JOIN и общее поведение при пропуске измерения ТЗ не задает.",
+      "mode": "flow",
+      "status": "student",
+      "refs": [
+        {
+          "node": "dds.dim_calendar",
+          "columns": [
+            "calendar_sk"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "calendar_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "ТЗ",
+          "url": "../assignment/analyst_spec.md#33-dmmonthly_overview"
+        }
+      ]
+    },
+    {
+      "id": "flow-dds.dim_airplanes-dm.monthly_overview-57",
+      "from": "dds.dim_airplanes",
+      "to": "dm.monthly_overview",
+      "label": "Измерение для витрины",
+      "join": "Дает название модели и вместимость по airplane_sk. Ожидаемая связь по ТЗ; загрузка пока заглушка. Тип JOIN и общее поведение при пропуске измерения ТЗ не задает.",
+      "mode": "flow",
+      "status": "student",
+      "refs": [
+        {
+          "node": "dds.dim_airplanes",
+          "columns": [
+            "airplane_sk"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "airplane_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "ТЗ",
+          "url": "../assignment/analyst_spec.md#33-dmmonthly_overview"
+        }
+      ]
+    },
+    {
+      "id": "flow-dds.dim_routes-dm.monthly_overview-58",
+      "from": "dds.dim_routes",
+      "to": "dm.monthly_overview",
+      "label": "Измерение для витрины",
+      "join": "Дает route_bk по route_sk для объединения версий маршрута. Ожидаемая связь по ТЗ; загрузка пока заглушка. Тип JOIN и общее поведение при пропуске измерения ТЗ не задает.",
+      "mode": "flow",
+      "status": "student",
+      "refs": [
+        {
+          "node": "dds.dim_routes",
+          "columns": [
+            "route_sk"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "route_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "ТЗ",
+          "url": "../assignment/analyst_spec.md#33-dmmonthly_overview"
+        }
+      ]
+    },
+    {
+      "id": "flow-dds.fact_flight_sales-dm.passenger_loyalty-59",
+      "from": "dds.fact_flight_sales",
+      "to": "dm.passenger_loyalty",
+      "label": "Агрегация сегментов",
+      "join": "Один пассажир за всю историю. По ТЗ: пересчитывать всю историю пассажиров, чьи факты изменились. Строки без `passenger_sk` исключаются. Без фактов нет входных строк для агрегата.",
+      "mode": "flow",
+      "status": "student",
+      "refs": [
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "price",
+            "is_boarded"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "ТЗ",
+          "url": "../assignment/analyst_spec.md#34-dmpassenger_loyalty"
+        }
+      ]
+    },
+    {
+      "id": "flow-dds.dim_passengers-dm.passenger_loyalty-60",
+      "from": "dds.dim_passengers",
+      "to": "dm.passenger_loyalty",
+      "label": "Измерение для витрины",
+      "join": "Дает исходный идентификатор и имя по passenger_sk. По ТЗ факты с NULL passenger_sk исключаются; загрузка пока заглушка.",
+      "mode": "flow",
+      "status": "student",
+      "refs": [
+        {
+          "node": "dds.dim_passengers",
+          "columns": [
+            "passenger_sk"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "passenger_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "ТЗ",
+          "url": "../assignment/analyst_spec.md#34-dmpassenger_loyalty"
+        }
+      ]
+    },
+    {
+      "id": "flow-dds.dim_tariffs-dm.passenger_loyalty-61",
+      "from": "dds.dim_tariffs",
+      "to": "dm.passenger_loyalty",
+      "label": "Измерение для витрины",
+      "join": "Дает класс обслуживания по tariff_sk. Ожидаемая связь по ТЗ; загрузка пока заглушка. Тип JOIN и общее поведение при пропуске измерения ТЗ не задает.",
+      "mode": "flow",
+      "status": "student",
+      "refs": [
+        {
+          "node": "dds.dim_tariffs",
+          "columns": [
+            "tariff_sk"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "tariff_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "ТЗ",
+          "url": "../assignment/analyst_spec.md#34-dmpassenger_loyalty"
+        }
+      ]
+    },
+    {
+      "id": "flow-dds.dim_routes-dm.passenger_loyalty-62",
+      "from": "dds.dim_routes",
+      "to": "dm.passenger_loyalty",
+      "label": "Измерение для витрины",
+      "join": "Дает route_bk по route_sk для объединения версий маршрута. Ожидаемая связь по ТЗ; загрузка пока заглушка. Тип JOIN и общее поведение при пропуске измерения ТЗ не задает.",
+      "mode": "flow",
+      "status": "student",
+      "refs": [
+        {
+          "node": "dds.dim_routes",
+          "columns": [
+            "route_sk"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "route_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "ТЗ",
+          "url": "../assignment/analyst_spec.md#34-dmpassenger_loyalty"
+        }
+      ]
+    },
+    {
+      "id": "flow-dds.dim_calendar-dm.passenger_loyalty-63",
+      "from": "dds.dim_calendar",
+      "to": "dm.passenger_loyalty",
+      "label": "Измерение для витрины",
+      "join": "Дает дату и календарные признаки по calendar_sk. Ожидаемая связь по ТЗ; загрузка пока заглушка. Тип JOIN и общее поведение при пропуске измерения ТЗ не задает.",
+      "mode": "flow",
+      "status": "student",
+      "refs": [
+        {
+          "node": "dds.dim_calendar",
+          "columns": [
+            "calendar_sk"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "calendar_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "ТЗ",
+          "url": "../assignment/analyst_spec.md#34-dmpassenger_loyalty"
+        }
+      ]
+    },
+    {
+      "id": "keys-bookings.bookings-bookings.tickets-64",
+      "from": "bookings.bookings",
+      "to": "bookings.tickets",
+      "label": "Бронирование → билеты",
+      "join": "`bookings.book_ref = tickets.book_ref`: одно бронирование объединяет несколько билетов. Само сопоставление ничего не загружает. Это логическая связь, не объявление FOREIGN KEY и не выбор типа JOIN.",
+      "mode": "keys",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "bookings.bookings",
+          "columns": [
+            "book_ref"
+          ]
+        },
+        {
+          "node": "bookings.tickets",
+          "columns": [
+            "book_ref"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../bookings/README.md"
+        }
+      ]
+    },
+    {
+      "id": "keys-bookings.tickets-bookings.segments-65",
+      "from": "bookings.tickets",
+      "to": "bookings.segments",
+      "label": "Билет → сегменты",
+      "join": "`tickets.ticket_no = segments.ticket_no`: билет с пересадкой дает несколько сегментов. Это логическая связь, не объявление FOREIGN KEY и не выбор типа JOIN.",
+      "mode": "keys",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "bookings.tickets",
+          "columns": [
+            "ticket_no"
+          ]
+        },
+        {
+          "node": "bookings.segments",
+          "columns": [
+            "ticket_no"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../bookings/README.md"
+        }
+      ]
+    },
+    {
+      "id": "keys-bookings.flights-bookings.segments-66",
+      "from": "bookings.flights",
+      "to": "bookings.segments",
+      "label": "Рейс → сегменты",
+      "join": "`flights.flight_id = segments.flight_id`: один рейс связан с сегментами разных билетов. Это логическая связь, не объявление FOREIGN KEY и не выбор типа JOIN.",
+      "mode": "keys",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "bookings.flights",
+          "columns": [
+            "flight_id"
+          ]
+        },
+        {
+          "node": "bookings.segments",
+          "columns": [
+            "flight_id"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../bookings/README.md"
+        }
+      ]
+    },
+    {
+      "id": "keys-bookings.segments-bookings.boarding_passes-67",
+      "from": "bookings.segments",
+      "to": "bookings.boarding_passes",
+      "label": "Сегмент → талон",
+      "join": "Совпадают `ticket_no` И `flight_id`. У сегмента может не быть талона; талон другого рейса того же билета не подходит. Это логическая связь, не объявление FOREIGN KEY и не выбор типа JOIN.",
+      "mode": "keys",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "bookings.segments",
+          "columns": [
+            "ticket_no",
+            "flight_id"
+          ]
+        },
+        {
+          "node": "bookings.boarding_passes",
+          "columns": [
+            "ticket_no",
+            "flight_id"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../bookings/README.md"
+        }
+      ]
+    },
+    {
+      "id": "keys-bookings.routes-bookings.flights-68",
+      "from": "bookings.routes",
+      "to": "bookings.flights",
+      "label": "Маршрут → рейсы",
+      "join": "`routes.route_no = flights.route_no` связывает рейс с маршрутом, но route_no в routes не уникален: есть варианты validity. Простой JOIN только по номеру может размножить рейс. В сборке факта ODS-маршрут сначала сокращается до одной строки. Это логическая связь, не объявление FOREIGN KEY и не выбор типа JOIN.",
+      "mode": "keys",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "bookings.routes",
+          "columns": [
+            "route_no",
+            "validity"
+          ]
+        },
+        {
+          "node": "bookings.flights",
+          "columns": [
+            "route_no"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../bookings/README.md"
+        }
+      ]
+    },
+    {
+      "id": "keys-bookings.airports_data-bookings.routes-69",
+      "from": "bookings.airports_data",
+      "to": "bookings.routes",
+      "label": "Аэропорт вылета → маршруты",
+      "join": "`airports_data.airport_code = routes.departure_airport`: один аэропорт является местом вылета многих маршрутов. Это логическая связь, не объявление FOREIGN KEY и не выбор типа JOIN.",
+      "mode": "keys",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "bookings.airports_data",
+          "columns": [
+            "airport_code"
+          ]
+        },
+        {
+          "node": "bookings.routes",
+          "columns": [
+            "departure_airport"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../bookings/README.md"
+        }
+      ]
+    },
+    {
+      "id": "keys-bookings.airports_data-bookings.routes-70",
+      "from": "bookings.airports_data",
+      "to": "bookings.routes",
+      "label": "Аэропорт прилета → маршруты",
+      "join": "`airports_data.airport_code = routes.arrival_airport`: тот же справочник играет роль места прилета. Это логическая связь, не объявление FOREIGN KEY и не выбор типа JOIN.",
+      "mode": "keys",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "bookings.airports_data",
+          "columns": [
+            "airport_code"
+          ]
+        },
+        {
+          "node": "bookings.routes",
+          "columns": [
+            "arrival_airport"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../bookings/README.md"
+        }
+      ]
+    },
+    {
+      "id": "keys-bookings.airplanes_data-bookings.seats-71",
+      "from": "bookings.airplanes_data",
+      "to": "bookings.seats",
+      "label": "Модель → места",
+      "join": "`airplanes_data.airplane_code = seats.airplane_code`: одной модели соответствует много мест. Номер seat_no сам по себе модель не определяет. Это логическая связь, не объявление FOREIGN KEY и не выбор типа JOIN.",
+      "mode": "keys",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "bookings.airplanes_data",
+          "columns": [
+            "airplane_code"
+          ]
+        },
+        {
+          "node": "bookings.seats",
+          "columns": [
+            "airplane_code",
+            "seat_no"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../bookings/README.md"
+        }
+      ]
+    },
+    {
+      "id": "keys-bookings.airplanes_data-bookings.routes-72",
+      "from": "bookings.airplanes_data",
+      "to": "bookings.routes",
+      "label": "Модель → маршруты",
+      "join": "`airplanes_data.airplane_code = routes.airplane_code`: одна модель используется на разных маршрутах. Это логическая связь, не объявление FOREIGN KEY и не выбор типа JOIN.",
+      "mode": "keys",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "bookings.airplanes_data",
+          "columns": [
+            "airplane_code"
+          ]
+        },
+        {
+          "node": "bookings.routes",
+          "columns": [
+            "airplane_code"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../bookings/README.md"
+        }
+      ]
+    },
+    {
+      "id": "keys-ods.bookings-ods.tickets-73",
+      "from": "ods.bookings",
+      "to": "ods.tickets",
+      "label": "Бронирование → билеты",
+      "join": "`bookings.book_ref = tickets.book_ref`: одно бронирование объединяет несколько билетов. Само сопоставление ничего не загружает. Это логическая связь, не объявление FOREIGN KEY и не выбор типа JOIN.",
+      "mode": "keys",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "ods.bookings",
+          "columns": [
+            "book_ref"
+          ]
+        },
+        {
+          "node": "ods.tickets",
+          "columns": [
+            "book_ref"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/ods/tickets_ddl.sql"
+        }
+      ]
+    },
+    {
+      "id": "keys-ods.tickets-ods.segments-74",
+      "from": "ods.tickets",
+      "to": "ods.segments",
+      "label": "Билет → сегменты",
+      "join": "`tickets.ticket_no = segments.ticket_no`: билет с пересадкой дает несколько сегментов. Это логическая связь, не объявление FOREIGN KEY и не выбор типа JOIN.",
+      "mode": "keys",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "ods.tickets",
+          "columns": [
+            "ticket_no"
+          ]
+        },
+        {
+          "node": "ods.segments",
+          "columns": [
+            "ticket_no"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/ods/segments_ddl.sql"
+        }
+      ]
+    },
+    {
+      "id": "keys-ods.flights-ods.segments-75",
+      "from": "ods.flights",
+      "to": "ods.segments",
+      "label": "Рейс → сегменты",
+      "join": "`flights.flight_id = segments.flight_id`: один рейс связан с сегментами разных билетов. Это логическая связь, не объявление FOREIGN KEY и не выбор типа JOIN.",
+      "mode": "keys",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "ods.flights",
+          "columns": [
+            "flight_id"
+          ]
+        },
+        {
+          "node": "ods.segments",
+          "columns": [
+            "flight_id"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/ods/segments_ddl.sql"
+        }
+      ]
+    },
+    {
+      "id": "keys-ods.segments-ods.boarding_passes-76",
+      "from": "ods.segments",
+      "to": "ods.boarding_passes",
+      "label": "Сегмент → талон",
+      "join": "Совпадают `ticket_no` И `flight_id`. У сегмента может не быть талона; талон другого рейса того же билета не подходит. Это логическая связь, не объявление FOREIGN KEY и не выбор типа JOIN.",
+      "mode": "keys",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "ods.segments",
+          "columns": [
+            "ticket_no",
+            "flight_id"
+          ]
+        },
+        {
+          "node": "ods.boarding_passes",
+          "columns": [
+            "ticket_no",
+            "flight_id"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/ods/boarding_passes_ddl.sql"
+        }
+      ]
+    },
+    {
+      "id": "keys-ods.routes-ods.flights-77",
+      "from": "ods.routes",
+      "to": "ods.flights",
+      "label": "Маршрут → рейсы",
+      "join": "`routes.route_no = flights.route_no` связывает рейс с маршрутом, но route_no в routes не уникален: есть варианты validity. Простой JOIN только по номеру может размножить рейс. В сборке факта ODS-маршрут сначала сокращается до одной строки. Это логическая связь, не объявление FOREIGN KEY и не выбор типа JOIN.",
+      "mode": "keys",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "ods.routes",
+          "columns": [
+            "route_no",
+            "validity"
+          ]
+        },
+        {
+          "node": "ods.flights",
+          "columns": [
+            "route_no"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/ods/flights_ddl.sql"
+        }
+      ]
+    },
+    {
+      "id": "keys-ods.airports-ods.routes-78",
+      "from": "ods.airports",
+      "to": "ods.routes",
+      "label": "Аэропорт вылета → маршруты",
+      "join": "`airports.airport_code = routes.departure_airport`: один аэропорт является местом вылета многих маршрутов. Это логическая связь, не объявление FOREIGN KEY и не выбор типа JOIN.",
+      "mode": "keys",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "ods.airports",
+          "columns": [
+            "airport_code"
+          ]
+        },
+        {
+          "node": "ods.routes",
+          "columns": [
+            "departure_airport"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/ods/routes_ddl.sql"
+        }
+      ]
+    },
+    {
+      "id": "keys-ods.airports-ods.routes-79",
+      "from": "ods.airports",
+      "to": "ods.routes",
+      "label": "Аэропорт прилета → маршруты",
+      "join": "`airports.airport_code = routes.arrival_airport`: тот же справочник играет роль места прилета. Это логическая связь, не объявление FOREIGN KEY и не выбор типа JOIN.",
+      "mode": "keys",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "ods.airports",
+          "columns": [
+            "airport_code"
+          ]
+        },
+        {
+          "node": "ods.routes",
+          "columns": [
+            "arrival_airport"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/ods/routes_ddl.sql"
+        }
+      ]
+    },
+    {
+      "id": "keys-ods.airplanes-ods.seats-80",
+      "from": "ods.airplanes",
+      "to": "ods.seats",
+      "label": "Модель → места",
+      "join": "`airplanes.airplane_code = seats.airplane_code`: одной модели соответствует много мест. Номер seat_no сам по себе модель не определяет. Это логическая связь, не объявление FOREIGN KEY и не выбор типа JOIN.",
+      "mode": "keys",
+      "status": "student",
+      "refs": [
+        {
+          "node": "ods.airplanes",
+          "columns": [
+            "airplane_code"
+          ]
+        },
+        {
+          "node": "ods.seats",
+          "columns": [
+            "airplane_code",
+            "seat_no"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "ТЗ",
+          "url": "../../sql/ods/seats_ddl.sql"
+        }
+      ]
+    },
+    {
+      "id": "keys-ods.airplanes-ods.routes-81",
+      "from": "ods.airplanes",
+      "to": "ods.routes",
+      "label": "Модель → маршруты",
+      "join": "`airplanes.airplane_code = routes.airplane_code`: одна модель используется на разных маршрутах. Это логическая связь, не объявление FOREIGN KEY и не выбор типа JOIN.",
+      "mode": "keys",
+      "status": "student",
+      "refs": [
+        {
+          "node": "ods.airplanes",
+          "columns": [
+            "airplane_code"
+          ]
+        },
+        {
+          "node": "ods.routes",
+          "columns": [
+            "airplane_code"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "ТЗ",
+          "url": "../../sql/ods/routes_ddl.sql"
+        }
+      ]
+    },
+    {
+      "id": "keys-dds.dim_calendar-dds.fact_flight_sales-82",
+      "from": "dds.dim_calendar",
+      "to": "dds.fact_flight_sales",
+      "label": "Дата вылета",
+      "join": "`dim_calendar.calendar_sk = fact_flight_sales.calendar_sk`: одна строка измерения описывает много сегментов. LEFT JOIN при вставке факта допускает незаполненный ключ; подробный путь получения SK показан в виде «Поток данных».",
+      "mode": "keys",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "dds.dim_calendar",
+          "columns": [
+            "calendar_sk"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "calendar_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/dds/fact_flight_sales_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "keys-dds.dim_airports-dds.fact_flight_sales-83",
+      "from": "dds.dim_airports",
+      "to": "dds.fact_flight_sales",
+      "label": "Аэропорт вылета",
+      "join": "`dim_airports.airport_sk = fact_flight_sales.departure_airport_sk`: одна строка измерения описывает много сегментов. LEFT JOIN при вставке факта допускает незаполненный ключ; подробный путь получения SK показан в виде «Поток данных».",
+      "mode": "keys",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "dds.dim_airports",
+          "columns": [
+            "airport_sk"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "departure_airport_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/dds/fact_flight_sales_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "keys-dds.dim_airports-dds.fact_flight_sales-84",
+      "from": "dds.dim_airports",
+      "to": "dds.fact_flight_sales",
+      "label": "Аэропорт прилета",
+      "join": "`dim_airports.airport_sk = fact_flight_sales.arrival_airport_sk`: одна строка измерения описывает много сегментов. LEFT JOIN при вставке факта допускает незаполненный ключ; подробный путь получения SK показан в виде «Поток данных».",
+      "mode": "keys",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "dds.dim_airports",
+          "columns": [
+            "airport_sk"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "arrival_airport_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/dds/fact_flight_sales_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "keys-dds.dim_airplanes-dds.fact_flight_sales-85",
+      "from": "dds.dim_airplanes",
+      "to": "dds.fact_flight_sales",
+      "label": "Модель самолета",
+      "join": "`dim_airplanes.airplane_sk = fact_flight_sales.airplane_sk`: одна строка измерения описывает много сегментов. LEFT JOIN при вставке факта допускает незаполненный ключ; подробный путь получения SK показан в виде «Поток данных».",
+      "mode": "keys",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "dds.dim_airplanes",
+          "columns": [
+            "airplane_sk"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "airplane_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/dds/fact_flight_sales_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "keys-dds.dim_tariffs-dds.fact_flight_sales-86",
+      "from": "dds.dim_tariffs",
+      "to": "dds.fact_flight_sales",
+      "label": "Класс обслуживания",
+      "join": "`dim_tariffs.tariff_sk = fact_flight_sales.tariff_sk`: одна строка измерения описывает много сегментов. LEFT JOIN при вставке факта допускает незаполненный ключ; подробный путь получения SK показан в виде «Поток данных».",
+      "mode": "keys",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "dds.dim_tariffs",
+          "columns": [
+            "tariff_sk"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "tariff_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/dds/fact_flight_sales_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "keys-dds.dim_passengers-dds.fact_flight_sales-87",
+      "from": "dds.dim_passengers",
+      "to": "dds.fact_flight_sales",
+      "label": "Пассажир",
+      "join": "`dim_passengers.passenger_sk = fact_flight_sales.passenger_sk`: одна строка измерения описывает много сегментов. LEFT JOIN при вставке факта допускает незаполненный ключ; подробный путь получения SK показан в виде «Поток данных».",
+      "mode": "keys",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "dds.dim_passengers",
+          "columns": [
+            "passenger_sk"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "passenger_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/dds/fact_flight_sales_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "keys-dds.dim_routes-dds.fact_flight_sales-88",
+      "from": "dds.dim_routes",
+      "to": "dds.fact_flight_sales",
+      "label": "Версия маршрута",
+      "join": "`dim_routes.route_sk = fact_flight_sales.route_sk`: одна строка измерения описывает много сегментов. LEFT JOIN при вставке факта допускает незаполненный ключ; подробный путь получения SK показан в виде «Поток данных».",
+      "mode": "keys",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "dds.dim_routes",
+          "columns": [
+            "route_sk"
+          ]
+        },
+        {
+          "node": "dds.fact_flight_sales",
+          "columns": [
+            "route_sk"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/dds/fact_flight_sales_load.sql"
+        }
+      ]
+    },
+    {
+      "id": "flow-ods.segments-ods.flights-89",
+      "from": "ods.segments",
+      "to": "ods.flights",
+      "label": "Граница отбора сегментов",
+      "join": "`MAX(ods.segments._load_ts)` задает нижнюю границу новых `stg.segments`. Их `flight_id` помогают добрать рейсы из истории STG. Это чтение водяного знака, а не загрузка рейсов из сегментов и не зависимость задач.",
+      "mode": "flow",
+      "status": "ready",
+      "refs": [
+        {
+          "node": "ods.segments",
+          "columns": [
+            "_load_ts"
+          ]
+        },
+        {
+          "node": "stg.segments",
+          "columns": [
+            "_load_ts",
+            "flight_id"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "SQL",
+          "url": "../../sql/ods/flights_load.sql"
+        }
+      ]
+    }
+  ]
+}

@@ -77,3 +77,17 @@
 - Избегайте больших рефакторингов и сложных паттернов — студенты только начинают.
 - Ошибки и логи — дружелюбные и понятные (лучше с подсказкой «что сделать дальше»).
 - Перед релевантными правками валидируйте локально: `make up`, затем откройте DAG в UI и/или прогоните `make test`.
+
+## Agent skills
+
+### Issue tracker
+
+Issues живут в Gitea (`git.dementev.space/ddmitry/airflow-greenplum`), работа через `tea` CLI. См. `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Стандартный набор: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. См. `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Один контекст: `CONTEXT.md` и `docs/adr/` в корне репо. См. `docs/agents/domain.md`.

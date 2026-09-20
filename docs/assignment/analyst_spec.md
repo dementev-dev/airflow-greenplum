@@ -13,6 +13,11 @@
 >
 > SQL-скрипты эталона лежат в `sql/stg/`, `sql/ods/`, `sql/dds/`, `sql/dm/`.
 
+Порядок запуска и проверки первой загрузки находится во
+[входе в задания](README.md#первая-загрузка-ods). В каждом разделе ниже есть
+ссылка на объект карты и близкий готовый пример. Карту открывайте
+[локально в браузере](../design/db_schema.md#как-открыть-карту).
+
 ---
 
 ## Рекомендуемый порядок выполнения
@@ -36,7 +41,7 @@
 
 ## Общие правила
 
-- **Нейминг полей:** см. `docs/design/naming_conventions.md` — единый источник
+- **Нейминг полей:** см. [соглашения об именах](../design/naming_conventions.md) — единый источник
   истины для служебных полей (`_load_id`, `_load_ts`, `created_at`, `updated_at`,
   `valid_from`, `valid_to`, `hashdiff`, суффиксы `_bk` / `_sk`).
 - **SQL-файлы:** располагайте в `sql/{слой}/{объект}_{роль}.sql`
@@ -46,7 +51,10 @@
   Вам нужно только заменить содержимое SQL-файлов — DAG менять не нужно.
 - **Идемпотентность:** каждый скрипт загрузки должен быть безопасен
   при повторном запуске (не создавать дубликатов).
-- **Шаблон `{{ run_id }}`:** используйте Jinja-шаблон Airflow для `_load_id`.
+- **Метки загрузки:** в ODS-снимках `airplanes` и `seats` сохраняйте в `_load_id`
+  идентификатор исходного STG-батча из `resolve_stg_batch_id`, как в `ods.airports`.
+  Так проверка сможет сопоставить ODS с тем снимком, из которого он загружен.
+  В заданиях DDS и DM используйте `'{{ run_id }}'` текущего запуска слоя.
 
 ---
 
@@ -67,11 +75,11 @@ STG-слой (все 9 таблиц) и `ods.routes` полностью реал
 `ods.routes` тоже эталонный: факт `fact_flight_sales` использует его для резолвинга
 аэропортов вылета/прилёта, независимо от студенческого `dds.dim_routes`.
 
-**Что вам делать:** Изучите эталонные скрипты как образец — именно так написан
-«боевой» код загрузки:
-- `sql/stg/airports_load.sql` — инкрементальная загрузка (HWM)
-- `sql/stg/airplanes_load.sql` — full snapshot с проверкой `_load_id`
-- `sql/ods/airports_load.sql` — TRUNCATE+INSERT из STG
+Для первого задания разберите [загрузку `ods.airports`](../design/reading_the_pipeline.md#ods-airports).
+При необходимости проследить получение снимка откройте
+[sql/stg/airports_load.sql](../../sql/stg/airports_load.sql) или
+[sql/stg/airplanes_load.sql](../../sql/stg/airplanes_load.sql): оба читают полный
+снимок источника. `NOT EXISTS` защищает от повторной вставки ключа в том же `_load_id`.
 
 ---
 
@@ -81,9 +89,13 @@ STG-слой (все 9 таблиц) и `ods.routes` полностью реал
 > Справочники (`airplanes`, `seats`) загружаются стратегией TRUNCATE + INSERT
 > из последнего согласованного батча STG. (`ods.routes` реализован в эталоне.)
 >
-> **Аналог для изучения:** `sql/ods/airports_ddl.sql`, `sql/ods/airports_load.sql`
+> **Аналог для изучения:** [DDL airports](../../sql/ods/airports_ddl.sql),
+> [загрузка airports](../../sql/ods/airports_load.sql) и [ее разбор](../design/reading_the_pipeline.md#ods-airports).
 
 ### 1.1. ods.airplanes
+
+[На карте: модель самолета и ее источник](../design/architecture-map.html#node=ods.airplanes).
+Готовый пример полного снимка: [ods.airports](../design/reading_the_pipeline.md#ods-airports).
 
 **Описание:** Очищенный справочник моделей воздушных судов с правильными типами.
 
@@ -95,7 +107,7 @@ STG-слой (все 9 таблиц) и `ods.routes` полностью реал
 | `model` | TEXT NOT NULL | Наименование модели | `model` (парсинг JSON: `model::JSON->>'ru'` — если JSON, иначе `model` как есть) |
 | `range_km` | INTEGER | Дальность полёта, км | `range::INTEGER` |
 | `speed_kmh` | INTEGER | Крейсерская скорость, км/ч | `speed::INTEGER` |
-| `_load_id` | TEXT NOT NULL | Идентификатор батча | `'{{ run_id }}'` |
+| `_load_id` | TEXT NOT NULL | Идентификатор исходного STG-батча | `'{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'` |
 | `_load_ts` | TIMESTAMP NOT NULL | Момент загрузки | `now()` |
 
 **Тип историзации:** Нет (текущее состояние справочника, TRUNCATE + INSERT).
@@ -115,6 +127,9 @@ STG-слой (все 9 таблиц) и `ods.routes` полностью реал
 
 ### 1.2. ods.seats
 
+[На карте: места и связь с моделью](../design/architecture-map.html#node=ods.seats).
+Пример выбора снимка и дедупликации: [ods.airports](../design/reading_the_pipeline.md#ods-airports).
+
 **Описание:** Карта посадочных мест с корректными типами.
 
 **Источник:** `stg.seats`
@@ -124,7 +139,7 @@ STG-слой (все 9 таблиц) и `ods.routes` полностью реал
 | `airplane_code` | TEXT NOT NULL | Код модели (PK, часть 1) | `airplane_code` |
 | `seat_no` | TEXT NOT NULL | Номер места (PK, часть 2) | `seat_no` |
 | `fare_conditions` | TEXT NOT NULL | Класс обслуживания | `fare_conditions` |
-| `_load_id` | TEXT NOT NULL | Идентификатор батча | `'{{ run_id }}'` |
+| `_load_id` | TEXT NOT NULL | Идентификатор исходного STG-батча | `'{{ ti.xcom_pull(task_ids="resolve_stg_batch_id") }}'` |
 | `_load_ts` | TIMESTAMP NOT NULL | Момент загрузки | `now()` |
 
 **Тип историзации:** Нет (текущее состояние справочника, TRUNCATE + INSERT).
@@ -149,9 +164,13 @@ STG-слой (все 9 таблиц) и `ods.routes` полностью реал
 > ключами. SCD1-измерения обновляют атрибуты «на месте». SCD2-измерение
 > хранит историю изменений через версионирование.
 >
-> **Аналог для SCD1:** `sql/dds/dim_airports_ddl.sql`, `sql/dds/dim_airports_load.sql`
+> **Аналог для SCD1:** [DDL dim_airports](../../sql/dds/dim_airports_ddl.sql),
+> [загрузка dim_airports](../../sql/dds/dim_airports_load.sql).
 
 ### 2.1. dds.dim_airplanes (SCD1)
+
+[На карте: характеристики и вместимость модели](../design/architecture-map.html#node=dds.dim_airplanes).
+Пример SCD1: [dim_airports_load.sql](../../sql/dds/dim_airports_load.sql).
 
 **Описание:** Измерение моделей самолётов. Содержит технические характеристики
 и рассчитанное общее количество мест (обогащение из `ods.seats`).
@@ -184,13 +203,17 @@ STG-слой (все 9 таблиц) и `ods.routes` полностью реал
 в `ods.seats` для данного `airplane_code` (LEFT JOIN).
 
 **Генерация суррогатного ключа:** `MAX(airplane_sk) + ROW_NUMBER()`.
-Безопасно при `concurrency=1` в DAG.
+Загрузки одной таблицы должны выполняться последовательно. В DDS DAG
+параллельные запуски ограничены параметром `max_active_runs=1`.
 
 **Distribution Key:** `airplane_sk`
 
 ---
 
 ### 2.2. dds.dim_passengers (SCD1)
+
+[На карте: пассажир из билетов](../design/architecture-map.html#node=dds.dim_passengers).
+Пример обновления атрибутов и вставки новых ключей: [dim_airports_load.sql](../../sql/dds/dim_airports_load.sql).
 
 **Описание:** Измерение пассажиров. Извлекается из таблицы билетов — каждый
 уникальный `passenger_id` становится строкой измерения.
@@ -229,6 +252,10 @@ STG-слой (все 9 таблиц) и `ods.routes` полностью реал
 ---
 
 ### 2.3. dds.dim_routes (SCD2)
+
+[На карте: версии маршрута](../design/architecture-map.html#node=dds.dim_routes).
+В [разборе готового факта](../design/reading_the_pipeline.md#fact-joins) видно,
+как загрузчик выбирает версию на дату рейса. Алгоритм самой SCD2-загрузки дан ниже.
 
 > **Это ключевой вызов курсовой.** Реализация SCD Type 2 — обязательный навык
 > для Data Engineer. Ниже — алгоритм текстом; SQL вы пишете самостоятельно.
@@ -317,9 +344,14 @@ md5(concat_ws('|',
 > **Цель:** Построить аналитические витрины поверх DDS.
 > Каждая витрина отвечает на конкретный бизнес-вопрос.
 >
-> **Аналог для изучения:** `sql/dm/sales_report_ddl.sql`, `sql/dm/sales_report_load.sql`
+> **Аналог для изучения:** [DDL sales_report](../../sql/dm/sales_report_ddl.sql),
+> [загрузка sales_report](../../sql/dm/sales_report_load.sql).
 
 ### 3.1. dm.airport_traffic
+
+[На карте: аэропорт за день](../design/architecture-map.html#node=dm.airport_traffic).
+Пример пересчета затронутых дат: [sales_report_load.sql](../../sql/dm/sales_report_load.sql).
+Две роли аэропорта проследите в [готовом факте](../design/reading_the_pipeline.md#fact-joins).
 
 **Бизнес-вопрос:** «Какой пассажиропоток и выручка у каждого аэропорта по дням?»
 
@@ -359,6 +391,11 @@ md5(concat_ws('|',
 и `arrival_airport_sk`. Затем сгруппируйте по `(traffic_date, airport_sk)`.
 
 **Метрики:**
+
+Здесь `SUM(is_boarded)` означает число строк с признаком посадки.
+Поле булево; в SQL используйте `SUM(CASE WHEN is_boarded THEN 1 ELSE 0 END)`,
+как в `sales_report_load.sql`.
+
 - `departures_flights` — `COUNT(DISTINCT flight_id)` для роли «вылет»
 - `departures_passengers` — `SUM(is_boarded)` для роли «вылет»
 - `departures_revenue` — `SUM(price)` для роли «вылет»
@@ -376,6 +413,10 @@ md5(concat_ws('|',
 ---
 
 ### 3.2. dm.route_performance
+
+[На карте: статистика маршрута](../design/architecture-map.html#node=dm.route_performance).
+Соединение факта с измерениями и агрегация показаны в
+[sales_report_load.sql](../../sql/dm/sales_report_load.sql); здесь по ТЗ нужен полный пересчет.
 
 **Бизнес-вопрос:** «Какие маршруты самые эффективные? Где высокий load factor,
 а где теряем пассажиров?»
@@ -427,9 +468,8 @@ md5(concat_ws('|',
 - `avg_boarding_rate` — `AVG(CASE WHEN is_boarded THEN 1 ELSE 0 END)`
 - `avg_load_factor` — `total_boarded / (total_flights * total_seats)`
 
-**Тип хранения Greenplum:** AO Column Store (zstd). Идеален для аналитики:
-отличное сжатие, чтение только нужных колонок. AO не поддерживает UPDATE —
-поэтому используем Full Rebuild.
+**Тип хранения Greenplum:** AO Column Store (zstd), сжатое колоночное хранение.
+В этом задании небольшой результат полностью пересоздается при каждом запуске.
 
 **Distribution Key:** `route_bk`
 
@@ -439,6 +479,10 @@ md5(concat_ws('|',
 ---
 
 ### 3.3. dm.monthly_overview
+
+[На карте: месяц и модель самолета](../design/architecture-map.html#node=dm.monthly_overview).
+Пример отбора затронутых периодов: [sales_report_load.sql](../../sql/dm/sales_report_load.sql).
+В этом задании период и уровни агрегации определены ниже.
 
 **Бизнес-вопрос:** «Какова помесячная динамика: рейсы, выручка, load factor
 в разрезе типов самолётов?»
@@ -479,9 +523,11 @@ md5(concat_ws('|',
 
 **Ключевой приём — Двухуровневая агрегация:**
 
-Чтобы честно посчитать среднюю заполняемость (`avg_load_factor`), нельзя просто
-поделить `SUM(boarded)` на `SUM(seats)` — это даёт ошибку (парадокс Симпсона).
-Правильный путь:
+В этом задании `avg_load_factor` - среднее долей занятых мест по рейсам:
+каждый рейс имеет одинаковый вес. Отношение `SUM(boarded) / SUM(seats)`
+дает среднее с весом по вместимости и при разной вместимости может отличаться.
+Нужный расчет:
+
 1. **Уровень 1 (рейс):** Для каждого `flight_id` посчитайте `load_factor = boarded / total_seats`.
 2. **Уровень 2 (месяц):** Возьмите `AVG(load_factor)` по всем рейсам месяца.
 
@@ -501,6 +547,10 @@ md5(concat_ws('|',
 ---
 
 ### 3.4. dm.passenger_loyalty
+
+[На карте: история пассажира](../design/architecture-map.html#node=dm.passenger_loyalty).
+В [sales_report_load.sql](../../sql/dm/sales_report_load.sql) посмотрите отделение
+затронутых дат от полной истории за эти даты. Здесь единица пересчета - пассажир.
 
 **Бизнес-вопрос:** «Кто наши самые лояльные пассажиры? Сколько они летают,
 тратят, какой класс предпочитают?»
@@ -567,6 +617,10 @@ md5(concat_ws('|',
 ---
 
 ## Пересчёт факта после реализации измерений
+
+[Факт на карте](../design/architecture-map.html#node=dds.fact_flight_sales) и
+[разбор его INSERT и UPDATE](../design/reading_the_pipeline.md#найдите-запись-результата)
+помогут проследить, когда заполняются ключи измерений.
 
 После того, как вы реализуете все DDS-измерения (`dim_airplanes`, `dim_passengers`,
 `dim_routes`), нужно пересчитать факт — он загружался ещё без ваших SK:

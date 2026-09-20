@@ -1068,6 +1068,10 @@
         {
           "label": "DQ",
           "url": "../../sql/ods/airports_dq.sql"
+        },
+        {
+          "label": "Разбор SQL загрузки",
+          "url": "reading_the_pipeline.md#ods-airports"
         }
       ],
       "parts": []
@@ -1636,6 +1640,10 @@
         {
           "label": "Пересчет после реализации измерений",
           "url": "../assignment/analyst_spec.md#пересчёт-факта-после-реализации-измерений"
+        },
+        {
+          "label": "Разбор SQL загрузки",
+          "url": "reading_the_pipeline.md#fact-flight-sales"
         }
       ],
       "parts": []
@@ -2433,6 +2441,10 @@
         {
           "label": "SQL",
           "url": "../../sql/ods/airports_load.sql"
+        },
+        {
+          "label": "Разбор SQL загрузки",
+          "url": "reading_the_pipeline.md#ods-airports"
         }
       ]
     },
@@ -3156,6 +3168,10 @@
         {
           "label": "SQL",
           "url": "../../sql/dds/fact_flight_sales_load.sql"
+        },
+        {
+          "label": "Разбор SQL загрузки",
+          "url": "reading_the_pipeline.md#fact-joins"
         }
       ]
     },
@@ -3197,6 +3213,10 @@
         {
           "label": "SQL",
           "url": "../../sql/dds/fact_flight_sales_load.sql"
+        },
+        {
+          "label": "Разбор SQL загрузки",
+          "url": "reading_the_pipeline.md#fact-joins"
         }
       ]
     },
@@ -3269,6 +3289,10 @@
         {
           "label": "SQL",
           "url": "../../sql/dds/fact_flight_sales_load.sql"
+        },
+        {
+          "label": "Разбор SQL загрузки",
+          "url": "reading_the_pipeline.md#fact-joins"
         }
       ]
     },
@@ -3305,6 +3329,10 @@
         {
           "label": "SQL",
           "url": "../../sql/dds/fact_flight_sales_load.sql"
+        },
+        {
+          "label": "Разбор SQL загрузки",
+          "url": "reading_the_pipeline.md#fact-joins"
         }
       ]
     },

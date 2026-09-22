@@ -224,10 +224,14 @@ test:
 lint:
 	$(UV) run black --check airflow tests
 	$(UV) run isort --check-only airflow tests
+	$(UV) run black --check scripts/check_airports_snapshot.py
+	$(UV) run isort --check-only scripts/check_airports_snapshot.py
 
 fmt:
 	$(UV) run black airflow tests
 	$(UV) run isort airflow tests
+	$(UV) run black scripts/check_airports_snapshot.py
+	$(UV) run isort scripts/check_airports_snapshot.py
 
 clean-venv:
 	python -c "import shutil; shutil.rmtree('.venv', ignore_errors=True)"

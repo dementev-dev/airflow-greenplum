@@ -66,6 +66,22 @@ def test_bookings_stg_ddl_dag_structure():
         _assert_reachable(dag, "apply_stg_bookings_ddl", task_id)
 
 
+def test_lab_pxf_airports_uses_snapshot_sql_and_reference_dependencies():
+    """Опыт читает четыре справочника; генератор и транзакции в него не входят."""
+    dag = _load_dag("airflow.dags.lab_pxf_airports")
+    assert len(dag.tasks) == 8
+    for entity in ("airports", "airplanes", "routes", "seats"):
+        load = dag.get_task(f"load_{entity}_to_stg")
+        dq = dag.get_task(f"check_{entity}_dq")
+        assert load.sql == f"stg/{entity}_load.sql"
+        assert dq.sql == f"stg/{entity}_dq.sql"
+        assert load.postgres_conn_id == dq.postgres_conn_id == "greenplum_conn"
+        _assert_direct_edge(dag, load.task_id, dq.task_id)
+    _assert_direct_edge(dag, "check_airports_dq", "load_routes_to_stg")
+    _assert_direct_edge(dag, "check_airplanes_dq", "load_routes_to_stg")
+    _assert_direct_edge(dag, "check_airplanes_dq", "load_seats_to_stg")
+
+
 def test_bookings_to_gp_stage_dag_structure():
     """Проверка структуры DAG bookings_to_gp_stage."""
     dag = _load_dag("airflow.dags.bookings_to_gp_stage")

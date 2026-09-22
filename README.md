@@ -112,6 +112,7 @@ SELECT COUNT(*) FROM dm.route_performance;
 - `bookings_stg_ddl` — создаёт/обновляет весь STG слой для bookings (9 таблиц: bookings, tickets, airports, airplanes,
   routes, seats, flights, segments, boarding_passes; включая внешние `*_ext` через PXF);
 - `bookings_to_gp_stage` — генерирует учебный день в `bookings-db`, затем загружает данные в STG и выполняет DQ‑проверки.
+- `lab_pxf_airports` — готовит общий снимок четырех справочников для [лабораторной PXF](docs/design/pxf_airports_lab.md), без генерации транзакций.
 - `bookings_ods_ddl` — создаёт/обновляет ODS-таблицы по домену bookings.
 - `bookings_to_gp_ods` — загружает данные из STG в ODS (SCD1 UPSERT) и выполняет DQ‑проверки.
 - `bookings_dds_ddl` — создаёт/обновляет DDS-таблицы (`dim_*`, `fact_flight_sales`) по домену bookings.

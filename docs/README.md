@@ -23,6 +23,7 @@
 - [Архитектурные решения (ADR)](design/architecture_review.md)
 - [PRD: стратегия курсовой](design/PRD.md)
 - [Дизайн задания](design/assignment_design.md)
+- [Развитие лабораторных: аудитория, решения и критерии заданий](design/labs_development.md)
 
 ## Справочники (`reference/`)
 

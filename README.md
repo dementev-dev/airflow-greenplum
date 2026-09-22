@@ -104,9 +104,9 @@ SELECT COUNT(*) FROM dm.sales_report;
 оно проведет от билетов и сегментов к факту и витрине. Рядом держите
 [интерактивную карту](docs/design/architecture-map.html) — локальный файл
 `docs/design/architecture-map.html` нужно открыть в браузере; в Gitea HTML
-показывается как исходный текст. Затем разберите
-[готовую загрузку справочника](docs/design/reading_the_pipeline.md#ods-airports)
-и переходите к [первому заданию ODS](docs/assignment/README.md#первая-загрузка-ods).
+показывается как исходный текст. Затем переходите к
+[учебным заданиям](docs/assignment/README.md): начните с приема справочника
+через PXF, после него — загрузки ODS.
 
 ## DAG-и в стенде
 
@@ -115,6 +115,7 @@ SELECT COUNT(*) FROM dm.sales_report;
 - `bookings_stg_ddl` — создаёт/обновляет весь STG слой для bookings (9 таблиц: bookings, tickets, airports, airplanes,
   routes, seats, flights, segments, boarding_passes; включая внешние `*_ext` через PXF);
 - `bookings_to_gp_stage` — генерирует учебный день в `bookings-db`, затем загружает данные в STG и выполняет DQ‑проверки.
+- `lab_pxf_airports` — готовит общий снимок четырех справочников для [лабораторной PXF](docs/assignment/pxf_airports.md); использует те же SQL и DQ, без генерации транзакций.
 - `bookings_ods_ddl` — создаёт/обновляет ODS-таблицы по домену bookings.
 - `bookings_to_gp_ods` — заменяет снимки справочников и обновляет транзакционные таблицы ODS из STG; выполняет DQ-проверки.
 - `bookings_dds_ddl` — создаёт/обновляет DDS-таблицы (`dim_*`, `fact_flight_sales`) по домену bookings.

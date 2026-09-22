@@ -1022,6 +1022,10 @@
         {
           "label": "DQ",
           "url": "../../sql/stg/airports_dq.sql"
+        },
+        {
+          "label": "Лабораторная: прием через PXF",
+          "url": "../assignment/pxf_airports.md"
         }
       ],
       "parts": [

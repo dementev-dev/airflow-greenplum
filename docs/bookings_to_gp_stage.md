@@ -1,7 +1,9 @@
 # Загрузка Bookings → STG: `bookings_to_gp_stage`
 
 DAG читает девять таблиц Bookings через внешние таблицы PXF и сохраняет
-строки в Greenplum. Весь STG, включая DQ, уже реализован на `main`.
+строки в Greenplum. Весь STG, включая DQ, уже реализован на `main`;
+в [первой лабораторной](assignment/pxf_airports.md) вы разберете и восстановите
+прием `airports`.
 Смысл бронирования, билета и сегмента разобран в
 [руководстве о структуре](design/db_schema.md); на карте начните со
 [stg.bookings](design/architecture-map.html#node=stg.bookings).

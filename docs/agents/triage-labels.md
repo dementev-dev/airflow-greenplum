@@ -14,5 +14,5 @@
 
 Правую колонку можно менять под свой словарь.
 
-В Gitea-репо меток пока нет. При первом `/triage` создайте их:
-`tea labels create --name needs-triage --color "#e4e669" --description "..."` и так далее для каждой строки таблицы.
+Все пять меток заведены в Gitea-репо (`tea labels list`). Новую метку добавляют так:
+`tea labels create --name <имя> --color <hex без #> --description "..."`.
